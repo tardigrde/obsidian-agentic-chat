@@ -12,9 +12,24 @@ describe("doc commands", () => {
     ]);
   });
 
+  it("fails a skill that names a removed delegate subcommand or chaos mode (#393 T26)", () => {
+    const scripts = { delegate: "bash scripts/delegate.sh", verify: "node scripts/verify.mjs" };
+    const skill = [
+      "npm run delegate -- ship wt spec.md \"title\" \"focus\"",
+      "npm run delegate -- review 7 wt \"focus\"",
+      "npm run verify -- explore --mode focused --target settings",
+      "npm run verify -- explore --mode smoke",
+    ].join("\n");
+    const errors = checkDoc(".agents/skills/fixture/SKILL.md", skill, scripts);
+    expect(errors).toHaveLength(2);
+    expect(errors[0]).toContain(".agents/skills/fixture/SKILL.md:1 names the removed `npm run delegate -- ship`");
+    expect(errors[1]).toContain(":3 names the removed");
+    expect(errors[1]).toContain("--mode smoke");
+  });
+
   it("fails a missing script and an unknown lane, and accepts live ones", () => {
     const text = [
-      "npm run delegate -- ship 12",
+      "npm run delegate -- review 12 wt focus",
       "npm run verify:fast",
       "npm run verify -- bogus",
       "npm run verify -- check",

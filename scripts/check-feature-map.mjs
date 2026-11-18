@@ -21,7 +21,7 @@ import { pathToFileURL } from "node:url";
  * reviewer and the witness gate own that.
  */
 
-const FEATURES_DIR = path.join(".agents", "skills", "verify-obsidian-chat", "features");
+const FEATURES_DIR = path.join(".agents", "skills", "app", "features");
 const SECTIONS = [
   "## Sub-features",
   "## How to get to it (user view)",
@@ -111,7 +111,8 @@ function isUserActionProof(root, ref) {
     .replace(/\/\*[\s\S]*?\*\//g, "")
     .replace(/^\s*\/\/.*$/gm, "");
   if (REPLAY_IMPORT.test(text)) return true;
-  return file.startsWith("test/ui/") && MOUNTED_VIEW_IMPORT.test(text);
+  // The import alone proves nothing: the file must mount the view.
+  return file.startsWith("test/ui/") && MOUNTED_VIEW_IMPORT.test(text) && /\bmountChatView\s*\(/.test(text);
 }
 
 function stripRefs(cell) {

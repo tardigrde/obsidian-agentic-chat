@@ -35,6 +35,7 @@ import {
   needsFixture,
   parseRunRecord,
   planRuns,
+  shardPlan,
   selectCases,
   type ToolUsePlan,
 } from "./eval/tool-use-plan";
@@ -49,8 +50,10 @@ import {
   type CaseRunEntry,
 } from "./eval/tool-use-report";
 import { applyEnvFile } from "./live-env.mjs";
+import { writeRunReport } from "./lib/run-result.mjs";
 
-const DEFAULT_SUITE = "test/evals/tool-use/tool-use.eval.json";
+const SUITE_DIR = "test/evals/tool-use";
+const DEFAULT_SUITE = `${SUITE_DIR}/core.eval.json`;
 const DEFAULT_OUT_ROOT = "logs/eval-runs";
 const MODELS_URL = "https://openrouter.ai/api/v1/models";
 const SPEC_PATH = "./test/e2e/evals/tool-use.eval.ts";
@@ -61,7 +64,7 @@ const MIN_SPEC_TIMEOUT_MS = 10 * 60 * 1000;
 const USAGE = `Usage:
   npm run eval:tool-use -- [--suite path] [--case id[,id] | --smoke | --canary] [--runs n] [--run-id id]
       [--out-dir dir] [--env-file path] [--max-usd usd] [--thinking-level level]
-      [--dry-run] [--write-baseline]
+      [--parallel n] [--dry-run] [--write-baseline]
   npm run eval:tool-use -- --compare <base.json> <head.json> [--significance [--exclude id[,id]]]
   npm run eval:significance -- <base.json> <head.json>
   npm run eval:tool-use -- --write-baseline-from <run>/summary.json [--git-head sha] [--suite path]
@@ -69,6 +72,9 @@ const USAGE = `Usage:
   --smoke           runs the suite's own "smoke" slice, once per case unless --runs is set.
   --canary          runs the suite's "canary" slice, 5 times per case unless --runs is set,
                     and prints a Wilson interval per case against the baseline.
+  --parallel n      runs n Obsidian instances side by side (own vault and driver port each,
+                    one shared budget). All runs of a case stay on one instance. The
+                    summary records parallel: n; --compare warns when the time axis differs.
   --thinking-level  wins over AGENTIC_CHAT_THINKING_LEVEL, the suite field, and the low default.
   --compare         reads two summary.json or baseline files and prints the differences.
   --significance    adds a case-level bootstrap section to --compare; --exclude drops
@@ -83,6 +89,7 @@ interface CliArgs {
   smoke: boolean;
   canary: boolean;
   runs?: number;
+  parallel: number;
   runId: string;
   outDir?: string;
   envFile?: string;
@@ -125,6 +132,7 @@ function parseCliArgs(argv: string[]): CliArgs {
       smoke: { type: "boolean" },
       canary: { type: "boolean" },
       runs: { type: "string" },
+      parallel: { type: "string" },
       "run-id": { type: "string" },
       "out-dir": { type: "string" },
       "env-file": { type: "string" },
@@ -154,11 +162,12 @@ function parseCliArgs(argv: string[]): CliArgs {
   const caseIds = (values.case ?? []).flatMap((value) => value.split(",")).map((id) => id.trim()).filter(Boolean);
   assertSelectors({ ...values, caseCount: caseIds.length });
   return {
-    suite: values.suite ?? DEFAULT_SUITE,
+    suite: suitePathOf(values.suite),
     caseIds,
     smoke: values.smoke === true,
     canary: values.canary === true,
     runs: values.runs === undefined ? undefined : positiveInteger(values.runs, "--runs"),
+    parallel: values.parallel === undefined ? 1 : positiveInteger(values.parallel, "--parallel"),
     runId: values["run-id"] ?? `tool-use-${new Date().toISOString().replace(/[:.]/g, "-")}`,
     outDir: values["out-dir"],
     envFile: values["env-file"],
@@ -173,6 +182,24 @@ function parseCliArgs(argv: string[]): CliArgs {
     gitHead: values["git-head"],
     help: values.help === true,
   };
+}
+
+/** Median case time per case from the suite's committed baseline; empty when there is none. */
+async function baselineCaseMs(suiteName: string): Promise<Map<string, number>> {
+  const file = path.resolve(BASELINE_DIR, baselineFileName(suiteName));
+  if (!existsSync(file)) return new Map();
+  const baseline = (await readJson(file)) as { cases?: Array<{ id?: unknown; medianMs?: unknown }> };
+  return new Map(
+    (baseline.cases ?? [])
+      .filter((entry) => typeof entry.id === "string" && typeof entry.medianMs === "number")
+      .map((entry) => [entry.id as string, entry.medianMs as number]),
+  );
+}
+
+/** `core` and `regression` name the suites in test/evals/tool-use; anything else is a path. */
+function suitePathOf(value: string | undefined): string {
+  if (!value) return DEFAULT_SUITE;
+  return /^[\w-]+$/.test(value) ? path.join(SUITE_DIR, `${value}.eval.json`) : value;
 }
 
 /** The smoke slice is a quick look (1 run); the canary needs 5 to separate a drop from noise. */
@@ -231,8 +258,10 @@ async function main(): Promise<void> {
   const outDir = path.resolve(args.outDir ?? path.join(DEFAULT_OUT_ROOT, args.runId));
 
   if (args.dryRun) {
+    const dryRuns = planRuns(cases, runsPerCase);
     process.stdout.write(
       formatDryRun({
+        shards: shardPlan({ cases, runs: dryRuns } as ToolUsePlan, args.parallel, await baselineCaseMs(suite.name)),
         suite: { name: suite.name, path: suitePath, model: suite.model },
         cases,
         runsPerCase,
@@ -276,6 +305,8 @@ async function main(): Promise<void> {
       cases: expandFixturePlaceholders(cases, fixture?.url),
       runs: planRuns(cases, runsPerCase),
     };
+    const shards = shardPlan(plan, args.parallel, await baselineCaseMs(suite.name));
+    if (shards.length > 1) plan.parallel = shards.length;
     const planPath = path.join(outDir, "plan.json");
     await writeJson(planPath, plan);
 
@@ -284,13 +315,7 @@ async function main(): Promise<void> {
     console.log(`Plan: ${planPath}`);
     console.log(`Run: ${plan.cases.length} case(s) x ${runsPerCase} run(s) = ${plan.runs.length} run(s)`);
 
-    const specExitCode = await runSpec({
-      vaultPath,
-      planPath,
-      resultsDir,
-      apiKey,
-      timeoutMs: Math.max(MIN_SPEC_TIMEOUT_MS, plan.runs.length * suite.turn.timeoutMs + SPEC_OVERHEAD_MS),
-    });
+    const specExitCode = await runShards(shards, { outDir, planPath, vaultPath, resultsDir, apiKey, turnTimeoutMs: suite.turn.timeoutMs });
 
     // The runs that finished cost real money, so a spec that died half-way
     // still gets a summary. Its missing runs are reported as harness errors.
@@ -300,6 +325,8 @@ async function main(): Promise<void> {
     await writeJson(paths.summary, summary);
     await writeFile(paths.report, formatReport(summary), "utf8");
     process.stdout.write(formatConsoleSummary(summary, paths));
+    // Under `verify -- eval`, the run's spend and summary go into its run-result.json.
+    writeRunReport({ tokens: summary.budget.used.tokens, usd: summary.budget.used.usd, artifacts: [path.relative(process.cwd(), paths.summary)] });
     if (args.canary) {
       const baselinePath = path.resolve(BASELINE_DIR, baselineFileName(suite.name));
       process.stdout.write(`\n${formatCanary(summary, existsSync(baselinePath) ? await readJson(baselinePath) : undefined)}`);
@@ -427,8 +454,8 @@ function readApiKey(): string {
   return apiKey;
 }
 
-async function createVault(outDir: string): Promise<string> {
-  const vaultPath = path.join(outDir, "vault");
+async function createVault(outDir: string, name = "vault"): Promise<string> {
+  const vaultPath = path.join(outDir, name);
   await mkdir(path.join(vaultPath, ".obsidian"), { recursive: true }); // NOSONAR:S8707 -- local dev CLI: the path is the developer's own argument on their own machine.
   // Keep links working on rename without Obsidian's "Update links?" prompt; a
   // modal would block the turn. Most users turn this on.
@@ -465,16 +492,57 @@ async function assertFreshResultsDir(resultsDir: string): Promise<void> {
   }
 }
 
+/**
+ * One instance runs the whole plan the way it always did (`npm run test:e2e`
+ * builds the bundle, then WDIO). With --parallel the bundle is built once and
+ * each shard gets its own plan file and vault; run-e2e.ts gives each its own
+ * free driver port. The records land in one results directory.
+ */
+async function runShards(
+  shards: ToolUsePlan[],
+  options: { outDir: string; planPath: string; vaultPath: string; resultsDir: string; apiKey: string; turnTimeoutMs: number },
+): Promise<number> {
+  const timeoutFor = (plan: ToolUsePlan) => Math.max(MIN_SPEC_TIMEOUT_MS, plan.runs.length * options.turnTimeoutMs + SPEC_OVERHEAD_MS);
+  if (shards.length === 1) {
+    return runSpec({ ...options, timeoutMs: timeoutFor(shards[0]), build: true });
+  }
+  const built = await runCommand(process.platform === "win32" ? "npm.cmd" : "npm", ["run", "build:e2e"]);
+  if (built !== 0) return built;
+  const codes = await Promise.all(
+    shards.map(async (shard) => {
+      const planPath = path.join(options.outDir, `plan.shard-${shard.shard}.json`);
+      await writeJson(planPath, shard);
+      const vaultPath = await createVault(options.outDir, `vault-${shard.shard}`);
+      console.log(`Instance ${shard.shard}: ${shard.cases.length} case(s), ${shard.runs.length} run(s), vault ${vaultPath}`);
+      return runSpec({ ...options, planPath, vaultPath, timeoutMs: timeoutFor(shard), build: false });
+    }),
+  );
+  return codes.find((code) => code !== 0) ?? 0;
+}
+
+function runCommand(command: string, commandArgs: string[]): Promise<number> {
+  return new Promise((resolve) => {
+    const child = spawn(command, commandArgs, { stdio: "inherit" });
+    child.on("exit", (code) => resolve(code ?? 1));
+    child.on("error", () => resolve(1));
+  });
+}
+
 function runSpec(options: {
   vaultPath: string;
   planPath: string;
   resultsDir: string;
   apiKey: string;
   timeoutMs: number;
+  /** false when a parallel run built the e2e bundle once for every instance. */
+  build: boolean;
 }): Promise<number> {
   return new Promise((resolve) => {
     // A laptop sleep kills the Obsidian session (#392 item 5): block it for the run.
-    const [command, commandArgs] = inhibitSleep(process.platform === "win32" ? "npm.cmd" : "npm", ["run", "test:e2e"], "agentic-chat eval");
+    const [launcher, launcherArgs] = options.build
+      ? [process.platform === "win32" ? "npm.cmd" : "npm", ["run", "test:e2e"]]
+      : [process.execPath, ["--import", "tsx", "scripts/run-e2e.ts"]];
+    const [command, commandArgs] = inhibitSleep(launcher, launcherArgs, "agentic-chat eval");
     const child = spawn(command, commandArgs, {
       stdio: "inherit",
       env: {

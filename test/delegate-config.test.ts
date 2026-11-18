@@ -1,15 +1,36 @@
+import { spawnSync } from "node:child_process";
 import { describe, expect, it } from "vitest";
 import * as config from "../scripts/delegate-config.mjs";
-import { decide, delegatePermissions, lastVerdictIsFail, recheckAllowed, wildcardMatch } from "../scripts/delegate-config.mjs";
+import { decide, delegatePermissions, wildcardMatch } from "../scripts/delegate-config.mjs";
 
 const main = "/home/u/repo";
 const review = delegatePermissions({ mode: "review", main, edit: "logs/delegate/verdict-7.md" });
-const work = delegatePermissions({ mode: "work", main, edit: "*" });
+const research = delegatePermissions({ mode: "review", main, edit: "logs/delegate/research-x.md" });
+
+describe("delegate commands (#393 T26)", () => {
+  it("--help lists exactly review and research: the lead agent implements", () => {
+    const result = spawnSync("bash", ["scripts/delegate.sh", "--help"], { encoding: "utf8" });
+    expect(result.status, result.stderr).toBe(0);
+    const subcommands = result.stdout
+      .split("\n")
+      .filter((line) => /^ {2}[a-z]+ /.test(line))
+      .map((line) => line.trim().split(/\s+/)[0]);
+    expect(subcommands).toEqual(["review", "research"]);
+  });
+
+  it("refuses a removed subcommand and a worker sandbox", () => {
+    for (const removed of ["work", "ship", "recheck", "update"]) {
+      const result = spawnSync("bash", ["scripts/delegate.sh", removed, "x"], { encoding: "utf8" });
+      expect(result.status, removed).not.toBe(0);
+    }
+    expect(() => delegatePermissions({ mode: "work" as "review", main, edit: "*" })).toThrow(/read-only/);
+  });
+});
 
 describe("delegate sandbox rules", () => {
   it("starts with a catch-all deny, so unknown actions are denied", () => {
     expect(review[0]).toEqual({ action: "*", resource: "*", effect: "deny" });
-    for (const rules of [review, work]) {
+    for (const rules of [review, research]) {
       expect(decide(rules, "webfetch", "https://example.com")).toBe("deny");
       expect(decide(rules, "websearch", "anything")).toBe("deny");
       expect(decide(rules, "execute", "*")).toBe("deny");
@@ -19,7 +40,7 @@ describe("delegate sandbox rules", () => {
   });
 
   it("denies secrets to both the read and the grep tool", () => {
-    for (const rules of [review, work]) {
+    for (const rules of [review, research]) {
       for (const path of [".env", ".env.local", "sub/.env", "auth.json"]) {
         expect(decide(rules, "read", path), `read ${path}`).toBe("deny");
         expect(decide(rules, "grep", path), `grep ${path}`).toBe("deny");
@@ -34,11 +55,12 @@ describe("delegate sandbox rules", () => {
     for (const path of ["AGENTS.md", "src/main.ts", "logs/delegate/verdict-8.md", ".env"]) {
       expect(decide(review, "edit", path), path).toBe("deny");
     }
-    expect(decide(work, "edit", "src/main.ts")).toBe("allow");
+    expect(decide(research, "edit", "logs/delegate/research-x.md")).toBe("allow");
+    expect(decide(research, "edit", "src/main.ts")).toBe("deny");
   });
 
   it("blocks shell commands that print untracked files or write past the edit rule", () => {
-    for (const rules of [review, work]) {
+    for (const rules of [review, research]) {
       for (const command of [
         "git diff --no-index /dev/null .env",
         "git diff --output=/tmp/x origin/main",
@@ -56,8 +78,9 @@ describe("delegate sandbox rules", () => {
         expect(decide(rules, "shell", command), command).toBe("deny");
       }
     }
-    for (const command of ["npx eslint --fix src", "npx vitest run -u", "git add src", "git commit -m x"]) {
+    for (const command of ["npx eslint --fix src", "npx vitest run -u", "git add src", "git commit -m x", "git push"]) {
       expect(decide(review, "shell", command), command).toBe("deny");
+      expect(decide(research, "shell", command), command).toBe("deny");
     }
   });
 
@@ -73,8 +96,6 @@ describe("delegate sandbox rules", () => {
     ]) {
       expect(decide(review, "shell", command), command).toBe("allow");
     }
-    expect(decide(work, "shell", "git commit -m 'fix: x'")).toBe("allow");
-    expect(decide(work, "shell", "npx eslint --fix src")).toBe("allow");
   });
 
   it("matches wildcards across slashes and spaces, like OpenCode V2", () => {
@@ -85,50 +106,16 @@ describe("delegate sandbox rules", () => {
   });
 });
 
-describe("lastVerdictIsFail", () => {
-  const verdict = (state: string, bold = false): string =>
-    `${bold ? "**" : ""}Verdict: ${state}${bold ? "**" : ""}\nHead: abcdef1\nReviewer: r\nFast lane: PASS (3 passed)`;
-
-  it("sees a FAIL in the same forms the review gate accepts", () => {
-    expect(lastVerdictIsFail([verdict("PASS"), verdict("FAIL", true)])).toBe(true);
-    expect(lastVerdictIsFail([verdict("FAIL")])).toBe(true);
-  });
-
-  it("is false when the last verdict passes or there is none", () => {
-    expect(lastVerdictIsFail([verdict("FAIL"), verdict("PASS")])).toBe(false);
-    expect(lastVerdictIsFail(["just a comment"])).toBe(false);
-    expect(lastVerdictIsFail([])).toBe(false);
-  });
-});
-
-describe("recheckAllowed", () => {
-  const head = "abcdef1234567890abcdef1234567890abcdef12";
-  const at = (state: string, sha = head): string => `Verdict: ${state}\nHead: ${sha}\nReviewer: r\nFast lane: PASS (3 passed)`;
-
-  it("needs a passing verdict at the reviewed head", () => {
-    expect(recheckAllowed([at("PASS+NOTES")], head)).toBe(true);
-    expect(recheckAllowed([at("PASS", head.slice(0, 7))], head)).toBe(true);
-    expect(recheckAllowed([], head)).toBe(false);
-    expect(recheckAllowed([at("PASS", "1111111")], head)).toBe(false);
-  });
-
-  it("refuses when a FAIL is the last verdict", () => {
-    expect(recheckAllowed([at("PASS"), at("FAIL")], head)).toBe(false);
-  });
-});
-
-describe("delegate sandbox: git cannot run worker code", () => {
+describe("delegate sandbox: git cannot run delegate code", () => {
   // 2026-11-13: a worker rewrote the worktree `.git` file to point at a fake git
   // dir whose config set `core.fsmonitor` to its own script, so every allowed
   // `git status` ran an arbitrary command.
-  it("denies edits to git metadata and npm config for workers and reviewers", () => {
-    for (const rules of [review, work]) {
+  it("denies edits to git metadata and npm config to every delegate", () => {
+    for (const rules of [review, research]) {
       for (const path of [".git", ".git/config", "sub/.git", "sub/.git/config", ".gitmodules", ".gitattributes", ".npmrc", "x/.npmrc", "node_modules/eslint/bin/eslint.js", "sub/node_modules/x.js"]) {
         expect(decide(rules, "edit", path), path).toBe("deny");
       }
     }
-    expect(decide(work, "edit", ".gitignore")).toBe("allow");
-    expect(decide(work, "edit", "src/git-helpers.ts")).toBe("allow");
   });
 
   it("gives every delegate run a git config that turns off fsmonitor and hooks", () => {

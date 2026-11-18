@@ -103,11 +103,16 @@ export const SATURATION_STREAK = 3;
 
 /**
  * Cases at pass^k = 1 in each of the last `streak` baselines (#393 T21).
- * Older files call the field `passAtK`. Fewer baselines than the streak: none.
+ * Older files call the field `passAtK`. Only baselines with the same case set
+ * as the newest one count: a suite that was cut (27 -> 12 cases in #393 T20)
+ * starts a new streak. Fewer such baselines than the streak: none.
  */
 export function saturatedCases(history: readonly ToolUseBaseline[], streak = SATURATION_STREAK): string[] {
-  if (history.length < streak) return [];
-  const recent = history.slice(-streak);
+  const shape = (baseline: ToolUseBaseline) => baseline.cases.map((entry) => entry.id).sort((a, b) => a.localeCompare(b)).join("\n");
+  const newest = history.at(-1);
+  const same = newest ? history.filter((baseline) => shape(baseline) === shape(newest)) : [];
+  if (same.length < streak) return [];
+  const recent = same.slice(-streak);
   const full = (baseline: ToolUseBaseline) =>
     new Set(
       baseline.cases

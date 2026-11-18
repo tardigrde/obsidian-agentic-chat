@@ -10,16 +10,7 @@ export interface EvalSuite {
   cases: AgenticEvalCase[];
 }
 
-export type AgenticEvalCase = StaticContextEvalCase | ScriptedDogfoodEvalCase | LlmJudgeEvalCase;
-
-export interface StaticContextEvalCase {
-  id: string;
-  type: "static-context";
-  prompt?: string;
-  systemPrompt?: string;
-  contextWindow?: number;
-  assertions: EvalAssertion[];
-}
+export type AgenticEvalCase = ScriptedDogfoodEvalCase;
 
 export interface ScriptedDogfoodEvalCase {
   id: string;
@@ -32,23 +23,7 @@ export interface ScriptedDogfoodEvalCase {
   assertions: EvalAssertion[];
 }
 
-export interface LlmJudgeEvalCase {
-  id: string;
-  type: "llm-judge";
-  dogfoodRunId?: string;
-  minOverallScore?: number;
-  minDimensionScore?: number;
-}
-
 export type EvalAssertion =
-  | ContextContainsAssertion
-  | ContextNotContainsAssertion
-  | ToolRegisteredAssertion
-  | ToolNotRegisteredAssertion
-  | ToolDescriptionContainsAssertion
-  | MaxToolSchemaTokensAssertion
-  | MaxContextCharsAssertion
-  | PromptMentionsOnlyRegisteredToolsAssertion
   | DogfoodInvariantsPassAssertion
   | RequiredToolStartedAssertion
   | MaxRepeatedExternalPathActionAssertion
@@ -61,47 +36,6 @@ interface EvalAssertionBase {
   severity?: EvalSeverity;
   area?: string;
   message?: string;
-}
-
-export interface ContextContainsAssertion extends EvalAssertionBase {
-  type: "context_contains";
-  text: string;
-}
-
-export interface ContextNotContainsAssertion extends EvalAssertionBase {
-  type: "context_not_contains";
-  text: string;
-}
-
-export interface ToolRegisteredAssertion extends EvalAssertionBase {
-  type: "tool_registered";
-  name: string;
-}
-
-export interface ToolNotRegisteredAssertion extends EvalAssertionBase {
-  type: "tool_not_registered";
-  name: string;
-}
-
-export interface ToolDescriptionContainsAssertion extends EvalAssertionBase {
-  type: "tool_description_contains";
-  name: string;
-  text: string;
-}
-
-export interface MaxToolSchemaTokensAssertion extends EvalAssertionBase {
-  type: "max_tool_schema_tokens";
-  max: number;
-}
-
-export interface MaxContextCharsAssertion extends EvalAssertionBase {
-  type: "max_context_chars";
-  max: number;
-}
-
-export interface PromptMentionsOnlyRegisteredToolsAssertion extends EvalAssertionBase {
-  type: "prompt_mentions_only_registered_tools";
-  names?: string[];
 }
 
 export interface DogfoodInvariantsPassAssertion extends EvalAssertionBase {
@@ -157,20 +91,6 @@ export interface EvalCaseResult {
   skippedReason?: string;
 }
 
-export interface StaticContextSnapshot {
-  systemPrompt: string;
-  userPrompt: string;
-  contextChars: number;
-  toolSchemaTokens: number;
-  knownToolNames: string[];
-  tools: Array<{
-    name: string;
-    label?: string;
-    description?: string;
-    parameters?: unknown;
-  }>;
-}
-
 export interface DogfoodInvariantSnapshot {
   ok: boolean;
   findings: Array<{ severity: EvalSeverity; area: string; message: string }>;
@@ -223,14 +143,6 @@ export interface ScriptedDogfoodSnapshot {
 }
 
 const ASSERTION_TYPES = new Set<EvalAssertion["type"]>([
-  "context_contains",
-  "context_not_contains",
-  "tool_registered",
-  "tool_not_registered",
-  "tool_description_contains",
-  "max_tool_schema_tokens",
-  "max_context_chars",
-  "prompt_mentions_only_registered_tools",
   "dogfood_invariants_pass",
   "required_tool_started",
   "max_repeated_external_path_action",
@@ -259,28 +171,6 @@ export function validateEvalSuite(input: unknown): EvalSuite {
     name,
     description: optionalString(suite.description),
     cases,
-  };
-}
-
-export function evaluateStaticContextCase(
-  evalCase: StaticContextEvalCase,
-  snapshot: StaticContextSnapshot,
-): EvalCaseResult {
-  const findings: EvalFinding[] = [];
-  for (const assertion of evalCase.assertions) {
-    findings.push(...evaluateStaticAssertion(evalCase.id, assertion, snapshot));
-  }
-  return {
-    id: evalCase.id,
-    type: evalCase.type,
-    status: findings.length > 0 ? "problem" : "pass",
-    findings,
-    metrics: {
-      contextChars: snapshot.contextChars,
-      toolSchemaTokens: snapshot.toolSchemaTokens,
-      toolCount: snapshot.tools.length,
-      toolNames: snapshot.tools.map((tool) => tool.name),
-    },
   };
 }
 
@@ -345,17 +235,6 @@ function validateCase(input: unknown, index: number): AgenticEvalCase {
   const evalCase = objectValue(input, `suite.cases[${index}]`);
   const id = requiredString(evalCase.id, `suite.cases[${index}].id`);
   const type = requiredString(evalCase.type, `suite.cases[${index}].type`);
-  if (type === "static-context") {
-    const assertions = validateAssertions(evalCase.assertions, `suite.cases[${index}].assertions`);
-    return {
-      id,
-      type,
-      prompt: optionalString(evalCase.prompt),
-      systemPrompt: optionalString(evalCase.systemPrompt),
-      contextWindow: optionalPositiveNumber(evalCase.contextWindow, `suite.cases[${index}].contextWindow`),
-      assertions,
-    };
-  }
   if (type === "scripted-dogfood") {
     const assertions = validateAssertions(evalCase.assertions, `suite.cases[${index}].assertions`);
     return {
@@ -363,15 +242,6 @@ function validateCase(input: unknown, index: number): AgenticEvalCase {
       type,
       dogfood: validateDogfoodConfig(evalCase.dogfood, `suite.cases[${index}].dogfood`),
       assertions,
-    };
-  }
-  if (type === "llm-judge") {
-    return {
-      id,
-      type,
-      dogfoodRunId: optionalString(evalCase.dogfoodRunId),
-      minOverallScore: optionalPositiveNumber(evalCase.minOverallScore, `suite.cases[${index}].minOverallScore`),
-      minDimensionScore: optionalPositiveNumber(evalCase.minDimensionScore, `suite.cases[${index}].minDimensionScore`),
     };
   }
   throw new Error(`Unsupported eval case type for ${id}: ${type}`);
@@ -405,27 +275,8 @@ function validateAssertion(input: unknown, path: string): EvalAssertion {
   };
 
   switch (type) {
-    case "context_contains":
-      return { ...base, type, text: requiredString(assertion.text, `${path}.text`) };
-    case "context_not_contains":
-      return { ...base, type, text: requiredString(assertion.text, `${path}.text`) };
-    case "tool_registered":
-      return { ...base, type, name: requiredString(assertion.name, `${path}.name`) };
-    case "tool_not_registered":
-      return { ...base, type, name: requiredString(assertion.name, `${path}.name`) };
     case "required_tool_started":
       return { ...base, type, name: requiredString(assertion.name, `${path}.name`) };
-    case "tool_description_contains":
-      return {
-        ...base,
-        type,
-        name: requiredString(assertion.name, `${path}.name`),
-        text: requiredString(assertion.text, `${path}.text`),
-      };
-    case "max_tool_schema_tokens":
-      return { ...base, type, max: positiveNumber(assertion.max, `${path}.max`) };
-    case "max_context_chars":
-      return { ...base, type, max: positiveNumber(assertion.max, `${path}.max`) };
     case "max_user_message_chars":
       return { ...base, type, max: positiveNumber(assertion.max, `${path}.max`) };
     case "max_tool_errors":
@@ -435,14 +286,6 @@ function validateAssertion(input: unknown, path: string): EvalAssertion {
         max: positiveNumber(assertion.max, `${path}.max`),
         name: optionalString(assertion.name),
         allowedByTool: validateOptionalCountRecord(assertion.allowedByTool, `${path}.allowedByTool`),
-      };
-    case "prompt_mentions_only_registered_tools":
-      return {
-        ...base,
-        type,
-        names: assertion.names === undefined ? undefined : arrayValue(assertion.names, `${path}.names`).map((value, index) =>
-          requiredString(value, `${path}.names[${index}]`),
-        ),
       };
     case "dogfood_invariants_pass":
       return { ...base, type };
@@ -457,148 +300,6 @@ function validateAssertion(input: unknown, path: string): EvalAssertion {
       };
   }
   throw new Error(`Unsupported assertion type at ${path}: ${type}`);
-}
-
-function evaluateStaticAssertion(
-  caseId: string,
-  assertion: EvalAssertion,
-  snapshot: StaticContextSnapshot,
-): EvalFinding[] {
-  switch (assertion.type) {
-    case "context_contains":
-      return evaluateContextContains(caseId, assertion, snapshot);
-    case "context_not_contains":
-      return evaluateContextNotContains(caseId, assertion, snapshot);
-    case "tool_registered":
-      return evaluateToolRegistered(caseId, assertion, snapshot);
-    case "tool_not_registered":
-      return evaluateToolNotRegistered(caseId, assertion, snapshot);
-    case "tool_description_contains":
-      return evaluateToolDescriptionContains(caseId, assertion, snapshot);
-    case "max_tool_schema_tokens":
-      return evaluateMaxToolSchemaTokens(caseId, assertion, snapshot);
-    case "max_context_chars":
-      return evaluateMaxContextChars(caseId, assertion, snapshot);
-    case "prompt_mentions_only_registered_tools":
-      return evaluatePromptMentionsOnlyRegisteredTools(caseId, assertion, snapshot);
-    default:
-      return [];
-  }
-}
-
-function evaluateContextContains(
-  caseId: string,
-  assertion: ContextContainsAssertion,
-  snapshot: StaticContextSnapshot,
-): EvalFinding[] {
-  return snapshot.systemPrompt.includes(assertion.text)
-    ? []
-    : [finding(caseId, assertion, "prompt", `System prompt does not contain required text: ${assertion.text}`)];
-}
-
-function evaluateContextNotContains(
-  caseId: string,
-  assertion: ContextNotContainsAssertion,
-  snapshot: StaticContextSnapshot,
-): EvalFinding[] {
-  return snapshot.systemPrompt.includes(assertion.text)
-    ? [finding(caseId, assertion, "prompt", `System prompt contains forbidden text: ${assertion.text}`)]
-    : [];
-}
-
-function evaluateToolRegistered(
-  caseId: string,
-  assertion: ToolRegisteredAssertion,
-  snapshot: StaticContextSnapshot,
-): EvalFinding[] {
-  return hasTool(snapshot, assertion.name)
-    ? []
-    : [finding(caseId, assertion, "tools", `Expected tool is not registered: ${assertion.name}`)];
-}
-
-function evaluateToolNotRegistered(
-  caseId: string,
-  assertion: ToolNotRegisteredAssertion,
-  snapshot: StaticContextSnapshot,
-): EvalFinding[] {
-  return hasTool(snapshot, assertion.name)
-    ? [finding(caseId, assertion, "tools", `Tool should not be registered: ${assertion.name}`)]
-    : [];
-}
-
-function evaluateToolDescriptionContains(
-  caseId: string,
-  assertion: ToolDescriptionContainsAssertion,
-  snapshot: StaticContextSnapshot,
-): EvalFinding[] {
-  const tool = toolByName(snapshot, assertion.name);
-  if (!tool) return [finding(caseId, assertion, "tool-description", `Tool is not registered: ${assertion.name}`)];
-  return (tool.description ?? "").includes(assertion.text)
-    ? []
-    : [
-        finding(
-          caseId,
-          assertion,
-          "tool-description",
-          `Tool ${assertion.name} description does not contain: ${assertion.text}`,
-          { description: tool.description ?? "" },
-        ),
-      ];
-}
-
-function evaluateMaxToolSchemaTokens(
-  caseId: string,
-  assertion: MaxToolSchemaTokensAssertion,
-  snapshot: StaticContextSnapshot,
-): EvalFinding[] {
-  return snapshot.toolSchemaTokens <= assertion.max
-    ? []
-    : [
-        finding(
-          caseId,
-          assertion,
-          "context-budget",
-          `Tool schema estimate is ${snapshot.toolSchemaTokens} tokens, over limit ${assertion.max}.`,
-        ),
-      ];
-}
-
-function evaluateMaxContextChars(
-  caseId: string,
-  assertion: MaxContextCharsAssertion,
-  snapshot: StaticContextSnapshot,
-): EvalFinding[] {
-  return snapshot.contextChars <= assertion.max
-    ? []
-    : [
-        finding(
-          caseId,
-          assertion,
-          "context-budget",
-          `Static context is ${snapshot.contextChars} chars, over limit ${assertion.max}.`,
-        ),
-      ];
-}
-
-function evaluatePromptMentionsOnlyRegisteredTools(
-  caseId: string,
-  assertion: PromptMentionsOnlyRegisteredToolsAssertion,
-  snapshot: StaticContextSnapshot,
-): EvalFinding[] {
-  const mentionedUnavailable = (assertion.names ?? snapshot.knownToolNames).filter(
-    (name) => !hasTool(snapshot, name) && mentionsToolName(snapshot.systemPrompt, name),
-  );
-  return mentionedUnavailable.length === 0
-    ? []
-    : [
-        finding(
-          caseId,
-          assertion,
-          "prompt-tools",
-          `System prompt mentions unavailable tool(s): ${mentionedUnavailable.join(", ")}.`,
-          { mentionedUnavailable },
-        ),
-      ];
 }
 
 function evaluateDogfoodAssertion(
@@ -700,20 +401,6 @@ function finding(
     message: assertion.message ?? defaultMessage,
     details,
   };
-}
-
-function hasTool(snapshot: StaticContextSnapshot, name: string): boolean {
-  return snapshot.tools.some((tool) => tool.name === name);
-}
-
-function toolByName(snapshot: StaticContextSnapshot, name: string): StaticContextSnapshot["tools"][number] | undefined {
-  return snapshot.tools.find((tool) => tool.name === name);
-}
-
-function mentionsToolName(text: string, name: string): boolean {
-  const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const pattern = new RegExp(`(^|[^A-Za-z0-9_-])${escaped}($|[^A-Za-z0-9_-])`, "i");
-  return pattern.test(text);
 }
 
 function dogfoodMaxUserMessageChars(snapshot: ScriptedDogfoodSnapshot): number {

@@ -19,7 +19,34 @@ export type RunOptions = {
   quiet?: boolean;
   /** Wall-time cap: SIGTERM the child (SIGKILL 5 s later) and reject with this message's text. */
   timeout?: { ms: number; message: string };
+  /** See the child's output as it streams (it is still printed). */
+  onOutput?: (text: string) => void;
 };
+
+/**
+ * The WDIO/mocha summary of a run: every `N passing|failing|pending` line,
+ * summed over spec files. Null when no summary was printed at all.
+ */
+export function mochaCounts(output: string): { passed: number; failed: number; skipped: number } | null {
+  const counts = { passed: 0, failed: 0, skipped: 0 };
+  let seen = false;
+  for (const match of output.matchAll(/^\s*(\d+) (passing|failing|pending|skipped)\b/gm)) {
+    seen = true;
+    const count = Number(match[1]);
+    if (match[2] === "passing") counts.passed += count;
+    else if (match[2] === "failing") counts.failed += count;
+    else counts.skipped += count;
+  }
+  return seen ? counts : null;
+}
+
+/** A recorded run proves something only when at least one test ran and none was skipped. */
+export function zeroTestFailure(counts: ReturnType<typeof mochaCounts>): string | undefined {
+  if (!counts) return "no test summary: 0 tests executed";
+  if (counts.passed + counts.failed === 0) return "0 tests executed";
+  if (counts.skipped > 0) return `${counts.skipped} test(s) skipped; a recorded run must execute every test`;
+  return undefined;
+}
 
 export const BINARY_DIRS = ["/usr/bin", "/usr/local/bin", "/bin"];
 
@@ -106,8 +133,16 @@ export function run(command: string, args: string[], options: RunOptions = {}): 
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, {
       env: { ...process.env, ...options.env },
-      stdio: options.quiet ? ["ignore", "ignore", "ignore"] : "inherit",
+      stdio: options.quiet ? ["ignore", "ignore", "ignore"] : options.onOutput ? ["inherit", "pipe", "pipe"] : "inherit",
     });
+    if (options.onOutput && !options.quiet) {
+      const forward = (target: NodeJS.WriteStream) => (chunk: Buffer) => {
+        target.write(chunk);
+        options.onOutput?.(chunk.toString());
+      };
+      child.stdout?.on("data", forward(process.stdout));
+      child.stderr?.on("data", forward(process.stderr));
+    }
     let timedOut = false;
     let killTimer: NodeJS.Timeout | undefined;
     const timer = options.timeout

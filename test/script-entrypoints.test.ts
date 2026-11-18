@@ -13,10 +13,6 @@ const TSX_ENTRYPOINTS = [
   "scripts/run-agentic-evals.ts",
   "scripts/run-tool-use-evals.ts",
   "scripts/run-dogfood-e2e.ts",
-  "scripts/compare-agentic-evals.ts",
-  "scripts/generate-dogfood-vault.ts",
-  "scripts/assert-dogfood-invariants.ts",
-  "scripts/report-dogfood-run.ts",
   "scripts/chaos-monkey.ts",
   "scripts/probe.ts",
   "scripts/eval/trace-miner.ts",
@@ -32,6 +28,7 @@ const NODE_ENTRYPOINTS = [
   "scripts/check-skips.mjs",
   "scripts/logs-prune.mjs",
   "scripts/tests-status.mjs",
+  "scripts/gate-report.mjs",
 ];
 
 function runHelp(args: string[]): Promise<{ code: number | null; output: string }> {

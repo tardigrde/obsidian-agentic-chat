@@ -5,99 +5,88 @@ description: Use for any code change in this repo: bug, feature, refactor, or de
 
 # Ship change
 
-Own the change end to end. Plan, implement, verify, and report evidence.
-Commands, tiers, and rules: [testing.md](../../../docs/development/testing.md).
-Start every change with `npm run verify -- plan`.
+Own one change end to end: plan, implement, verify, report evidence. Commands,
+tiers, and rules: [testing.md](../../../docs/development/testing.md).
+
+```bash
+npm run verify -- plan                 # first: the exact commands this diff needs
+npm run verify -- change <test>        # the witness loop: red before, green after
+npm run verify -- eval --canary        # a prompt, tool, or agent-loop change (live, local)
+```
+
+Run every command `plan` prints; it always ends with `check`, the merge gate.
 
 ## Non-negotiables
 
-1. **Witness first.** Every change has the smallest check that fails before and
-   passes after. For a bug, run it before the fix and keep both outputs.
-2. **Lowest failing lane.** Run the cheapest tier that can actually fail for the
-   risk you introduced. Do not run `dogfood` for a CSS change; do not ship a
-   prompt change on unit tests alone.
-3. **Counts, not exit codes.** Zero tests or all tests skipped is a failure.
-4. **UI evidence is an assertion plus a screenshot.** If the change adds,
-   removes, or changes a command, button, modal, settings row, mode, tab, or
-   panel, commit an e2e assertion that fails without it and attach one
-   screenshot to the PR. A screenshot alone is not a verdict; no video is
-   required. A removal uses a `kind: removal` witness.
-5. **Prompt or tool changes need the eval.** A change to the system prompt, a
-   tool description, or the agent loop runs `npm run verify -- eval --suite core
-   --runs 3` (live, local) against the baseline before it ships. First run the
-   canary base vs head and paste the table in the PR:
-   `npm run eval:ab -- --case organize.easy.invoice,tools.easy.search --runs 5`
-   (one extra system-prompt line moved these two from 4/5 and 5/5 to 0/5 and
-   3/5 in card 1). `npm run eval:tool-use -- --suite
-   test/evals/tool-use/core.eval.json --canary` runs the whole 5-case slice.
-6. **No secret or vault data in a commit.**
+1. **Witness first.** The smallest check that fails before and passes after.
+   For a bug, run it before the fix and keep both outputs.
+2. **Lowest failing lane.** The cheapest tier that can fail for the risk you
+   added. No dogfood for a CSS change; no prompt change on unit tests alone.
+3. **Counts, not exit codes.** Zero tests or all skipped is a failure.
+4. **UI evidence:** a committed e2e assertion that fails without the change,
+   plus one screenshot in the PR. A removal uses a `kind: removal` witness.
+5. **Prompt or tool change: the canary.** A change to the system prompt, a tool
+   description, or the agent loop runs the canary (5 cases x 5 runs, about
+   $0.03; add `--parallel 2` to halve the wall time) and pastes its table in the
+   PR. One case outside its interval is `Weak`: run it once more. A `Signal` (a
+   strong move, or two cases the same way) needs `eval:ab` on those cases before
+   you ship.
+6. **No secrets, vault data, or sessions in a commit.**
 
 ## Route
 
-| request | route |
+| Request | Route |
 |---|---|
-| Bug report | Reproduce on the matching surface first. Deterministic replay or e2e, not a guess. Then bisect, fix, and re-run the repro. |
-| New or changed behavior | Write the feature-map entry and name the entry points before code. Then the smallest implementation plus the witness. |
-| Refactor | Behavior preserving. Capture the baseline, change shape, prove the same checks still pass. |
-| Dependency or Obsidian upgrade | Capture the baseline, bump, prove the resolved version, then re-run behavior checks. |
-| Idea with unknown behavior | Do not implement to spec. Run `@probe-feature`, decide from evidence, then come back. |
+| Bug | Reproduce on the user's surface first (replay for agent behavior, e2e for UI). Then fix the root cause and re-run the repro. |
+| New or changed behavior | Name the entry points and their feature-map rows before code. Then the smallest change plus the witness. |
+| Refactor | Behavior stays. Capture the baseline, change the shape, prove the same checks pass. |
+| Dependency or Obsidian upgrade | Baseline, bump, prove the resolved version (`npm ls`, lockfile), re-run behavior checks. |
+| Unknown correct behavior | Do not build to a guess. One recorded run with one falsifier (`@app`), then decide. |
 
 ## Feature loop
 
-1. Read the matching file in
-   `.agents/skills/verify-obsidian-chat/features/`.
-2. List every user entry point the change touches. Slash command, palette
-   command, settings tab, composer control, drag and drop, agent tool, subagent.
-   For each changed entry point, name the e2e assertion that will prove it.
-3. Name the witness: the smallest assertion that would fail today.
-4. Implement the smallest change that satisfies it.
-5. Verify: run what `npm run verify -- plan` prints (the table in
-   testing.md, "What to run, by change"). On a desktop, wrap app runs as
-   `npm run nested -- <command>`.
-6. Update the feature map: entry points, proof command, last verified date.
-7. Report evidence: command, exit code, counts, artifact path.
+1. Read the matching file in `.agents/skills/app/features/`.
+2. List every entry point the change touches: slash command, palette command,
+   settings row, composer control, agent tool, subagent. Name the e2e assertion
+   for each changed one.
+3. Name the witness and watch it fail.
+4. Implement the smallest change that makes it pass.
+5. Run what `plan` prints. On a desktop, wrap app runs in `npm run nested --`.
+6. Update the feature-map row: entry points, proof, status.
+7. Report: command, exit code, counts, the `run-result.json` path.
 
 ## Bug loop
 
-1. Reproduce on the same surface a user would use. If it is UI, drive the real
-   Obsidian app; if it is agent behavior, use `test/helpers/agent-replay.ts`.
-2. If the repro is not reproducible, tighten the conditions or instrument until
-   it fires. Do not ship a "might fix" change.
-3. Stage the failing repro before the fix in git history.
-4. Fix the root cause. A guard is a fix only when the state it handles is
+1. Reproduce where a user would see it. Not reproducible? Tighten the
+   conditions or instrument until it fires. No "might fix".
+2. Commit the failing repro before the fix.
+3. Fix the root cause. A guard is a fix only when the state it handles is
    legitimate.
-5. Re-run the repro. Unit tests show branch behavior, not bug absence.
-
-## Upgrade loop
-
-1. Baseline: `npm run verify -- check` and record the result.
-2. Bump. Prove the resolved version with `npm ls <package>` and a lockfile diff.
-3. Re-run `check`. If prompt, tool, context, or provider code changed, also run the
-   eval A/B with `--fail-on-regression`.
-4. For Obsidian: also run `AGENTIC_CHAT_DESIGN_AUDIT=1 AGENTIC_CHAT_DESIGN_AUDIT_MODE=sidebar npm run verify -- app design-audit` and the mobile lane.
+4. Re-run the repro. Unit tests show branch behavior, not bug absence.
 
 ## Evals
 
-Correctness, cost, and time are judged together; a `trade-off` is not a win.
+Correctness, cost, and time are judged together; a trade-off is not a win.
 Hold everything fixed but one variable. Never weaken a check or tune a case to
-move a number. `--smoke` per change; full `core` x 3 at most once per PR.
+move a number. A new `core` baseline (12 cases x 3 runs) at most once per PR.
 Details: [evals.md](../../../docs/development/evals.md).
 
 ## Done means
 
-- Witness exists and was shown failing first.
-- The chosen lane is green with counts recorded.
-- Feature map updated if a user-facing entry point changed.
-- Changed entry points have an e2e assertion and one screenshot in the PR.
-- Evidence is in the response, not just "it works".
+- The witness exists and was shown failing first.
+- The lanes `plan` printed are green, with counts.
+- Changed entry points have an e2e assertion, a screenshot, and a current
+  feature-map row.
+- A prompt or tool change has its canary table in the PR.
+- The evidence is in the report, not "it works".
 
 ## Test quality
 
-Prefer no test over a bad test. A bad test mocks the subject, encodes the current
-implementation, or would be deleted immediately after proving the fix.
+Prefer no test over a bad test. A bad test mocks the subject, mirrors the
+implementation, or would be deleted right after it proved the fix.
 
-## Read next
+## After the change
 
-- `@verify-obsidian-chat` for the real app and the feature map.
-- `@probe-feature` for exploratory work.
-- `docs/development/verification.md` for lane internals and the fake-green list.
+A reviewer agent posts one verdict after CI is green (`@verify-pr`). The owner
+merges only on "merge". After a big change (a new tool or entry point, a prompt
+rewrite, three or more merged PRs), propose an explore run (`@app`).

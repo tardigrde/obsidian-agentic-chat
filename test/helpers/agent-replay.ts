@@ -1,13 +1,14 @@
 import type { App } from "obsidian";
-import type { AgentEvent, AgentMessage } from "@earendil-works/pi-agent-core";
+import type { AgentEvent, AgentMessage, StreamFn } from "@earendil-works/pi-agent-core";
 import { AgentService } from "../../src/agent/agent-service";
-import type { UserApprovalChoice } from "../../src/agent/tool-call-controller";
+import type { ToolApprovalRequest, UserApprovalChoice } from "../../src/agent/tool-call-controller";
 import {
   createReplayStreamController,
   type ReplayStreamCall,
   type ReplayTurn,
 } from "../../src/agent/replay-stream";
 import { ObsidianSessionManager, SessionWriteRegistry } from "../../src/session/session-manager";
+import type { AskUserHandler } from "../../src/tools/ask-user-tool";
 import { DEFAULT_SETTINGS, type AgenticChatSettings } from "../../src/settings-schema";
 import { FakeAdapter as MemoryAdapter } from "../support/fake-adapter";
 
@@ -16,7 +17,10 @@ export interface AgentReplayOptions {
   prompt?: string;
   settings?: Partial<AgenticChatSettings>;
   app?: App;
-  confirmToolCall?: () => Promise<UserApprovalChoice>;
+  confirmToolCall?: (request: ToolApprovalRequest) => Promise<UserApprovalChoice>;
+  askUser?: AskUserHandler;
+  /** Sees each model request as the provider would: system prompt, messages, tools. */
+  onRequest?: (context: Parameters<StreamFn>[1]) => void;
 }
 
 export interface AgentReplayResult {
@@ -45,7 +49,13 @@ export async function runAgentReplay(options: AgentReplayOptions): Promise<Agent
     getSettings: () => settings,
     sessionManager,
     confirmToolCall: options.confirmToolCall ?? (async () => ({ approved: true, remember: false })),
-    streamFn: replay.streamFn,
+    ...(options.askUser ? { askUser: options.askUser } : {}),
+    streamFn: options.onRequest
+      ? (((model, context, streamOptions) => {
+          options.onRequest?.(context);
+          return replay.streamFn(model, context, streamOptions);
+        }) as StreamFn)
+      : replay.streamFn,
   });
   const events: AgentEvent[] = [];
   service.onEvent((event) => {

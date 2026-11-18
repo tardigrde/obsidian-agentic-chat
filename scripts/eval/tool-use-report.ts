@@ -82,6 +82,8 @@ export interface ToolUseSummary {
   prices: RunPricing;
   /** The commit the run measured (from the plan). */
   gitHead?: string;
+  /** Obsidian instances that ran side by side; absent = 1. Time per case depends on it. */
+  parallel?: number;
   budget: {
     caps: ToolUseBudgetCaps;
     used: { usd: number; modelCalls: number; tokens: number };
@@ -102,6 +104,8 @@ export interface ToolUseBaseline {
   prices: RunPricing;
   date: string;
   gitHead: string;
+  /** Obsidian instances that ran side by side; absent = 1. */
+  parallel?: number;
   overall: OverallSummary;
   cases: Array<
     { id: string } & CaseThinking & Pick<
@@ -210,6 +214,7 @@ export function buildSummary(
     durationMs: timing.finishedAt.getTime() - timing.startedAt.getTime(),
     prices: plan.prices,
     ...(plan.gitHead ? { gitHead: plan.gitHead } : {}),
+    ...(plan.parallel && plan.parallel > 1 ? { parallel: plan.parallel } : {}),
     budget: { caps: plan.budget, used: tracker.totals(), exceeded: tracker.exceeded() },
     overall: summarizeOverall(cases),
     cases,
@@ -227,6 +232,7 @@ export function toBaseline(summary: ToolUseSummary, stamp: { date: Date; gitHead
     prices: summary.prices,
     date: stamp.date.toISOString(),
     gitHead: stamp.gitHead,
+    ...(summary.parallel ? { parallel: summary.parallel } : {}),
     overall: summary.overall,
     cases: summary.cases.map((entry) => ({
       id: entry.id,
@@ -405,6 +411,16 @@ export interface DryRunPlan {
   turn: ToolUsePlan["turn"];
   outDir: string;
   thinking: { level: ToolUseThinkingLevel; source: ThinkingLevelSource };
+  /** Per-instance split for `--parallel`; absent or one shard = one instance. */
+  shards?: ReadonlyArray<{ cases: readonly { id: string }[]; runs: readonly unknown[] }>;
+}
+
+function parallelLines(shards: DryRunPlan["shards"]): string[] {
+  if (!shards || shards.length < 2) return [];
+  return [
+    `Parallel: ${shards.length} Obsidian instances, one vault and one driver port each; one shared budget`,
+    ...shards.map((shard, index) => `- instance ${index + 1}: ${shard.cases.length} case(s), ${shard.runs.length} run(s): ${shard.cases.map((entry) => entry.id).join(", ")}`),
+  ];
 }
 
 export function formatDryRun(plan: DryRunPlan): string {
@@ -428,6 +444,7 @@ export function formatDryRun(plan: DryRunPlan): string {
     }),
     `Budget: maxUsd ${plan.budget.maxUsd}, maxModelCalls ${plan.budget.maxModelCalls}, maxTokens ${plan.budget.maxTokens}`,
     `Turn: timeoutMs ${plan.turn.timeoutMs}, maxTurnsPerPrompt ${plan.turn.maxTurnsPerPrompt}`,
+    ...parallelLines(plan.shards),
     `Results: ${plan.outDir}`,
     "prices: not fetched (dry run)",
     `estimated cost: $${(runs * usdPerRun).toFixed(4)} (fixed assumption: ${estimate.tokensPerRun / 1000}k tokens/run, ` +

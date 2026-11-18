@@ -54,7 +54,7 @@ import {
 import { withHangTimeout } from "../../../scripts/chaos/hang-timeout";
 
 /**
- * Committed live driver for `@chaos-monkey`.
+ * Committed live driver for `verify -- explore` (`@app`).
  *
  * The runner writes a plan and starts this spec through the normal e2e
  * transport. This file is stable driver code, not a generated one-off spec:
@@ -137,7 +137,7 @@ function readApiKey(): string | undefined {
 }
 
 async function loadPlan(): Promise<ChaosPlan> {
-  if (!planPath) throw new Error("AGENTIC_CHAT_CHAOS_PLAN is required; start the run through npm run chaos");
+  if (!planPath) throw new Error("AGENTIC_CHAT_CHAOS_PLAN is required; start the run through npm run verify -- explore");
   const raw = JSON.parse(await readFile(planPath, "utf8")) as ChaosPlan;
   if (raw.version !== 1) throw new Error(`unsupported chaos plan version: ${String(raw.version)}`);
   return raw;
@@ -1172,8 +1172,7 @@ describe("chaos monkey live driver", function () {
       return;
     }
 
-    let sequence =
-      plan.mode === "focused" ? focusedSequence(plan.target ?? "composer") : genericSequence(plan.caps, plan.seed);
+    let sequence = genericSequence(plan.caps, plan.seed);
     if (sequence.length > plan.caps.maxSteps) sequence = sequence.slice(0, plan.caps.maxSteps);
 
     // Reserve each action's full call estimate before the run. Actions that do

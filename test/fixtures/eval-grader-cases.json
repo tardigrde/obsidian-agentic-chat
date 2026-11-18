@@ -1,0 +1,142 @@
+{
+  "version": 1,
+  "name": "grader-fixtures",
+  "description": "Two retired tool-use cases kept as grader fixtures: resolved-link grading and an any_of clarifying question. Not a live suite.",
+  "model": "deepseek/deepseek-v4.1-flash",
+  "runsPerCase": 3,
+  "thinkingLevel": "low",
+  "budget": {
+    "maxUsd": 1,
+    "maxModelCalls": 300,
+    "maxTokens": 3000000
+  },
+  "turn": {
+    "timeoutMs": 180000,
+    "maxTurnsPerPrompt": 15
+  },
+  "cases": [
+    {
+      "id": "rename.keep-links",
+      "prompt": "Rename my Atlas project note to Atlas Launch, and keep every link to it working.",
+      "seed": {
+        "files": {
+          "Projects/Atlas.md": "# Atlas\n\nProject note for Atlas.\n\nDeadline: March 3\n",
+          "Index.md": "# Index\n\n- [[Atlas]]\n",
+          "Weekly.md": "# Weekly\n\nSee [[Projects/Atlas|the Atlas project]].\n"
+        }
+      },
+      "settings": {
+        "ignoredGlobs": ""
+      },
+      "checks": [
+        {
+          "type": "file_exists",
+          "path": "Projects/Atlas Launch.md"
+        },
+        {
+          "type": "file_absent",
+          "path": "Projects/Atlas.md"
+        },
+        {
+          "type": "link_resolves",
+          "from": "Index.md",
+          "to": "Projects/Atlas Launch.md"
+        },
+        {
+          "type": "link_resolves",
+          "from": "Weekly.md",
+          "to": "Projects/Atlas Launch.md"
+        },
+        {
+          "type": "no_unresolved_links",
+          "path": "Index.md"
+        },
+        {
+          "type": "no_unresolved_links",
+          "path": "Weekly.md"
+        },
+        {
+          "type": "tool_called",
+          "name": "rename"
+        },
+        {
+          "type": "tool_not_called",
+          "name": "write"
+        },
+        {
+          "type": "tool_not_called",
+          "name": "delete"
+        },
+        {
+          "type": "max_tool_calls",
+          "max": 6
+        }
+      ]
+    },
+    {
+      "id": "ask.ambiguous-cleanup",
+      "prompt": "Clean up my notes.",
+      "seed": {
+        "files": {
+          "Notes/Meeting.md": "# Meeting\n\n- Agenda\n- Owners\n",
+          "Notes/Idea.md": "# Idea\n\n- Try weekly reviews\n",
+          "Projects/Atlas.md": "# Atlas\n\nDeadline: March 10\n",
+          "Journal/2026-11-01.md": "# 2026-11-01\n\n- Rest day\n",
+          "Inbox.md": "# Inbox\n\n- Sort mail\n",
+          "Scratch/draft.md": "# Draft\n\nA half-written paragraph.\n"
+        }
+      },
+      "settings": {
+        "ignoredGlobs": ""
+      },
+      "checks": [
+        {
+          "type": "any_of",
+          "checks": [
+            {
+              "type": "tool_called",
+              "name": "ask_user"
+            },
+            {
+              "type": "answer_contains",
+              "text": "\\?",
+              "regex": true
+            }
+          ]
+        },
+        {
+          "type": "tool_not_called",
+          "name": "*mutating*"
+        },
+        {
+          "type": "unchanged",
+          "path": "Notes/Meeting.md"
+        },
+        {
+          "type": "unchanged",
+          "path": "Notes/Idea.md"
+        },
+        {
+          "type": "unchanged",
+          "path": "Projects/Atlas.md"
+        },
+        {
+          "type": "unchanged",
+          "path": "Journal/2026-11-01.md"
+        },
+        {
+          "type": "unchanged",
+          "path": "Inbox.md"
+        },
+        {
+          "type": "unchanged",
+          "path": "Scratch/draft.md"
+        },
+        {
+          "type": "max_tool_calls",
+          "max": 14
+        }
+      ]
+    }
+  ]
+}

@@ -211,3 +211,20 @@ function costSource(summary: unknown): string | undefined {
   const value = summary && typeof summary === "object" ? (summary as { costSource?: unknown }).costSource : undefined;
   return typeof value === "string" ? value : undefined;
 }
+
+/**
+ * The names in `config/worktree-links`, with the same rules as
+ * `scripts/worktree.mjs`: no absolute path, `.`, `..` segment, or `.git` entry.
+ */
+export function linkNames(text: string): string[] {
+  const names: string[] = [];
+  for (const raw of text.split(/\r?\n/)) {
+    const line = raw.trim();
+    if (!line || line.startsWith("#")) continue;
+    const normalized = line.replaceAll("\\", "/");
+    if (path.isAbsolute(line) || normalized === "." || normalized.split("/").includes("..")) continue;
+    if (normalized === ".git" || normalized.startsWith(".git/")) continue;
+    names.push(normalized);
+  }
+  return names;
+}

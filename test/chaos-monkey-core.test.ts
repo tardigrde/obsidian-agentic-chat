@@ -3,7 +3,6 @@ import os from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import {
-  CHAOS_TARGETS,
   ChaosGuardError,
   DEFAULT_CAPS,
   DEFAULT_DRY_RUN_CAPS,
@@ -47,25 +46,19 @@ describe("chaos monkey caps", () => {
 });
 
 describe("chaos monkey mode selection", () => {
-  it("accepts every focused target", () => {
-    for (const target of CHAOS_TARGETS) {
-      expect(selectMode("focused", target)).toEqual({ mode: "focused", target });
-    }
+  it("has two modes: explore and a dry smoke (the default)", () => {
+    expect(selectMode(undefined, undefined)).toEqual({ mode: "smoke" });
+    expect(selectMode("explore", undefined)).toEqual({ mode: "explore" });
+    expect(selectMode("SMOKE", undefined)).toEqual({ mode: "smoke" });
   });
 
-  it("defaults to focused and requires a named target", () => {
-    expect(() => selectMode(undefined, undefined)).toThrow(/needs --target/);
-  });
-
-  it("accepts generic without a target", () => {
-    expect(selectMode("generic", undefined)).toEqual({ mode: "generic" });
-  });
-
-  it("rejects a target in generic mode and unknown values", () => {
-    expect(() => selectMode("generic", "settings")).toThrow(ChaosGuardError);
+  it("names the replacement for the removed focused and generic modes, and refuses --target", () => {
+    expect(() => selectMode("focused", "settings")).toThrow(/--mode focused was removed .*--mode explore --live/);
+    expect(() => selectMode("generic", undefined)).toThrow(/--mode generic was removed/);
+    expect(() => selectMode("smoke", "settings")).toThrow(/--target was removed/);
     expect(() => selectMode("chaos", undefined)).toThrow(ChaosGuardError);
-    expect(() => selectMode("focused", "browser")).toThrow(ChaosGuardError);
   });
+
 });
 
 const tempRoots: string[] = [];

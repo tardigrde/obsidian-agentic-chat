@@ -221,8 +221,12 @@ function timestamp() {
   return new Date().toISOString().replace(/[:.]/g, "-");
 }
 
-/** A failed assertion was printed (Vitest/Chai and node:assert both name it). */
-const ASSERTION_FAILED = /\bAssertionError\b/;
+/**
+ * A failed assertion was printed: Vitest/Chai and node:assert both start the
+ * error line with it. Only a line that starts with the name counts, so a log
+ * line that merely mentions AssertionError does not hide a crash-only red.
+ */
+const ASSERTION_FAILED = /^\s*AssertionError(?: \[ERR_ASSERTION\])?:/m;
 
 function nonAssertionRedMarker(output, { testChanged = true } = {}) {
   // A TypeError next to a failed assertion (a logged warning, a second test)

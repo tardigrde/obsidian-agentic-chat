@@ -2,20 +2,25 @@
 
 ## Process
 
-Eight skills carry the process. They live in `.agents/skills/` (`.claude/skills`
-links there), so Claude Code, OpenCode,
-Codex, and other agents that read that convention get the same workflow.
+Five skills carry the process. They live in `.agents/skills/` (`.claude/skills`
+links there), so Claude Code, OpenCode, Codex, and other agents that read that
+convention get the same workflow.
 
 | skill | use for |
 |---|---|
-| `@factory` | a goal that spans several PRs: split, delegate to opencode workers, review, merge, chaos |
-| `@ship-change` | behavior changes, bugs, multi-file work, dependency upgrades |
-| `@verify-obsidian-chat` | UI claims, settings, or proof in the real Obsidian app |
-| `@probe-feature` | behavior you cannot predict yet, or when the user asks for a recording |
-| `@break-change` | adversarial exploratory QA, removal audits, feature-map gaps |
-| `@chaos-monkey` | live exploratory run against a seeded throwaway vault after several PRs ship |
+| `@ship-change` | one change end to end: bug, feature, refactor, upgrade |
+| `@factory` | a goal that spans several PRs: split, implement, agent review, merge on "merge" |
 | `@verify-pr` | agent review of a PR you did not write; red/green witness proof |
+| `@app` | real Obsidian runs: specs, recorded runs, dogfood, chaos explore, the feature map |
 | `@worktree` | one task per worktree, env-linked commands, safe cleanup |
+
+Renamed in #393 (this note stays for one release): `@verify-obsidian-chat`,
+`@probe-feature`, and `@chaos-monkey` are now `@app`; `@break-change` was
+deleted (a removal uses a `kind: removal` witness).
+
+The lead agent implements and fixes. A reviewer agent (`npm run delegate --
+review`) reviews; a research agent (`npm run delegate -- research`) answers
+read-only questions when asked. Neither edits the repo.
 
 Match the weight of the process to the change:
 
@@ -23,19 +28,15 @@ Match the weight of the process to the change:
   the targeted lane.
 - A behavior change that can break something non-obvious, or one that touches
   several files: load `@ship-change`.
-- A claim about the UI, settings, or a real user journey: also load
-  `@verify-obsidian-chat`.
-- "I do not know what correct looks like yet": load `@probe-feature` instead of
-  guessing.
-- Before a product-cut PR, or when a command or UI entrypoint is deleted: load
-  `@break-change`. It is exploratory, not a lane.
+- A claim about the UI, settings, or a real user journey, or "I do not know what
+  correct looks like yet": also load `@app`.
 
 Do not load them all at once. Each skill names the next one when it needs it.
 
 After a big change (a new tool, a new UI entry point, a prompt rewrite, or 3+
 merged PRs), **propose** a chaos explore run to the owner
-(`npm run verify -- explore --mode generic --max-steps 6`). Do not run it
-unasked: it is on request only.
+(`npm run verify -- explore --mode explore --live`). Do not run it unasked: it
+is on request only.
 
 Put each rule in the lowest layer that can enforce it: `AGENTS.md` routes,
 skills hold procedure, `scripts/` and CI hold gates.
@@ -63,7 +64,8 @@ skills hold procedure, `scripts/` and CI hold gates.
 ## Testing
 
 Read [docs/development/testing.md](docs/development/testing.md): tiers, the
-eight lanes, what to run for each kind of change, the rules, and the evidence.
+eight lanes, what to run for each kind of change, the factory flow, the rules,
+and the evidence.
 The first command is always:
 
 ```bash
@@ -76,6 +78,7 @@ The ones you will use most:
 npm run verify -- change test/settings.test.ts   # the witness loop (several files, or a -t pattern)
 npm run verify -- check                          # merge gate; --no-app without a display
 npm run verify -- app settings-ui                # real Obsidian, one spec (scripted turns)
+npm run verify -- eval --canary                  # a prompt or tool change: 5 cases x 5 runs (live)
 npm run verify:witness -- --base origin/main --test-file <test> --src <src...>
 npm run tests:status                             # flaky, slower, last red per lane
 ```

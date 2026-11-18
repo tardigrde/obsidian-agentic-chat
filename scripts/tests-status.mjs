@@ -48,10 +48,16 @@ export function formatStatus(summary, file) {
   return `${lines.join("\n")}\n`;
 }
 
-function main() {
+async function main() {
+  if (process.argv.includes("--digest")) {
+    // The weekly gate digest needs GitHub; load it only when asked.
+    (await import("./gate-report.mjs")).main();
+    return;
+  }
   if (process.argv.includes("--help")) {
     console.log(
-      "Usage: npm run tests:status [-- --json] [-- --file <history.jsonl>]\n\n" +
+      "Usage: npm run tests:status [-- --json] [-- --file <history.jsonl>]\n" +
+        "       npm run tests:status -- --digest [--since <iso>] [--until <iso>] [--classify] [--write-defects]\n\n" +
         "Flaky tests, slower steps and tests, last red per lane, live cost. Reads logs/history.jsonl\n" +
         "in the main worktree (every worktree appends there).",
     );
@@ -67,4 +73,4 @@ function main() {
   process.stdout.write(formatStatus(summary, file));
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) main();
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) await main();

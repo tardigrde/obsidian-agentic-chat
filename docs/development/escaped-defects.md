@@ -1,20 +1,37 @@
 # Escaped defects
 
-A defect that reaches a release is a missing test, not only a bad line. Add one
-row per escaped defect. Keep the row after the fix.
+A defect that reaches `main` or a release is a missing test, not only a bad
+line. This page is data, not a template: the table below is generated from the
+`Found by:` line of merged fix PRs (#393 T25).
 
-| Date | Release | Defect | Why the tests missed it | Mutation or check that would catch it | Regression test |
-|---|---|---|---|---|---|
-| — | — | — | — | — | — |
+```bash
+npm run tests:status -- --digest --write-defects   # regenerate the table
+npm run tests:status -- --digest [--since <iso>] [--until <iso>] [--classify]
+```
 
-## How to use it
+The digest is weekly and local. It prints the gate reds of `ci`, `witness`, and
+`review` by conclusion (and, with `--classify`, CI reds by cause: real, flake,
+infra, process), the flaky tests in the local history, and the catches per
+layer. It is a triage aid; it never fails a build.
 
-1. Reproduce the defect with the smallest user action.
+First digest, the audit window 2026-11-11T06:27Z .. 2026-11-16T16:33Z: `ci` 13
+red of 282, `witness` 29 red of 390, `review` 172 red of 1000 (the counts of the
+#393 audit).
+
+## Fix PRs by the layer that found the defect
+
+`Found by:` values: `review`, `chaos`, `e2e`, `unit`, `eval`, `user`, `ci`,
+`dogfood`.
+
+<!-- generated: defects start -->
+| Merged | PR | Fix | Found by |
+|---|---|---|---|
+| — | — | no fix PR with a `Found by:` line yet | — |
+<!-- generated: defects end -->
+
+## When a defect escapes
+
+1. Reproduce it with the smallest user action.
 2. Name the assertion that was missing, not the line that was wrong.
-3. Add the regression test first. It must fail on the release commit.
-4. Add a mutation case or a fault case if a normal unit test cannot cover it.
-5. Fill the row and link the test path and line.
-
-Run the mutation matrix weekly, before a release, or after a fault fix. A
-surviving mutant that matches an escaped defect is a strong signal to add the
-test to the default matrix.
+3. Add the regression test first. It must fail on the commit that shipped it.
+4. Write `Found by: <layer>` in the fix PR body, then regenerate the table.

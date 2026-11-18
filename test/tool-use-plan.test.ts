@@ -10,6 +10,8 @@ import {
   parseRunRecord,
   planRuns,
   selectCases,
+  shardPlan,
+  type ToolUsePlan,
 } from "../scripts/eval/tool-use-plan";
 
 const CATEGORIES = ["find", "edit", "organize", "create", "properties", "tools", "safety", "recovery"];
@@ -48,7 +50,7 @@ describe("tool-use case selection", () => {
   });
 
   it("refuses --smoke for a suite with no smoke slice, and with --case", () => {
-    expect(() => selectCases(loadSuite("tool-use"), { smoke: true })).toThrow(/defines no smoke slice/);
+    expect(() => selectCases(loadSuite("regression"), { smoke: true })).toThrow(/defines no smoke slice/);
     expect(() => selectCases(loadSuite("core"), { smoke: true, caseIds: ["edit.easy.typo"] })).toThrow(
       /--smoke cannot be combined with --case/,
     );
@@ -109,17 +111,17 @@ describe("tool-use MCP fixture", () => {
 describe("tool-use suite smoke validation", () => {
   it("rejects a smoke id that is not a suite case", () => {
     const suite = rawSuite("core");
-    suite.smoke = ["find.hard.venue", "no.such.case"];
+    suite.smoke = ["find.easy.dentist", "no.such.case"];
     expect(() => validateToolUseSuite(suite)).toThrow(/suite\.smoke\[1\] is not a case id in this suite: no\.such\.case/);
   });
 
   it("rejects a repeated id, an empty list, and a non-array", () => {
     const suite = rawSuite("core");
-    suite.smoke = ["find.hard.venue", "find.hard.venue"];
-    expect(() => validateToolUseSuite(suite)).toThrow(/repeats the case id find\.hard\.venue/);
+    suite.smoke = ["find.easy.dentist", "find.easy.dentist"];
+    expect(() => validateToolUseSuite(suite)).toThrow(/repeats the case id find\.easy\.dentist/);
     suite.smoke = [];
     expect(() => validateToolUseSuite(suite)).toThrow(/suite\.smoke must name at least one case/);
-    suite.smoke = "find.hard.venue";
+    suite.smoke = "find.easy.dentist";
     expect(() => validateToolUseSuite(suite)).toThrow(/suite\.smoke must be an array/);
   });
 });
@@ -136,7 +138,8 @@ describe("tool-use seed expansion", () => {
       expect(expanded.seed.files[file]).toBe(content);
     }
 
-    const handWritten = loadSuite("tool-use").cases[0];
+    const handWritten = loadSuite("regression").cases.find((entry) => !entry.seed.vault);
+    if (!handWritten) throw new Error("the regression suite has no hand-written case");
     expect(expandCaseSeed(handWritten)).toBe(handWritten);
   });
 });
@@ -191,5 +194,60 @@ describe("tool-use run records", () => {
     expect(() => parseRunRecord([], "r.json")).toThrow(/not an object: r\.json/);
     expect(() => parseRunRecord({ ...record, caseId: "" }, "r.json")).toThrow(/missing caseId or run/);
     expect(() => parseRunRecord({ ...record, observed: undefined }, "r.json")).toThrow(/no observation/);
+  });
+});
+
+describe("parallel plan split (#392 item 7)", () => {
+  function plan(caseCount: number, runsPerCase: number): ToolUsePlan {
+    const cases = Array.from({ length: caseCount }, (_, index) => ({ id: `case.${index + 1}` }) as ToolUseCase);
+    return { cases, runs: planRuns(cases, runsPerCase) } as ToolUsePlan;
+  }
+
+  it("splits 81 runs over 3 instances, 27 each, and never splits a case", () => {
+    const whole = plan(27, 3);
+    const shards = shardPlan(whole, 3);
+
+    expect(shards.map((shard) => shard.runs.length)).toEqual([27, 27, 27]);
+    expect(shards.map((shard) => shard.shard)).toEqual([1, 2, 3]);
+    expect(shards.every((shard) => shard.parallel === 3)).toBe(true);
+    const owner = new Map<string, number>();
+    for (const shard of shards) {
+      for (const run of shard.runs) {
+        expect(owner.get(run.caseId) ?? shard.shard, `${run.caseId} is split`).toBe(shard.shard);
+        owner.set(run.caseId, shard.shard ?? 0);
+      }
+      expect(shard.cases.map((entry) => entry.id).sort()).toEqual([...new Set(shard.runs.map((run) => run.caseId))].sort());
+    }
+    expect(shards.flatMap((shard) => shard.runs).length).toBe(81);
+    expect(new Set(shards.flatMap((shard) => shard.runs).map((run) => `${run.caseId}#${run.run}`)).size).toBe(81);
+  });
+
+  it("keeps the plan order inside a shard, drops empty instances, and leaves --parallel 1 whole", () => {
+    const whole = plan(2, 5);
+    const shards = shardPlan(whole, 4);
+    expect(shards).toHaveLength(2);
+    expect(shards[0].runs.map((run) => run.run)).toEqual([1, 2, 3, 4, 5]);
+    const single = shardPlan(whole, 1);
+    expect(single).toHaveLength(1);
+    expect(single[0].runs).toEqual(whole.runs);
+    expect(() => shardPlan(whole, 0)).toThrow(/--parallel must be an integer/);
+  });
+
+  it("balances by expected time when the baseline knows it: two slow cases go apart", () => {
+    const cases = ["slow1", "slow2", "fast1", "fast2"].map((id) => ({ id }) as ToolUseCase);
+    const runs = planRuns(cases, 3);
+    const ms = new Map([["slow1", 60_000], ["slow2", 90_000], ["fast1", 4_000], ["fast2", 4_000]]);
+    const shards = shardPlan({ cases, runs } as ToolUsePlan, 2, ms);
+    expect(shards.map((shard) => shard.cases.map((entry) => entry.id).sort())).toEqual([["slow2"], ["fast1", "fast2", "slow1"]]);
+    // Without times the split is by run count only.
+    expect(shardPlan({ cases, runs } as ToolUsePlan, 2).map((shard) => shard.runs.length)).toEqual([6, 6]);
+  });
+
+  it("balances uneven cases by run count, largest first", () => {
+    const cases = ["a", "b", "c", "d"].map((id) => ({ id }) as ToolUseCase);
+    const runs = [...planRuns([cases[0]], 6), ...planRuns(cases.slice(1), 2)];
+    const shards = shardPlan({ cases, runs } as ToolUsePlan, 2);
+    expect(shards.map((shard) => shard.runs.length)).toEqual([6, 6]);
+    expect(shards[0].cases.map((entry) => entry.id)).toEqual(["a"]);
   });
 });

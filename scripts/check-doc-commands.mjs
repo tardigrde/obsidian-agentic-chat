@@ -26,8 +26,22 @@ export const DOC_GLOBS = [
 export const IGNORED_DOCS = [
   "docs/development/roadmap-archive-*.md",
   "docs/development/feature-cut-2026-11.md",
-  "docs/development/review-ledger.md",
   "CHANGELOG.md",
+];
+
+/**
+ * Subcommands and flags that were removed, with what replaces each. A doc that
+ * still teaches one costs the next agent a failed run (#393 T23, T26).
+ */
+export const RETIRED_ARGS = [
+  {
+    pattern: /\bnpm run delegate -- (work|ship|recheck|update)\b/,
+    hint: "delegate keeps only `review` and `research`; the lead agent implements and fixes",
+  },
+  {
+    pattern: /\bnpm run verify -- explore\b[^`\n]*--mode (focused|generic)\b/,
+    hint: "explore has `--mode explore --live` and the dry `--mode smoke`",
+  },
 ];
 
 const NPM_RUN = /\bnpm run ([A-Za-z0-9:_.-]+)([ \t]+(?:--[ \t]+)?([^\s`'"|;&)]+))?/g;
@@ -46,6 +60,12 @@ export function findCommands(text) {
 
 export function checkDoc(file, text, scripts) {
   const errors = [];
+  text.split("\n").forEach((line, index) => {
+    for (const retired of RETIRED_ARGS) {
+      const match = line.match(retired.pattern);
+      if (match) errors.push(`${file}:${index + 1} names the removed \`${match[0]}\`; ${retired.hint}`);
+    }
+  });
   for (const command of findCommands(text)) {
     if (!Object.hasOwn(scripts, command.script)) {
       errors.push(`${file}:${command.line} names \`npm run ${command.script}\`, which package.json does not define`);

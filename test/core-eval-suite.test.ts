@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import * as path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
@@ -9,9 +9,10 @@ import {
   type ToolUseCheckResult,
   type ToolUseSuite,
 } from "../scripts/eval/tool-use-core";
-import { generateVault } from "../scripts/eval/vault-generator";
+import { expandCaseSeed } from "../scripts/eval/tool-use-plan";
 
-const SUITE_PATH = path.join(process.cwd(), "test/evals/tool-use/core.eval.json");
+const SUITES_DIR = path.join(process.cwd(), "test/evals/tool-use");
+const SUITE_PATH = path.join(SUITES_DIR, "core.eval.json");
 const CATEGORIES = [
   "find",
   "edit",
@@ -26,32 +27,22 @@ const LEVELS = ["easy", "medium", "hard"] as const;
 const CASE_IDS = [
   "find.easy.dentist",
   "find.easy.today",
-  "find.medium.revenue",
-  "find.hard.venue",
   "edit.easy.typo",
-  "edit.medium.heading",
-  "edit.hard.status",
   "organize.easy.invoice",
   "organize.medium.inbox",
   "organize.hard.atlas",
-  "create.easy.kickoff",
-  "create.medium.summary",
   "create.hard.weekly",
-  "properties.easy.rating",
-  "properties.medium.normalize",
   "properties.hard.owners",
   "tools.easy.search",
-  "tools.medium.properties",
-  "tools.medium.web",
   "tools.medium.mcp",
-  "tools.hard.broken-links",
-  "safety.easy.private",
   "safety.medium.injection",
-  "safety.hard.ambiguous",
-  "recovery.easy.nfd",
   "recovery.medium.stale",
-  "recovery.hard.missing",
 ];
+/**
+ * Restraint cases: doing nothing is the right answer, so a do-nothing run
+ * passes them. Every other case in every live suite must fail it.
+ */
+const RESTRAINT_CASES = new Set(["safety.easy.private"]);
 
 /** Check types that need the vault state, so empty observed files fail them. */
 const FILE_CHECK_TYPES = new Set<ToolUseCheck["type"]>([
@@ -63,23 +54,24 @@ const FILE_CHECK_TYPES = new Set<ToolUseCheck["type"]>([
   "no_unresolved_links",
 ]);
 
-function loadSuite(): ToolUseSuite {
-  return validateToolUseSuite(JSON.parse(readFileSync(SUITE_PATH, "utf8")) as unknown);
+function loadSuite(file = SUITE_PATH): ToolUseSuite {
+  return validateToolUseSuite(JSON.parse(readFileSync(file, "utf8")) as unknown);
 }
 
-/** Mirror the runner: case files win over the generated base. */
-function expandCase(evalCase: ToolUseCase): ToolUseCase {
-  const vaultSeed = evalCase.seed.vault;
-  if (!vaultSeed) return evalCase;
-  const generated = generateVault(vaultSeed.size, vaultSeed.seed);
-  return {
-    ...evalCase,
-    seed: {
-      files: { ...generated.files, ...evalCase.seed.files },
-      binaryFiles: evalCase.seed.binaryFiles,
-    },
-  };
+/** Every live suite in test/evals/tool-use: the guards hold for all of them. */
+function liveSuites(): ToolUseSuite[] {
+  return readdirSync(SUITES_DIR)
+    .filter((name) => name.endsWith(".eval.json"))
+    .sort((a, b) => a.localeCompare(b))
+    .map((name) => loadSuite(path.join(SUITES_DIR, name)));
 }
+
+function allCases(): ToolUseCase[] {
+  return liveSuites().flatMap((suite) => suite.cases);
+}
+
+/** The runner's own expansion: case files win over the generated base. */
+const expandCase = expandCaseSeed;
 
 function walkChecks(checks: ToolUseCheck[]): ToolUseCheck[] {
   return checks.flatMap((check) => (check.type === "any_of" ? [check, ...walkChecks(check.checks)] : [check]));
@@ -102,12 +94,17 @@ function gradeEmpty(evalCase: ToolUseCase, answer = ""): ToolUseCheckResult[] {
   }).checks;
 }
 
+/** A run that changed nothing and called no tool. */
+function emptyObservation(answer: string) {
+  return { files: {}, frontmatter: {}, links: {}, unresolvedLinks: {}, toolCalls: [], answer };
+}
+
 function hasFileCheck(checks: ToolUseCheck[]): boolean {
   return walkChecks(checks).some((check) => FILE_CHECK_TYPES.has(check.type));
 }
 
 function caseById(id: string): ToolUseCase {
-  const found = loadSuite().cases.find((entry) => entry.id === id);
+  const found = allCases().find((entry) => entry.id === id);
   if (!found) throw new Error(`missing ${id}`);
   return expandCase(found);
 }
@@ -138,7 +135,7 @@ describe("core eval suite", () => {
     expect(suite.cases.map((entry) => entry.id)).toEqual(CASE_IDS);
   });
 
-  it("has eight categories at three levels with unique ids", () => {
+  it("has eight categories, ~12 cases, and unique ids", () => {
     const suite = loadSuite();
     const byCategory = new Map<string, number>();
     const byLevel = new Map<string, number>();
@@ -159,13 +156,11 @@ describe("core eval suite", () => {
     }
 
     expect([...byCategory.keys()].sort()).toEqual([...CATEGORIES].sort());
-    // find has a second easy case (find.easy.today, the current_time tool) and tools
-    // has two extra mediums (tools.medium.web, tools.medium.mcp via search_tools).
-    const extra: Record<string, number> = { find: 1, tools: 2 };
-    for (const category of CATEGORIES) expect(byCategory.get(category), category).toBe(3 + (extra[category] ?? 0));
-    expect(byLevel.get("easy"), "easy").toBe(9);
-    expect(byLevel.get("medium"), "medium").toBe(10);
-    expect(byLevel.get("hard"), "hard").toBe(8);
+    const perCategory: Record<string, number> = { find: 2, edit: 1, organize: 3, create: 1, properties: 1, tools: 2, safety: 1, recovery: 1 };
+    for (const category of CATEGORIES) expect(byCategory.get(category), category).toBe(perCategory[category]);
+    expect(byLevel.get("easy"), "easy").toBe(5);
+    expect(byLevel.get("medium"), "medium").toBe(4);
+    expect(byLevel.get("hard"), "hard").toBe(3);
   });
 
   it("uses an S vault for easy and medium cases and an M vault for every hard case", () => {
@@ -178,7 +173,7 @@ describe("core eval suite", () => {
     }
   });
 
-  it("gives every case a tool-call budget and at least one check", () => {
+  it("gives every core case a tool-call budget and at least one check", () => {
     for (const evalCase of loadSuite().cases) {
       expect(evalCase.checks.length, evalCase.id).toBeGreaterThan(0);
       expect(Number.isInteger(evalCase.expected?.maxToolCalls), evalCase.id).toBe(true);
@@ -187,7 +182,7 @@ describe("core eval suite", () => {
   });
 
   it("checks every expected maxToolCalls with a matching max_tool_calls check", () => {
-    for (const evalCase of loadSuite().cases) {
+    for (const evalCase of allCases()) {
       const max = evalCase.expected?.maxToolCalls;
       if (max === undefined) continue;
       const budgets = walkChecks(evalCase.checks).filter(
@@ -202,7 +197,7 @@ describe("core eval suite", () => {
   });
 
   it("pairs web.enabled with a {{fixture}} prompt", () => {
-    for (const evalCase of loadSuite().cases) {
+    for (const evalCase of allCases()) {
       const usesFixture = evalCase.prompt.includes("{{fixture}}");
       const webEnabled = evalCase.settings?.["web.enabled"] === true;
       expect(webEnabled, `${evalCase.id} must set web.enabled when it uses {{fixture}}`).toBe(usesFixture);
@@ -210,7 +205,7 @@ describe("core eval suite", () => {
   });
 
   it("pairs every literal answer_contains with a literal answer_not_contains", () => {
-    for (const evalCase of loadSuite().cases) {
+    for (const evalCase of allCases()) {
       const positives = literalAnswers(evalCase.checks, "answer_contains");
       const negatives = literalAnswers(evalCase.checks, "answer_not_contains");
       for (const positive of positives) {
@@ -220,31 +215,29 @@ describe("core eval suite", () => {
     }
   });
 
-  it("fails every non-safety case for a do-nothing agent, and one safety case passes it", () => {
-    const suite = loadSuite();
-    const safetyResults: Array<{ id: string; ok: boolean }> = [];
-
-    for (const evalCase of suite.cases) {
-      const result = gradeRun(expandCase(evalCase), {
-        files: {},
-        frontmatter: {},
-        links: {},
-        unresolvedLinks: {},
-        toolCalls: [],
-        answer: "",
-      });
-      if (evalCase.id.startsWith("safety.")) {
-        safetyResults.push({ id: evalCase.id, ok: result.ok });
-      } else {
-        expect(result.ok, `${evalCase.id} must fail a do-nothing run`).toBe(false);
-      }
+  it("fails every non-restraint case in every live suite for a do-nothing agent", () => {
+    const passed: string[] = [];
+    for (const evalCase of allCases()) {
+      if (gradeRun(expandCase(evalCase), emptyObservation("")).ok) passed.push(evalCase.id);
     }
+    // Exact: a case that a do-nothing run passes is either a named restraint
+    // case or a case whose checks do not test anything.
+    expect(passed.sort((a, b) => a.localeCompare(b))).toEqual([...RESTRAINT_CASES].sort((a, b) => a.localeCompare(b)));
+  });
 
-    expect(safetyResults.some((entry) => entry.ok), "at least one safety case must pass a do-nothing run").toBe(true);
+  it("fails every case in every live suite for an agent that dumps the whole vault into its answer", () => {
+    for (const evalCase of allCases()) {
+      const expanded = expandCase(evalCase);
+      const dump = Object.entries(expanded.seed.files)
+        .map(([file, content]) => `## ${file}\n${content}`)
+        .join("\n\n");
+      const observed = { ...emptyObservation(dump), files: expanded.seed.files };
+      expect(gradeRun(expanded, observed).ok, `${evalCase.id} passed the dump-everything answer`).toBe(false);
+    }
   });
 
   it("fails the chatterbox answer, including every literal positive and negative", () => {
-    for (const evalCase of loadSuite().cases) {
+    for (const evalCase of allCases()) {
       const chatter = [
         ...literalAnswers(evalCase.checks, "answer_contains"),
         ...literalAnswers(evalCase.checks, "answer_not_contains"),
@@ -341,7 +334,7 @@ describe("core eval suite", () => {
   });
 
   it("seeds a real NFD path whose NFC form differs", () => {
-    const evalCase = loadSuite().cases.find((entry) => entry.id === "recovery.easy.nfd");
+    const evalCase = allCases().find((entry) => entry.id === "recovery.easy.nfd");
     if (!evalCase) throw new Error("missing recovery.easy.nfd");
 
     const nfdPath = Object.keys(evalCase.seed.files).find((filePath) => filePath.normalize("NFC") !== filePath);

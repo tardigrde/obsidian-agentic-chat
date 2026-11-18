@@ -56,6 +56,10 @@ export interface ToolUsePlan {
    */
   cases: ToolUseCase[];
   runs: PlannedRun[];
+  /** Obsidian instances that ran the plan side by side (#392 item 7); absent = 1. */
+  parallel?: number;
+  /** 1-based instance number when this plan is one shard of a parallel run. */
+  shard?: number;
 }
 
 /** What the spec saw in one run. The runner grades it; the spec never does. */
@@ -116,6 +120,39 @@ export function planRuns(cases: readonly ToolUseCase[], runsPerCase: number): Pl
   return cases.flatMap((evalCase) =>
     Array.from({ length: runsPerCase }, (_, index) => ({ caseId: evalCase.id, run: index + 1 })),
   );
+}
+
+/**
+ * Split a plan over `instances` Obsidian instances for `--parallel` (#392
+ * item 7). All runs of a case stay on one instance, so a case's runs share one
+ * warm app and time per case stays comparable. A case weighs its run count
+ * times its expected time (`caseMs`, the baseline median; 1 when unknown).
+ * Cases go, heaviest first, to the instance with the least weight so far; ties
+ * go to the lower instance. An instance with no case is dropped. Each shard
+ * keeps the plan order of its runs.
+ */
+export function shardPlan(plan: ToolUsePlan, instances: number, caseMs: ReadonlyMap<string, number> = new Map()): ToolUsePlan[] {
+  if (!Number.isInteger(instances) || instances < 1) throw new Error("--parallel must be an integer of at least 1.");
+  const runsByCase = new Map<string, number>();
+  for (const run of plan.runs) runsByCase.set(run.caseId, (runsByCase.get(run.caseId) ?? 0) + 1);
+  const order = [...runsByCase.entries()].map(([caseId, count], index) => {
+    const ms = caseMs.get(caseId);
+    return { caseId, weight: count * (ms !== undefined && ms > 0 ? ms : 1), index };
+  });
+  order.sort((a, b) => b.weight - a.weight || a.index - b.index);
+  const loads = Array.from({ length: Math.min(instances, order.length) }, () => ({ weight: 0, cases: new Set<string>() }));
+  for (const entry of order) {
+    const target = loads.reduce((best, load) => (load.weight < best.weight ? load : best), loads[0]);
+    target.weight += entry.weight;
+    target.cases.add(entry.caseId);
+  }
+  return loads.map((load, index) => ({
+    ...plan,
+    parallel: loads.length,
+    shard: index + 1,
+    cases: plan.cases.filter((evalCase) => load.cases.has(evalCase.id)),
+    runs: plan.runs.filter((run) => load.cases.has(run.caseId)),
+  }));
 }
 
 /**

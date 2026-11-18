@@ -286,7 +286,7 @@ ${list(finding.evidence)}
 - run folder (local): \`${context.runDir}\`
 - steps: ${finding.steps.length ? finding.steps.join(", ") : "-"}
 - clip: ${clips.length ? clips.join(", ") : "-"} in \`session.mp4\`
-- replay: \`npm run chaos -- --mode explore --replay ${context.runDir}/explorer-decisions.jsonl --live\`
+- replay: \`npm run verify -- explore --mode explore --replay ${context.runDir}/explorer-decisions.jsonl --live\`
 - model: \`${context.model}\`
 
 Promote this to a deterministic test before the fix: a unit, replay, or e2e test that fails today.
@@ -328,7 +328,7 @@ ${report.gaps.length ? report.gaps.map((item) => `- ${item}`).join("\n") : "- (n
 
 ${drafts.length ? drafts.map((draft) => `- \`issues/${draft}\``).join("\n") : "- none (no confident, new product finding)"}
 
-File approved drafts: \`npm run chaos:file -- ${context.runDir} <draft numbers>\`
+File an approved draft by hand with \`gh issue create --body-file <draft>\`; a human decides.
 `;
 }
 

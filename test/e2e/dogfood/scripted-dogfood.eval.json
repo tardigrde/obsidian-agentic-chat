@@ -1,0 +1,56 @@
+{
+  "version": 1,
+  "name": "scripted-dogfood",
+  "description": "The scripted dogfood run in real Obsidian (verify -- app --dogfood): canned model turns, assertions on the session trace and vault invariants. No model call. The static context checks moved to test/static-context.test.ts.",
+  "cases": [
+    {
+      "id": "dogfood.scripted-next-level",
+      "type": "scripted-dogfood",
+      "dogfood": {
+        "spec": "./test/e2e/dogfood/next-level.dogfood.ts",
+        "timeoutMs": 300000,
+        "turnTimeoutMs": 120000
+      },
+      "assertions": [
+        {
+          "type": "dogfood_invariants_pass",
+          "severity": "error"
+        },
+        {
+          "type": "required_tool_started",
+          "name": "vault_inspect",
+          "severity": "error"
+        },
+        {
+          "type": "required_tool_started",
+          "name": "ask_user",
+          "severity": "error"
+        },
+        {
+          "type": "max_user_message_chars",
+          "max": 2500,
+          "severity": "error"
+        },
+        {
+          "type": "max_tool_errors",
+          "max": 0,
+          "severity": "warning",
+          "allowedByTool": {
+            "vault_inspect": 1,
+            "write": 4
+          },
+          "message": "Dogfood trace has unexpected tool errors beyond the intentional sad-path denial cases."
+        },
+        {
+          "type": "max_duplicate_tool_starts",
+          "max": 1,
+          "severity": "warning",
+          "allowedKeys": [
+            "vault_inspect {\"action\":\"active_note\",\"includeContent\":true}"
+          ],
+          "message": "Dogfood trace repeated an exact tool call; review whether the model/tool prompt can avoid redundant calls."
+        }
+      ]
+    }
+  ]
+}

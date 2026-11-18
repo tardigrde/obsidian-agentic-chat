@@ -1,10 +1,11 @@
 #!/usr/bin/env node
 import { type ChildProcess } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, readdirSync } from "node:fs";
 import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
 import { holdSleepInhibit } from "./eval/run-loop";
+import { writeRunReport } from "./lib/run-result.mjs";
 import {
   applyEnvFile,
   extractFrames,
@@ -23,6 +24,8 @@ import {
   stopProcess,
   trimLeadIn,
   type TimelineEntry,
+  mochaCounts,
+  zeroTestFailure,
 } from "./live-support";
 
 type Options = {
@@ -50,6 +53,8 @@ type ProbeRun = {
 };
 
 const SCENARIO_DIR = path.resolve("test/e2e/probe/scenarios");
+/** Scenarios that drive a real model. Any other scenario installs scripted turns, so --live would be a lie. */
+const LIVE_SCENARIOS = new Set(["live-chat"]);
 
 function fail(message: string): never {
   console.error(`\n[probe] ${message}`);
@@ -178,13 +183,7 @@ ${metrics.trim()}
 
 ## Observations
 
-<!-- Fill this in after watching the recording and reading the keyframes.
-
-Hypothesis:
-Observed:
-Decision: keep | change | kill
-Open questions:
--->
+(none recorded here; write them in the PR body)
 `;
 
   await writeFile(path.join(input.outDir, "report.md"), report);
@@ -192,7 +191,7 @@ Open questions:
 
 function parseOptions(): Options {
   const scenarioArg = readArg("--scenario");
-  if (!scenarioArg) fail("--scenario is required. Run: npm run probe -- --list");
+  if (!scenarioArg) fail("--scenario is required. Scenarios: test/e2e/probe/scenarios/*.e2e.ts");
 
   const scenario = scenarioArg.includes("/") || scenarioArg.endsWith(".ts")
     ? path.resolve(scenarioArg)
@@ -203,6 +202,9 @@ function parseOptions(): Options {
   if (!Number.isFinite(fps) || fps <= 0) fail(`--fps must be a positive number, got ${readArg("--fps")}`);
 
   const live = hasFlag("--live");
+  if (live && !LIVE_SCENARIOS.has(path.basename(scenario, ".e2e.ts"))) {
+    fail(`scenario does not support --live: ${path.basename(scenario, ".e2e.ts")} (live scenarios: ${[...LIVE_SCENARIOS].join(", ")})`);
+  }
   if (live) {
     const key = process.env.AGENTIC_CHAT_API_KEY?.trim();
     const keyFile = process.env.AGENTIC_CHAT_API_KEY_FILE?.trim();
@@ -287,11 +289,15 @@ async function runProbe(options: Options, ffmpegPath: string, xvfbPath: string |
       mp4,
     );
 
+    let output = "";
     code = await run(
       process.execPath,
       ["--import", "tsx", "scripts/run-e2e.ts", "--spec", options.scenario],
       {
         allowFailure: true,
+        onOutput: (text) => {
+          output += text;
+        },
         // A probe that runs across a laptop sleep can hang for an hour (#392 item 5).
         timeout: {
           ms: options.maxMinutes * 60_000,
@@ -310,6 +316,12 @@ async function runProbe(options: Options, ffmpegPath: string, xvfbPath: string |
         },
       },
     );
+    // A green exit with no executed test proves nothing (#393 T23).
+    const empty = code === 0 ? zeroTestFailure(mochaCounts(output)) : undefined;
+    if (empty) {
+      code = 1;
+      failure = `probe failed: ${empty}`;
+    }
   } catch (error) {
     failure = error instanceof Error ? error.message : String(error);
   } finally {
@@ -369,7 +381,7 @@ function positiveNumber(value: string, flag: string): number {
 
 async function main(): Promise<void> {
   if (process.argv.includes("--help") || process.argv.includes("-h")) {
-    process.stdout.write("Usage: npm run probe -- --scenario <name> [--live] [--max-minutes 10]   (npm run probe -- --list for scenarios)\n");
+    process.stdout.write("Usage: npm run verify -- app --record <scenario> [--live] [--max-minutes 10]   (scenarios: test/e2e/probe/scenarios)\n");
     return;
   }
   if (hasFlag("--list")) {
@@ -381,6 +393,10 @@ async function main(): Promise<void> {
   if (existsSync(envFile)) applyEnvFile(envFile);
 
   const options = parseOptions();
+  // Never append to an earlier run: its timeline and frames would mix with this one.
+  if (existsSync(options.outDir) && readdirSync(options.outDir).length > 0) {
+    fail(`output dir is not empty: ${options.outDir}; pass a new --out or delete it`);
+  }
   const binaries = resolveBinaries(options);
   await mkdir(options.outDir, { recursive: true });
 
@@ -396,6 +412,8 @@ async function main(): Promise<void> {
   if (result.failure) console.error(`[probe] ${result.failure}`);
   process.stdout.write(`[probe] report: ${path.join(options.outDir, "report.md")}\n`);
   if (existsSync(result.mp4)) process.stdout.write(`[probe] video: ${result.mp4}\n`);
+  // Under `verify -- app --record`, the recording folder goes into its run-result.json.
+  writeRunReport({ tokens: 0, usd: 0, artifacts: [path.relative(process.cwd(), options.outDir)] });
   process.exitCode = result.code;
 }
 

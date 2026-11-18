@@ -86,6 +86,20 @@ describe("run wall-time cap (probe)", () => {
     await expect(run(process.execPath, ["-e", "0"], { quiet: true, timeout: { ms: 10_000, message: "x" } })).resolves.toBe(0);
   });
 
+  it("escalates to SIGKILL when the child ignores SIGTERM", async () => {
+    const { run } = await import("../scripts/live-support");
+    const started = Date.now();
+    await expect(
+      run(process.execPath, ["-e", "process.on('SIGTERM', () => {}); setInterval(() => {}, 1000)"], {
+        quiet: true,
+        timeout: { ms: 300, message: "over the cap" },
+      }),
+    ).rejects.toThrow("over the cap");
+    // SIGTERM at 0.3 s is ignored; SIGKILL follows 5 s later.
+    expect(Date.now() - started).toBeGreaterThanOrEqual(5_000);
+    expect(Date.now() - started).toBeLessThan(15_000);
+  }, 20_000);
+
   it("holds no inhibitor without the binary", async () => {
     const { holdSleepInhibit } = await import("../scripts/eval/run-loop");
     expect(() => holdSleepInhibit("x", () => false)()).not.toThrow();

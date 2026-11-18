@@ -103,4 +103,11 @@ describe("saturation flag", () => {
     expect(saturatedCases(history)).toEqual(["a", "c"]);
     expect(saturatedCases(history.slice(0, 2))).toEqual([]);
   });
+
+  it("starts a new streak when the suite's case set changes (the 27 -> 12 cut)", () => {
+    const old = baseline({ a: 1, b: 1, c: 1, d: 1 });
+    const cut = baseline({ a: 1, b: 1 });
+    expect(saturatedCases([old, old, cut])).toEqual([]);
+    expect(saturatedCases([old, old, cut, cut, cut])).toEqual(["a", "b"]);
+  });
 });

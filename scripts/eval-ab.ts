@@ -5,12 +5,12 @@
  * driver ports are fixed, so the two sides never run at the same time.
  */
 
-import { execFileSync, spawn } from "node:child_process";
-import { existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, statSync, symlinkSync } from "node:fs";
+import { execFileSync, spawn, type ChildProcess } from "node:child_process";
+import { existsSync, lstatSync, mkdirSync, readFileSync, statSync, symlinkSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import * as path from "node:path";
-import { AB_USAGE, abPlan, formatAbPlan, formatAbTable, parseAbArgs, type AbSide } from "./eval/ab";
+import { AB_USAGE, abPlan, formatAbPlan, formatAbTable, linkNames, parseAbArgs, type AbSide } from "./eval/ab";
 
 async function main(): Promise<void> {
   const args = parseAbArgs(process.argv.slice(2));
@@ -29,8 +29,11 @@ async function main(): Promise<void> {
 
   await mkdir(plan.root, { recursive: true });
   git(["worktree", "add", "--detach", plan.baseWorktree, args.base], headRoot);
-  // Ctrl+C must not leave the temporary worktree registered.
+  // Ctrl+C must not leave the temporary worktree registered. A signal sent to
+  // this process only (`kill <pid>`, a CI timeout) must also end the eval run,
+  // or it keeps the driver ports in a deleted tree.
   const onSignal = (signal: NodeJS.Signals) => {
+    running?.kill(signal);
     removeWorktree(plan.baseWorktree, headRoot);
     process.exit(signal === "SIGINT" ? 130 : 143);
   };
@@ -77,18 +80,18 @@ function git(args: string[], cwd: string): string {
 function linkLocalFiles(headRoot: string, target: string): void {
   const listFile = path.join(headRoot, "config", "worktree-links");
   if (!existsSync(listFile)) return;
-  const names = readFileSync(listFile, "utf8")
-    .split("\n")
-    .map((line) => line.trim())
-    .filter((line) => line && !line.startsWith("#"));
-  for (const name of names) {
+  for (const name of linkNames(readFileSync(listFile, "utf8"))) {
     const source = path.join(headRoot, name);
     const destination = path.join(target, name);
-    if (!existsSync(source) || existsSync(destination) || isLink(destination)) continue;
+    if (!existsSync(source)) {
+      if (isLink(source)) process.stderr.write(`eval:ab: ${name} is a broken link in ${headRoot}; not linked\n`);
+      continue;
+    }
+    if (existsSync(destination) || isLink(destination)) continue;
     // Same rules as scripts/worktree.mjs: nested names get their folder, a directory is a junction on Windows.
     mkdirSync(path.dirname(destination), { recursive: true });
     const type = process.platform === "win32" && statSync(source).isDirectory() ? "junction" : undefined;
-    symlinkSync(realpathSync(source), destination, type);
+    symlinkSync(source, destination, type);
   }
 }
 
@@ -100,12 +103,19 @@ function isLink(file: string): boolean {
   }
 }
 
+/** The side that runs now, so a signal handler can end it. */
+let running: ChildProcess | undefined;
+
 function runSide(side: AbSide): Promise<number> {
   process.stdout.write(`\n[eval:ab] ${side.label}: ${side.command.join(" ")}\n`);
   return new Promise((resolve) => {
     const [command, ...rest] = side.command;
     const child = spawn(command === "node" ? process.execPath : command, rest, { cwd: side.cwd, stdio: "inherit" });
-    child.on("exit", (code) => resolve(code ?? 1));
+    running = child;
+    child.on("exit", (code) => {
+      running = undefined;
+      resolve(code ?? 1);
+    });
     child.on("error", (error) => {
       process.stderr.write(`eval:ab: ${side.label} did not start: ${error.message}\n`);
       resolve(1);

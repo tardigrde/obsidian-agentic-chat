@@ -10,7 +10,14 @@ import path from "node:path";
  * The runner and the in-app driver call it; they do not re-implement it.
  */
 
-export const CHAOS_MODES = ["focused", "generic", "explore"] as const;
+/**
+ * `explore`: a model drives the app (live or a replay of recorded decisions).
+ * `smoke`: a capped dry run of scripted actions; it proves the harness boots.
+ * The focused (14 targets) and generic modes were deleted in #393 T23: the
+ * committed e2e specs cover the same paths. The focused sequences stay as the
+ * explorer's named scenarios.
+ */
+export const CHAOS_MODES = ["explore", "smoke"] as const;
 export type ChaosMode = (typeof CHAOS_MODES)[number];
 
 export const CHAOS_TARGETS = [
@@ -131,26 +138,17 @@ export function parseCaps(
 
 /** Select the mode. Focused mode needs a named target. */
 export function selectMode(modeValue: string | undefined, targetValue: string | undefined): ChaosSelection {
-  const mode = (modeValue ?? "focused").trim().toLowerCase() as ChaosMode;
+  const raw = (modeValue ?? "smoke").trim().toLowerCase();
+  if (raw === "focused" || raw === "generic") {
+    throw new ChaosGuardError(`--mode ${raw} was removed (#393 T23); use --mode explore --live, or --mode smoke for a dry run`);
+  }
+  const mode = raw as ChaosMode;
   if (!CHAOS_MODES.includes(mode)) {
     throw new ChaosGuardError(`--mode must be one of ${CHAOS_MODES.join(", ")}, got ${modeValue}`);
   }
-
   if (targetValue !== undefined && targetValue !== "") {
-    const target = targetValue.trim().toLowerCase() as ChaosTarget;
-    if (!CHAOS_TARGETS.includes(target)) {
-      throw new ChaosGuardError(`--target must be one of ${CHAOS_TARGETS.join(", ")}, got ${targetValue}`);
-    }
-    if (mode !== "focused") {
-      throw new ChaosGuardError(`--target belongs to --mode focused; ${mode} mode chooses its own surfaces`);
-    }
-    return { mode, target };
+    throw new ChaosGuardError("--target was removed with --mode focused (#393 T23); explore picks its own surfaces");
   }
-
-  if (mode === "focused") {
-    throw new ChaosGuardError(`--mode focused needs --target (${CHAOS_TARGETS.join(", ")})`);
-  }
-
   return { mode };
 }
 

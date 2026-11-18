@@ -95,3 +95,16 @@ export function groupCounts(
   groupOf: (file: string) => string | undefined,
 ): Record<string, GroupCounts>;
 export function groupCountsLine(groups: Record<string, GroupCounts>): string;
+
+export const RUN_REPORT_ENV: string;
+export interface RunReport {
+  tokens: number;
+  usd: number;
+  artifacts: string[];
+}
+export function writeRunReport(report: { tokens?: number; usd?: number; artifacts?: string[] }, env?: NodeJS.ProcessEnv): boolean;
+export function readRunReport(file: string | undefined): RunReport | undefined;
+export function mergeRunReports(reports: ReadonlyArray<RunReport | undefined>): {
+  cost: { tokens: number; usd: number } | undefined;
+  artifacts: string[];
+};

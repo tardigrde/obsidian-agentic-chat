@@ -52,4 +52,48 @@ describe("Wilson interval and the signal rule", () => {
     expect(text).toContain("Signal: a (drop).");
     expect(formatCanary({ cases: [{ id: "a", passed: 5, executed: 5 }] }, undefined)).toContain("No baseline: nothing to compare against.");
   });
+
+  it("calls one weak move Weak (the two main runs of 2026-11-18), and a strong or repeated move a Signal", () => {
+    const base = { cases: [{ id: "search", passRate: 1 }, { id: "invoice", passRate: 2 / 3 }, { id: "typo", passRate: 1 }] };
+    const run = (search: number, invoice: number, typo: number) =>
+      formatCanary(
+        { cases: [{ id: "search", passed: search, executed: 5 }, { id: "invoice", passed: invoice, executed: 5 }, { id: "typo", passed: typo, executed: 5 }] },
+        base,
+      );
+    // Unchanged main: search 4/5 then 3/5 against 3/3 is one case outside its interval.
+    expect(run(4, 4, 5)).toContain("Weak: search (drop). One case outside its interval is common at 5 runs");
+    expect(run(3, 3, 5)).toContain("Weak: search (drop).");
+    // 1/5 against 100% is 80 points: a signal on its own.
+    expect(run(1, 4, 5)).toContain("Signal: search (drop).");
+    // Two cases down together: a signal.
+    expect(run(4, 4, 4)).toContain("Signal: search (drop), typo (drop).");
+    expect(run(5, 4, 5)).toContain("No signal: every baseline rate is inside its interval.");
+  });
+
+  it("names a case with no baseline row instead of claiming every rate is inside", () => {
+    const text = formatCanary(
+      { cases: [{ id: "a", passed: 5, executed: 5 }, { id: "new", passed: 5, executed: 5 }] },
+      { cases: [{ id: "a", passRate: 1 }] },
+    );
+    expect(text).toContain("| new | 5/5 | [57%, 100%] | - | no baseline |");
+    expect(text).toContain("No signal in the cases with a baseline. No baseline for: new.");
+    expect(text).not.toContain("every baseline rate is inside");
+  });
+
+  it("leaves harness-error runs (an upstream 429) out of the interval instead of counting them as failures", () => {
+    const text = formatCanary(
+      {
+        cases: [
+          { id: "a", passed: 3, executed: 5, runResults: [{ status: "pass" }, { status: "pass" }, { status: "pass" }, { status: "error" }, { status: "error" }] },
+          { id: "b", passed: 4, executed: 5, runResults: [{ status: "pass" }, { status: "pass" }, { status: "pass" }, { status: "pass" }, { status: "error" }] },
+        ],
+      },
+      { cases: [{ id: "a", passRate: 1 }, { id: "b", passRate: 1 }] },
+    );
+    expect(text).toContain("| a | 3/3 |");
+    expect(text).toContain("| b | 4/4 |");
+    expect(text).toContain("3 harness error run(s) left out of the intervals");
+    expect(text).toContain("No signal");
+  });
 });
+

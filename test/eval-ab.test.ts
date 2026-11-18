@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { abPlan, formatAbPlan, formatAbTable, parseAbArgs } from "../scripts/eval/ab";
+import { abPlan, formatAbPlan, formatAbTable, linkNames, parseAbArgs } from "../scripts/eval/ab";
 
 describe("eval:ab arguments (#392 item 1)", () => {
   it("reads cases from repeated and comma lists, with the defaults", () => {
@@ -76,5 +76,12 @@ describe("eval:ab table", () => {
 
   it("shows a missing side as a dash", () => {
     expect(formatAbTable({ cases: [] }, { cases: [row("new", 5)] })).toContain("| new | - | 5/5 |");
+  });
+});
+
+describe("eval:ab local links", () => {
+  it("names the same entries as scripts/worktree.mjs: no absolute path, no ., no .., no .git", () => {
+    const text = ["# comment", "node_modules", ".env", "", "/etc/passwd", ".", "../outside", "a/../b", ".git", ".git/config", "nested\\dir", "  .obsidian-cache  "].join("\n");
+    expect(linkNames(text)).toEqual(["node_modules", ".env", "nested/dir", ".obsidian-cache"]);
   });
 });

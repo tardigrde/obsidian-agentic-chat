@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import * as path from "node:path";
@@ -26,20 +26,26 @@ import { extractPdfText } from "../src/retrieval/pdf-ingest";
 import { THINKING_LEVELS } from "../src/settings-schema";
 import { MUTATING_TOOLS } from "../src/tools/tool-contracts";
 
-const SUITE_PATH = path.join(process.cwd(), "test/evals/tool-use/tool-use.eval.json");
+const SUITE_PATH = path.join(process.cwd(), "test/evals/tool-use/regression.eval.json");
+/** Retired tool-use cases kept only to pin two grader rules. */
+const GRADER_FIXTURES_PATH = path.join(process.cwd(), "test/fixtures/eval-grader-cases.json");
 const CASE_IDS = [
+  "find.medium.revenue",
+  "find.hard.venue",
+  "edit.medium.heading",
+  "edit.hard.status",
+  "create.easy.kickoff",
+  "create.medium.summary",
+  "properties.easy.rating",
+  "properties.medium.normalize",
+  "tools.medium.properties",
+  "tools.medium.web",
+  "tools.hard.broken-links",
+  "safety.easy.private",
+  "recovery.easy.nfd",
+  "recovery.hard.missing",
   "none.arithmetic",
-  "edit.find-and-edit",
-  "rename.keep-links",
-  "read.answer-from-note",
-  "search.list-mentions",
-  "write.create-from-inbox",
-  "properties.set-status-and-tag",
   "delete.only-the-empty-one",
-  "edit.append-under-heading",
-  "ask.ambiguous-cleanup",
-  "ignore.private-folder",
-  "rename.move-tagged",
   "import.pdf-answer",
   "none.general-knowledge",
 ];
@@ -53,6 +59,13 @@ afterEach(async () => {
 
 function loadSuite(): ToolUseSuite {
   return validateToolUseSuite(JSON.parse(readFileSync(SUITE_PATH, "utf8")) as unknown);
+}
+
+function graderFixture(id: string): ToolUseCase {
+  const suite = validateToolUseSuite(JSON.parse(readFileSync(GRADER_FIXTURES_PATH, "utf8")) as unknown);
+  const found = suite.cases.find((entry) => entry.id === id);
+  if (!found) throw new Error(`missing grader fixture ${id}`);
+  return found;
 }
 
 function cloneSuite(): Record<string, unknown> {
@@ -110,7 +123,8 @@ function runSummary(overrides: Partial<CaseRunSummaryInput> = {}): CaseRunSummar
 describe("tool-use eval core", () => {
   it("accepts the committed suite", () => {
     const suite = loadSuite();
-    expect(suite.name).toBe("tool-use");
+    expect(suite.name).toBe("regression");
+    expect(suite.runsPerCase).toBe(1);
     expect(suite.cases.map((entry) => entry.id)).toEqual(CASE_IDS);
   });
 
@@ -210,13 +224,14 @@ describe("tool-use eval core", () => {
   it("accepts binary seed files and keeps them off the text seed", () => {
     const suite = cloneSuite();
     const entries = suite.cases as Array<Record<string, unknown>>;
-    (entries[0].seed as Record<string, unknown>).binaryFiles = { "Docs/a.pdf": "JVBE" };
+    const index = entries.findIndex((entry) => entry.id === "none.arithmetic");
+    (entries[index].seed as Record<string, unknown>).binaryFiles = { "Docs/a.pdf": "JVBE" };
 
     const parsed = validateToolUseSuite(suite);
 
-    expect(parsed.cases[0].seed.binaryFiles).toEqual({ "Docs/a.pdf": "JVBE" });
-    expect(parsed.cases[0].seed.files).toEqual({});
-    expect(loadSuite().cases[0].seed.binaryFiles).toEqual({});
+    expect(parsed.cases[index].seed.binaryFiles).toEqual({ "Docs/a.pdf": "JVBE" });
+    expect(parsed.cases[index].seed.files).toEqual({});
+    expect(loadSuite().cases.find((entry) => entry.id === "none.arithmetic")?.seed.binaryFiles).toEqual({});
   });
 
   it("rejects a seed path that is both text and binary", () => {
@@ -558,9 +573,7 @@ describe("tool-use eval core", () => {
   });
 
   it("grades the rename case by resolved links, not link text", () => {
-    const suite = loadSuite();
-    const rename = suite.cases.find((entry) => entry.id === "rename.keep-links");
-    if (!rename) throw new Error("missing rename.keep-links case");
+    const rename = graderFixture("rename.keep-links");
     const files = {
       "Projects/Atlas Launch.md": "# Atlas\n",
       "Index.md": "# Index\n\n- [[Wrong/Atlas Launch]]\n",
@@ -591,9 +604,7 @@ describe("tool-use eval core", () => {
   });
 
   it("accepts a clarifying question in plain text or through ask_user for the ambiguous cleanup", () => {
-    const suite = loadSuite();
-    const ask = suite.cases.find((entry) => entry.id === "ask.ambiguous-cleanup");
-    if (!ask) throw new Error("missing ask.ambiguous-cleanup case");
+    const ask = graderFixture("ask.ambiguous-cleanup");
     const files = ask.seed.files;
     const reads = [{ name: "vault_inspect" }, { name: "read" }];
     const run = (answer: string, toolCalls: Array<{ name: string }>) =>
@@ -900,6 +911,8 @@ describe("tool-use eval core", () => {
         "--import",
         "tsx",
         "scripts/run-tool-use-evals.ts",
+        "--suite",
+        SUITE_PATH,
         "--run-id",
         "reused",
         "--out-dir",
@@ -1189,7 +1202,20 @@ describe("tool-use eval core", () => {
     expect(ignored.stderr).toContain("--exclude only applies to --compare --significance");
 
     // An old baseline with no per-case passAllK pairs nothing: that is an error, not "no change".
-    const oldBaseline = path.join(process.cwd(), "test/evals/baselines/tool-use.json");
+    // The shape of the retired tool-use.json: pass rates and tokens, no passAllK.
+    const oldRoot = mkdtempSync(path.join(tmpdir(), "tool-use-old-baseline-"));
+    tempRoots.push(oldRoot);
+    const oldBaseline = path.join(oldRoot, "old-format.json");
+    writeFileSync(
+      oldBaseline,
+      JSON.stringify({
+        version: 1,
+        suite: "tool-use",
+        model: "deepseek/deepseek-v4.1-flash",
+        date: "2026-11-14T20:08:00.506Z",
+        cases: [{ id: "none.arithmetic", passRate: 1, meanTokens: 3887, meanUsd: 0.0000087 }],
+      }),
+    );
     const empty = runCompare(["--compare", "--significance", oldBaseline, oldBaseline]);
     expect(empty.status, empty.stderr).toBe(1);
     expect(empty.stderr).toContain("no case has a usable passAllK on both sides");
@@ -1231,7 +1257,7 @@ describe("tool-use eval core", () => {
 
       expect(result.status, result.stderr).toBe(0);
       expect(result.stdout).toContain("Thinking level: low (default)");
-      expect(result.stdout).toContain("- none.arithmetic: 3 run(s), 0 seed file(s), thinking low");
+      expect(result.stdout).toContain("- none.arithmetic: 1 run(s), 0 seed file(s), thinking low");
     });
 
     it("takes the suite field over the default", async () => {
@@ -1278,14 +1304,17 @@ describe("tool-use eval core", () => {
     it("lets a case pin override the run level in the plan", async () => {
       const suitePath = await writeSuite((suite) => {
         suite.thinkingLevel = "high";
-        (suite.cases as Array<Record<string, unknown>>)[0].thinkingLevel = "off";
+        const entries = suite.cases as Array<Record<string, unknown>>;
+        const arithmetic = entries.find((entry) => entry.id === "none.arithmetic");
+        if (!arithmetic) throw new Error("missing none.arithmetic");
+        arithmetic.thinkingLevel = "off";
       });
       const result = runRunner(["--suite", suitePath, "--dry-run"]);
 
       expect(result.status, result.stderr).toBe(0);
       expect(result.stdout).toContain("Thinking level: high (suite)");
-      expect(result.stdout).toMatch(/^- none\.arithmetic: 3 run\(s\), 0 seed file\(s\), thinking off$/m);
-      expect(result.stdout).toMatch(/^- edit\.find-and-edit: 3 run\(s\), \d+ seed file\(s\), thinking high$/m);
+      expect(result.stdout).toMatch(/^- none\.arithmetic: 1 run\(s\), 0 seed file\(s\), thinking off$/m);
+      expect(result.stdout).toMatch(/^- delete\.only-the-empty-one: 1 run\(s\), \d+ seed file\(s\), thinking high$/m);
     });
   });
 
@@ -1299,6 +1328,8 @@ describe("tool-use eval core", () => {
         "--import",
         "tsx",
         "scripts/run-tool-use-evals.ts",
+        "--suite",
+        SUITE_PATH,
         "--dry-run",
         "--run-id",
         "dry-test",
@@ -1309,7 +1340,7 @@ describe("tool-use eval core", () => {
     );
 
     expect(result.status, result.stderr).toBe(0);
-    expect(result.stdout).toContain("14 case(s) x 3 run(s)");
+    expect(result.stdout).toContain("18 case(s) x 1 run(s)");
     for (const id of CASE_IDS) expect(result.stdout).toContain(`- ${id}:`);
     expect(result.stdout).toContain("prices: not fetched (dry run)");
     expect(result.stdout).toContain("estimated cost");
@@ -1317,3 +1348,33 @@ describe("tool-use eval core", () => {
     expect(existsSync(outputDir)).toBe(false);
   });
 });
+
+describe("tool-use runner selector guards", () => {
+  const cli = (args: string[]) =>
+    spawnSync(process.execPath, ["--import", "tsx", "scripts/run-tool-use-evals.ts", ...args], {
+      cwd: process.cwd(),
+      encoding: "utf8",
+      env: { ...process.env, AGENTIC_CHAT_API_KEY: "" },
+    });
+
+  it.each([
+    [["--smoke", "--case", "x"], "--smoke cannot be combined with --case; use one selector."],
+    [["--canary", "--smoke"], "--canary cannot be combined with --case or --smoke."],
+    [["--canary", "--case", "x"], "--canary cannot be combined with --case or --smoke."],
+    [["--write-baseline-from", "p", "--compare", "a", "b"], "--write-baseline-from cannot be combined with --compare."],
+    [["--git-head", "abc"], "--git-head needs --write-baseline-from."],
+    [["--parallel", "0", "--dry-run"], "--parallel must be an integer of at least 1."],
+  ])("refuses %j before it reads a suite", (args, message) => {
+    const result = cli(args);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain(message);
+    expect(result.stdout).toBe("");
+  });
+
+  it("lets a valid --git-head pair through the guard", () => {
+    const result = cli(["--git-head", "abc", "--write-baseline-from", "/nonexistent/summary.json"]);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("ENOENT");
+  });
+});
+

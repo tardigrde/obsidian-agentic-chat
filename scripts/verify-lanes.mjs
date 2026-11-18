@@ -8,9 +8,9 @@ import process from "node:process";
  *   plan     which commands does this diff need?
  *   check    the merge gate (static, unit, build, real-app smoke)
  *   change   one unit file or a -t pattern
- *   app      real Obsidian with scripted turns (specs, mobile, scripted dogfood)
+ *   app      real Obsidian: specs, --mobile, --dogfood (generated vault), --record (video)
  *   live     real model calls (local only, needs a key)
- *   eval     agentic and tool-use evals
+ *   eval     live tool-use evals (canary, core, regression)
  *   explore  chaos explore in a throwaway vault (leads, not proof)
  *   release  everything deterministic before a release
  *
@@ -43,7 +43,7 @@ export const RETIRED_LANES = {
   upgrade: "change test/upgrade-fixtures.test.ts",
   e2e: "app [spec]",
   dogfood: "app --dogfood",
-  audit: "app test/e2e/specs/design-audit.e2e.ts (with AGENTIC_CHAT_DESIGN_AUDIT=1)",
+  audit: "app --record layout-smoke (the design audit was deleted in #393 T23)",
   all: "release",
 };
 
@@ -122,11 +122,29 @@ function mobileStep(label, spec) {
 
 function scriptedDogfoodStep() {
   return step(
-    "scripted dogfood eval",
+    "scripted dogfood",
     NODE,
     ["--import", "tsx", "scripts/run-agentic-evals.ts", "--fail-on-skip", "--run-scripted"],
     { timeoutMs: 30 * 60 * 1000, tier: "T2" },
   );
+}
+
+/**
+ * `app --record <scenario> [--live] [--max-minutes n]`: a recorded run of one
+ * probe scenario (video, keyframes, timeline, metrics) on its own display. It
+ * must execute at least one test; `--live` only where the scenario drives a
+ * real model. Leads for a human, not a gate.
+ */
+function recordStep(args) {
+  const scenario = args.find((arg) => !arg.startsWith("-"));
+  if (!scenario) throw new Error("verify app --record needs a scenario, for example: npm run verify -- app --record layout-smoke");
+  const rest = args.filter((arg) => arg !== scenario);
+  return step(`recorded run ${scenario}`, NODE, ["--import", "tsx", "scripts/probe.ts", "--scenario", scenario, ...rest], {
+    expectTests: true,
+    tier: "T4",
+    mode: rest.includes("--live") ? "live" : "scripted",
+    timeoutMs: 30 * 60 * 1000,
+  });
 }
 
 const SPEC_DIRS = ["test/e2e/specs", "test/e2e/live"];
@@ -143,9 +161,8 @@ export function resolveSpec(value, dirs = SPEC_DIRS, cwd = process.cwd()) {
 }
 
 /**
- * The `eval` lane serves two runners. A suite belongs to the tool-use runner
- * when it is a file in `test/evals/tool-use/`, named by path or by bare name
- * (`core`, `tool-use`). Returns the suite path, or undefined for an agentic suite.
+ * A suite is a file in `test/evals/tool-use/`, named by path or by bare name
+ * (`core`, `regression`). Returns the suite path, or undefined for anything else.
  */
 export function resolveToolUseSuite(value, cwd = process.cwd()) {
   if (!value) return undefined;
@@ -170,13 +187,6 @@ function findSuiteArg(args) {
   }
   return undefined;
 }
-
-/**
- * Flags that make the agentic runner execute a case it would otherwise skip.
- * With none of them, a skip is the expected result of a no-arg run, so the lane
- * reports it and prints the next command instead of failing.
- */
-const AGENTIC_EXECUTE_FLAGS = ["--run-scripted", "--run-judge"];
 
 export const lanes = {
   plan: (args) => [step("plan", NODE, ["scripts/verify-plan.mjs", ...args], { record: false })],
@@ -215,6 +225,8 @@ export const lanes = {
 
   app: (input) => {
     const args = [...input];
+    const record = takeFlag(args, "--record");
+    if (record) return [recordStep(args)];
     const mobile = takeFlag(args, "--mobile");
     const dogfood = takeFlag(args, "--dogfood");
     const prod = takeFlag(args, "--prod");
@@ -258,33 +270,26 @@ export const lanes = {
     ];
   },
 
-  eval: (args) => {
-    const forwarded = args.filter((arg) => arg !== "--fail-on-skip");
-    const suite = findSuiteArg(forwarded);
-    const toolUseSuite = resolveToolUseSuite(suite?.value);
-    if (suite && toolUseSuite) {
-      // The runner takes a separate value, so normalize `--suite=<path>`.
-      const passthrough = [...forwarded];
-      passthrough.splice(suite.index, suite.inline ? 1 : 2, "--suite", toolUseSuite);
-      return [
-        step("tool-use evals", NODE, ["--import", "tsx", "scripts/run-tool-use-evals.ts", ...passthrough], {
-          tier: "T3",
-          mode: "live",
-        }),
-      ];
+  eval: (input) => {
+    // One runner: the live tool-use suites in test/evals/tool-use (core,
+    // regression). With no arguments the lane prints the core plan and spends
+    // nothing; any argument runs the suite for real.
+    const args = [...input];
+    const suite = findSuiteArg(args);
+    let suitePath = path.join(TOOL_USE_SUITE_DIR, "core.eval.json");
+    if (suite) {
+      const resolved = resolveToolUseSuite(suite.value);
+      if (!resolved) throw new Error(`verify eval: --suite ${suite.value} is not a suite in ${TOOL_USE_SUITE_DIR} (core, regression)`);
+      suitePath = resolved;
+      args.splice(suite.index, suite.inline ? 1 : 2);
     }
-    // A skip hides unexecuted coverage, so the lane fails on one whenever the
-    // caller asked to execute the expensive cases. A plain `verify -- eval`
-    // runs what needs no display or key and names the next command.
-    const execute = forwarded.some((arg) => AGENTIC_EXECUTE_FLAGS.includes(arg));
+    const dryRun = input.length === 0;
     return [
-      step("agentic evals", NODE, [
-        "--import",
-        "tsx",
-        "scripts/run-agentic-evals.ts",
-        ...(execute ? ["--fail-on-skip"] : []),
-        ...forwarded,
-      ], { tier: forwarded.includes("--run-judge") ? "T3" : forwarded.includes("--run-scripted") ? "T2" : "T1" }),
+      step("tool-use evals", NODE, ["--import", "tsx", "scripts/run-tool-use-evals.ts", "--suite", suitePath, ...(dryRun ? ["--dry-run"] : args)], {
+        tier: "T3",
+        mode: dryRun ? "static" : "live",
+        record: !dryRun,
+      }),
     ];
   },
 
@@ -326,9 +331,16 @@ Lanes: ${LANE_NAMES.join(", ")}
   app [spec...] [--mobile] [--dogfood] [--prod] [--reuse-bundle]
                     Real Obsidian, scripted turns. No spec runs the whole suite;
                     bare names resolve to test/e2e/specs/<name>.e2e.ts.
+                    --dogfood: the generated vault with its invariant oracle.
+  app --record <scenario> [--live] [--max-minutes n]
+                    A recorded run (video, keyframes, metrics) of one scenario in
+                    test/e2e/probe/scenarios. Must execute a test.
   live [spec...]    Real model calls. Local only; needs AGENTIC_CHAT_API_KEY.
-  eval [args]       Agentic evals (default) or a tool-use suite (--suite core).
-  explore [args]    Chaos explore in a throwaway vault. Leads, not proof.
+  eval [args]       Live tool-use evals (--suite core|regression, --canary, --runs N,
+                    --parallel N). No arguments: print the core plan, no model call.
+  explore [--mode explore|smoke] [--live] [--charter c]
+                    Chaos explore in a throwaway vault (smoke: a dry run, the
+                    default). Leads, not proof.
   release           check --no-app, full app suite, mobile specs, scripted dogfood.
 
 Examples:
@@ -337,6 +349,8 @@ Examples:
   npm run verify -- change test/settings.test.ts
   npm run verify -- app settings-ui
   npm run verify -- app --mobile
+  npm run verify -- app --record layout-smoke
+  npm run verify -- eval --canary
   npm run verify -- eval --suite core --runs 3
 `;
 }

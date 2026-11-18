@@ -103,4 +103,21 @@ describe("--write-baseline-from (#392 item 4)", () => {
     expect(() => writeBaselineFromSummary({ summaryPath, dir: out })).toThrow("pass --git-head");
     expect(writeBaselineFromSummary({ summaryPath, dir: out, gitHead: "1234567890" }).baseline.gitHead).toBe("1234567890");
   });
+
+  it("never overwrites a history entry: a second write at the same second and head is refused", () => {
+    const summaryPath = writeRun([record(1), record(2)], { gitHead: "abcdef1234567" });
+    const out = path.join(dir, "baselines");
+    const first = writeBaselineFromSummary({ summaryPath, dir: out });
+    const before = readFileSync(first.history, "utf8");
+    expect(() => writeBaselineFromSummary({ summaryPath, dir: out })).toThrow(/already exists/);
+    expect(readFileSync(first.history, "utf8")).toBe(before);
+  });
+
+  it("refuses to date a baseline from a run with no finish time", () => {
+    const summaryPath = writeRun([record(1), record(2)], { gitHead: "abc1234" });
+    const summary = JSON.parse(readFileSync(summaryPath, "utf8"));
+    delete summary.finishedAt;
+    writeFileSync(summaryPath, JSON.stringify(summary));
+    expect(() => writeBaselineFromSummary({ summaryPath, dir: path.join(dir, "baselines") })).toThrow(/no finish time/);
+  });
 });

@@ -115,16 +115,14 @@ count. Live dogfood runbook:
 
 ## Exploration (leads, not proof)
 
-- **Probes** (`@probe-feature`): `npm run probe -- --scenario <name>` records a
-  throwaway vault on an isolated display and writes `logs/probes/<ts>-<name>/`
-  (`session.mp4`, `metrics.json`, `report.md`). Use it when you do not know what
-  correct looks like.
-- **Chaos** (`@chaos-monkey`): `npm run verify -- explore` drives a seeded
-  throwaway vault with hard caps. Propose it to the owner after a big change; do
-  not run it unasked.
-- **Break-change** (`@break-change`): an adversarial sweep before a product cut.
-- **Design audit**: `AGENTIC_CHAT_DESIGN_AUDIT=1 AGENTIC_CHAT_DESIGN_AUDIT_MODE=<sidebar|wide|mobile|fullscreen> npm run verify -- app design-audit`
-  writes 42 PNGs to `logs/design-audit/<ts>-<mode>/`.
+- **Recorded runs** (`@app`): `npm run verify -- app --record <scenario>`
+  records one of the two scenarios in `test/e2e/probe/scenarios/`
+  (`layout-smoke`, `live-chat --live`) on an isolated display and writes
+  `logs/probes/<ts>-<name>/` (`session.mp4`, `metrics.json`, `report.md`). A run
+  that executes no test fails; a used `--out` is refused.
+- **Chaos explore** (`@app`): `npm run verify -- explore --mode explore --live`
+  drives a seeded throwaway vault with hard caps; `--mode smoke` is the dry
+  run. Propose it to the owner after a big change; do not run it unasked.
 
 A lead becomes coverage only when you promote it:
 

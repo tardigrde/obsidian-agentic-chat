@@ -15,10 +15,23 @@
       "runner": "vitest",
       "globs": [
         "test/{agent-*,parent-agent*,subagent*,turn-*,compaction*,conversation-*,context-builder,context-load*,retry-*,runtime-*,service-*,utils-*}.test.ts",
-        "test/{prompt-turn-runtime,stream-runtime,loop-guard,message-content,system-prompt,instructions,error-classifier,cost,models,models-timeout,model-catalog,openai-compatible-request,replay-stream,approval,approval-matrix,approval-memory,observability,sha256,format,privacy-redaction,redaction-names,slash-dispatch,command-dispatcher,commands}.test.ts"
+        "test/{ask-before-delete,prompt-turn-runtime,stream-runtime,loop-guard,message-content,system-prompt,instructions,error-classifier,cost,models,models-timeout,model-catalog,openai-compatible-request,replay-stream,approval,approval-matrix,approval-memory,observability,sha256,format,privacy-redaction,redaction-names,slash-dispatch,command-dispatcher,commands}.test.ts"
       ],
-      "triggers": ["src/agent/**", "src/llm/**", "src/main.ts", "src/observability/**", "src/privacy/**", "src/utils/**", "src/types/**", "src/constants.ts"],
-      "needs": { "display": false, "key": false, "network": false },
+      "triggers": [
+        "src/agent/**",
+        "src/llm/**",
+        "src/main.ts",
+        "src/observability/**",
+        "src/privacy/**",
+        "src/utils/**",
+        "src/types/**",
+        "src/constants.ts"
+      ],
+      "needs": {
+        "display": false,
+        "key": false,
+        "network": false
+      },
       "budgetSeconds": 10,
       "command": "npm run verify -- change <file>",
       "why": "Agent loop, turns, compaction, providers, approval policy: the logic every chat turn runs through."
@@ -31,8 +44,14 @@
         "test/session-*.test.ts",
         "test/{undo,file-checkpoints,action-audit-log,multi-instance-isolation,memory-adapter-faults}.test.ts"
       ],
-      "triggers": ["src/session/**"],
-      "needs": { "display": false, "key": false, "network": false },
+      "triggers": [
+        "src/session/**"
+      ],
+      "needs": {
+        "display": false,
+        "key": false,
+        "network": false
+      },
       "budgetSeconds": 6,
       "command": "npm run verify -- change <file>",
       "why": "Session JSONL, rewrite atomicity, multi-instance writes, undo checkpoints: data the user cannot get back."
@@ -44,8 +63,16 @@
       "globs": [
         "test/{settings,settings-*,secret-store,retired-settings-notice,upgrade-fixtures,modes}.test.ts"
       ],
-      "triggers": ["src/settings*.ts", "src/secrets/**", "test/fixtures/releases/**"],
-      "needs": { "display": false, "key": false, "network": false },
+      "triggers": [
+        "src/settings*.ts",
+        "src/secrets/**",
+        "test/fixtures/releases/**"
+      ],
+      "needs": {
+        "display": false,
+        "key": false,
+        "network": false
+      },
       "budgetSeconds": 6,
       "command": "npm run verify -- change <file>",
       "why": "Settings schema, healing, migration from every captured release (upgrade fixtures), secret storage."
@@ -54,9 +81,18 @@
       "id": "unit-mcp",
       "tier": "T1",
       "runner": "vitest",
-      "globs": ["test/mcp-*.test.ts"],
-      "triggers": ["src/mcp/**", "src/network/**"],
-      "needs": { "display": false, "key": false, "network": false },
+      "globs": [
+        "test/mcp-*.test.ts"
+      ],
+      "triggers": [
+        "src/mcp/**",
+        "src/network/**"
+      ],
+      "needs": {
+        "display": false,
+        "key": false,
+        "network": false
+      },
       "budgetSeconds": 5,
       "command": "npm run verify -- change <file>",
       "why": "MCP client, OAuth, handshake retry, tool filtering against local fakes."
@@ -65,9 +101,18 @@
       "id": "unit-plugins-skills",
       "tier": "T1",
       "runner": "vitest",
-      "globs": ["test/{plugin-*,plugins-*,skill-*,skills,builtin-skills}.test.ts"],
-      "triggers": ["src/plugins/**", "src/skills/**"],
-      "needs": { "display": false, "key": false, "network": false },
+      "globs": [
+        "test/{plugin-*,plugins-*,skill-*,skills,builtin-skills}.test.ts"
+      ],
+      "triggers": [
+        "src/plugins/**",
+        "src/skills/**"
+      ],
+      "needs": {
+        "display": false,
+        "key": false,
+        "network": false
+      },
       "budgetSeconds": 5,
       "command": "npm run verify -- change <file>",
       "why": "Plugin catalog, import, prune, and skill loading."
@@ -80,8 +125,19 @@
         "test/{vault-*,web-*,tool-artifact-*}.test.ts",
         "test/{tool-call-controller,tool-consolidation-witness,tool-contracts,tool-loading,tool-output-wrapper,tool-schema-tokens,ask-user-tool,ignore,path-normalizers,read-memo,truncate,document-ingest,pdf-ingest,attachments,image-attachments,retrieval-citations,source-artifacts,system-browser,diff,file-system-sandbox,active-note}.test.ts"
       ],
-      "triggers": ["src/vault/**", "src/tools/**", "src/retrieval/**", "src/artifacts/**", "src/platform/**", "src/vendor/**"],
-      "needs": { "display": false, "key": false, "network": false },
+      "triggers": [
+        "src/vault/**",
+        "src/tools/**",
+        "src/retrieval/**",
+        "src/artifacts/**",
+        "src/platform/**",
+        "src/vendor/**"
+      ],
+      "needs": {
+        "display": false,
+        "key": false,
+        "network": false
+      },
       "budgetSeconds": 8,
       "command": "npm run verify -- change <file>",
       "why": "Vault reads and edits, tool contracts and schemas, web and document tools."
@@ -94,8 +150,15 @@
         "test/{chat-*,composer-*,assistant-bubble-*}.test.ts",
         "test/{approval-modal,autocomplete,confirm-modal,context-bar,context-chip-renderer,diff-css-scope,diff-renderers,drag-drop,edit-preview,folder-suggest,info-panel-renderer,model-suggest-modal,notifications,quick-ask,scroll-pinning,transcript-view,prompt-edit-state,readouts,chrome-state,e2e-stream}.test.ts"
       ],
-      "triggers": ["src/ui/**", "styles.css"],
-      "needs": { "display": false, "key": false, "network": false },
+      "triggers": [
+        "src/ui/**",
+        "styles.css"
+      ],
+      "needs": {
+        "display": false,
+        "key": false,
+        "network": false
+      },
       "budgetSeconds": 8,
       "command": "npm run verify -- change <file>",
       "why": "View state and rendering against a fake DOM. Wiring and layout still need the app tier."
@@ -104,9 +167,20 @@
       "id": "unit-ui-dom",
       "tier": "T1",
       "runner": "vitest",
-      "globs": ["test/ui/**/*.test.ts"],
-      "triggers": ["src/ui/**", "src/agent/**", "src/session/**", "test/ui/**"],
-      "needs": { "display": false, "key": false, "network": false },
+      "globs": [
+        "test/ui/**/*.test.ts"
+      ],
+      "triggers": [
+        "src/ui/**",
+        "src/agent/**",
+        "src/session/**",
+        "test/ui/**"
+      ],
+      "needs": {
+        "display": false,
+        "key": false,
+        "network": false
+      },
       "budgetSeconds": 5,
       "command": "npm run verify -- change <file>",
       "why": "The real ChatView, modals, and transcript in happy-dom with scripted model turns: rendering and the composer state machine. Layout and Obsidian wiring stay in the app tier."
@@ -118,10 +192,18 @@
       "globs": [
         "test/{agentic-eval-*,trace-*,fixture-server,fixture-mcp-server,fixture-wiring}.test.ts",
         "test/{tool-use-compare,tool-use-eval-core,tool-use-plan,tool-use-report,core-eval-suite,significance,provider-cache-live}.test.ts",
-        "test/{baseline-files,eval-ab,eval-canary,eval-explain,eval-run-loop}.test.ts"
+        "test/{baseline-files,eval-ab,eval-canary,eval-explain,eval-regrade,eval-run-loop,static-context}.test.ts"
       ],
-      "triggers": ["scripts/eval/**", "scripts/*eval*", "test/evals/**"],
-      "needs": { "display": false, "key": false, "network": false },
+      "triggers": [
+        "scripts/eval/**",
+        "scripts/*eval*",
+        "test/evals/**"
+      ],
+      "needs": {
+        "display": false,
+        "key": false,
+        "network": false
+      },
       "budgetSeconds": 6,
       "command": "npm run verify -- change <file>",
       "why": "Eval graders, comparison math, case shape. Grading logic must be right before any model is called."
@@ -132,10 +214,25 @@
       "runner": "vitest",
       "globs": [
         "test/{chaos-*,check-*,verify-*}.test.ts",
-        "test/{analyze-session-trace,offline-guard,diff-coverage,delegate-config,dogfood-core,e2e-ports,feature-cut-2026-11,live-env,mobile-compat,redact-log,release-config,run-nested,script-entrypoints,witness-from-pr,worktree-script,test-manifest,logs-prune,tests-status,run-result,doc-commands}.test.ts"
+        "test/{analyze-session-trace,offline-guard,diff-coverage,delegate-config,dogfood-core,e2e-ports,feature-cut-2026-11,live-env,mobile-compat,redact-log,release-config,run-nested,script-entrypoints,witness-from-pr,worktree-script,test-manifest,logs-prune,tests-status,run-result,doc-commands,app-report,gate-report}.test.ts"
       ],
-      "triggers": ["scripts/**", ".github/**", "config/**", "package.json", "package-lock.json", "test/manifest.json", "vitest*.config.ts", "wdio*.conf.mts", "tsconfig*.json", "eslint.config.mjs"],
-      "needs": { "display": false, "key": false, "network": false },
+      "triggers": [
+        "scripts/**",
+        ".github/**",
+        "config/**",
+        "package.json",
+        "package-lock.json",
+        "test/manifest.json",
+        "vitest*.config.ts",
+        "wdio*.conf.mts",
+        "tsconfig*.json",
+        "eslint.config.mjs"
+      ],
+      "needs": {
+        "display": false,
+        "key": false,
+        "network": false
+      },
       "budgetSeconds": 15,
       "command": "npm run verify -- change <file>",
       "why": "The gates, lanes, and harness scripts. They spawn node/git, so they are the slowest unit group."
@@ -144,9 +241,23 @@
       "id": "app-smoke",
       "tier": "T2",
       "runner": "wdio",
-      "globs": ["test/e2e/specs/smoke.e2e.ts"],
-      "triggers": ["src/**", "styles.css", "manifest.json", "test/e2e/support/**", "wdio.conf.mts", "scripts/run-e2e.ts", "scripts/build-e2e.mjs"],
-      "needs": { "display": true, "key": false, "network": false },
+      "globs": [
+        "test/e2e/specs/smoke.e2e.ts"
+      ],
+      "triggers": [
+        "src/**",
+        "styles.css",
+        "manifest.json",
+        "test/e2e/support/**",
+        "wdio.conf.mts",
+        "scripts/run-e2e.ts",
+        "scripts/build-e2e.mjs"
+      ],
+      "needs": {
+        "display": true,
+        "key": false,
+        "network": false
+      },
       "budgetSeconds": 25,
       "command": "npm run verify -- app smoke",
       "why": "The seams only a real Obsidian proves: the view mounts, the composer is reachable, a scripted turn renders."
@@ -155,10 +266,28 @@
       "id": "app-specs",
       "tier": "T2",
       "runner": "wdio",
-      "globs": ["test/e2e/specs/*.e2e.ts"],
-      "exclude": ["test/e2e/specs/smoke.e2e.ts", "test/e2e/specs/mobile-viewport.e2e.ts", "test/e2e/specs/design-audit.e2e.ts"],
-      "triggers": ["src/ui/**", "src/main.ts", "src/settings*.ts", "styles.css", "test/e2e/specs/**", "test/e2e/support/**", "wdio.conf.mts", "scripts/run-e2e.ts"],
-      "needs": { "display": true, "key": false, "network": false },
+      "globs": [
+        "test/e2e/specs/*.e2e.ts"
+      ],
+      "exclude": [
+        "test/e2e/specs/smoke.e2e.ts",
+        "test/e2e/specs/mobile-viewport.e2e.ts"
+      ],
+      "triggers": [
+        "src/ui/**",
+        "src/main.ts",
+        "src/settings*.ts",
+        "styles.css",
+        "test/e2e/specs/**",
+        "test/e2e/support/**",
+        "wdio.conf.mts",
+        "scripts/run-e2e.ts"
+      ],
+      "needs": {
+        "display": true,
+        "key": false,
+        "network": false
+      },
       "budgetSeconds": 110,
       "command": "npm run verify -- app <spec>",
       "why": "User journeys in real Obsidian with scripted model turns: approval, settings, tabs, rename, migration."
@@ -167,9 +296,20 @@
       "id": "app-mobile",
       "tier": "T2",
       "runner": "wdio",
-      "globs": ["test/e2e/specs/mobile-viewport.e2e.ts"],
-      "triggers": ["src/ui/**", "styles.css", "test/e2e/specs/mobile-viewport.e2e.ts", "scripts/run-e2e-mobile.mjs"],
-      "needs": { "display": true, "key": false, "network": false },
+      "globs": [
+        "test/e2e/specs/mobile-viewport.e2e.ts"
+      ],
+      "triggers": [
+        "src/ui/**",
+        "styles.css",
+        "test/e2e/specs/mobile-viewport.e2e.ts",
+        "scripts/run-e2e-mobile.mjs"
+      ],
+      "needs": {
+        "display": true,
+        "key": false,
+        "network": false
+      },
       "budgetSeconds": 30,
       "command": "npm run verify -- app --mobile",
       "why": "The chat at a 390 px viewport. A narrow desktop window, not Obsidian Mobile."
@@ -178,31 +318,44 @@
       "id": "app-dogfood-scripted",
       "tier": "T2",
       "runner": "wdio",
-      "globs": ["test/e2e/dogfood/next-level.dogfood.ts", "test/evals/agentic-chat/context-and-dogfood.eval.json"],
-      "triggers": ["src/**", "scripts/run-agentic-evals.ts", "scripts/run-dogfood-e2e.ts", "scripts/dogfood-core.ts", "scripts/generate-dogfood-vault.ts", "test/e2e/dogfood/**", "test/evals/agentic-chat/**"],
-      "needs": { "display": true, "key": false, "network": false },
+      "globs": [
+        "test/e2e/dogfood/next-level.dogfood.ts",
+        "test/e2e/dogfood/scripted-dogfood.eval.json"
+      ],
+      "triggers": [
+        "src/**",
+        "scripts/run-agentic-evals.ts",
+        "scripts/run-dogfood-e2e.ts",
+        "scripts/dogfood-core.ts",
+        "test/e2e/dogfood/**"
+      ],
+      "needs": {
+        "display": true,
+        "key": false,
+        "network": false
+      },
       "budgetSeconds": 60,
       "command": "npm run verify -- app --dogfood",
       "why": "A generated vault, scripted turns, and an invariant oracle. Caught the #391 production import crash."
     },
     {
-      "id": "app-design-audit",
-      "tier": "T4",
-      "runner": "wdio",
-      "globs": ["test/e2e/specs/design-audit.e2e.ts"],
-      "triggers": [],
-      "needs": { "display": true, "key": false, "network": false },
-      "budgetSeconds": 120,
-      "command": "AGENTIC_CHAT_DESIGN_AUDIT=1 npm run verify -- app design-audit",
-      "why": "Screenshots for a human design pass. No assertions, so no verdict (removal tracked in #393 T23)."
-    },
-    {
       "id": "live-e2e",
       "tier": "T3",
       "runner": "wdio",
-      "globs": ["test/e2e/live/*.e2e.ts"],
-      "triggers": ["src/llm/**", "src/mcp/**", "src/agent/**", "test/e2e/live/**"],
-      "needs": { "display": true, "key": true, "network": true },
+      "globs": [
+        "test/e2e/live/*.e2e.ts"
+      ],
+      "triggers": [
+        "src/llm/**",
+        "src/mcp/**",
+        "src/agent/**",
+        "test/e2e/live/**"
+      ],
+      "needs": {
+        "display": true,
+        "key": true,
+        "network": true
+      },
       "budgetSeconds": 180,
       "command": "npm run verify -- live <spec>",
       "why": "Real provider and MCP calls. Local only; never in CI."
@@ -211,67 +364,78 @@
       "id": "live-unit",
       "tier": "T3",
       "runner": "vitest",
-      "globs": ["test/live/**/*.test.ts"],
-      "triggers": ["src/mcp/**", "test/live/**"],
-      "needs": { "display": false, "key": true, "network": true },
+      "globs": [
+        "test/live/**/*.test.ts"
+      ],
+      "triggers": [
+        "src/mcp/**",
+        "test/live/**"
+      ],
+      "needs": {
+        "display": false,
+        "key": true,
+        "network": true
+      },
       "budgetSeconds": 60,
       "command": "npm run verify -- live",
       "why": "Remote MCP discovery against a real server."
     },
     {
-      "id": "live-dogfood",
-      "tier": "T3",
-      "runner": "wdio",
-      "globs": ["test/e2e/dogfood/*-live.dogfood.ts", "test/e2e/dogfood/stretch-synthetic.dogfood.ts"],
-      "triggers": [],
-      "needs": { "display": true, "key": true, "network": true },
-      "budgetSeconds": 600,
-      "command": "AGENTIC_CHAT_SUBAGENT_DOGFOOD=true npm run test:e2e:dogfood -- --spec test/e2e/dogfood/subagent-live.dogfood.ts",
-      "why": "Model-driven dogfood journeys. Slated for deletion in #393 T23."
-    },
-    {
       "id": "eval-tool-use",
       "tier": "T3",
       "runner": "eval",
-      "globs": ["test/e2e/evals/tool-use.eval.ts", "test/evals/tool-use/*.eval.json"],
-      "triggers": ["src/agent/**", "src/tools/**", "test/evals/tool-use/**", "scripts/run-tool-use-evals.ts"],
-      "needs": { "display": true, "key": true, "network": true },
-      "budgetSeconds": 900,
-      "command": "npm run verify -- eval --suite core --runs 3",
-      "why": "Does the agent pick the right tools on real tasks? Cost and pass^k vs a baseline."
-    },
-    {
-      "id": "eval-agentic-judge",
-      "tier": "T3",
-      "runner": "eval",
-      "globs": ["test/evals/agentic-chat/judge.eval.json"],
-      "triggers": [],
-      "needs": { "display": false, "key": true, "network": true },
-      "budgetSeconds": 120,
-      "command": "npm run verify -- eval --suite test/evals/agentic-chat/judge.eval.json --run-judge",
-      "why": "LLM judge over a dogfood run. Never ran in practice; deletion is planned in #393 T20."
+      "globs": [
+        "test/evals/tool-use/*.eval.json",
+        "test/e2e/evals/tool-use.eval.ts"
+      ],
+      "triggers": [
+        "src/agent/**",
+        "src/tools/**",
+        "test/evals/tool-use/**",
+        "scripts/run-tool-use-evals.ts"
+      ],
+      "needs": {
+        "display": true,
+        "key": true,
+        "network": true
+      },
+      "budgetSeconds": 300,
+      "command": "npm run verify -- eval --canary --parallel 2",
+      "why": "Does the agent pick the right tools on real tasks? canary (5 x 5), core (12 x 3), regression (on demand); pass^k, cost, and time vs a baseline."
     },
     {
       "id": "probes",
       "tier": "T4",
       "runner": "wdio",
-      "globs": ["test/e2e/probe/scenarios/*.e2e.ts"],
+      "globs": [
+        "test/e2e/probe/scenarios/*.e2e.ts"
+      ],
       "triggers": [],
-      "needs": { "display": true, "key": false, "network": false },
+      "needs": {
+        "display": true,
+        "key": false,
+        "network": false
+      },
       "budgetSeconds": 120,
-      "command": "npm run probe -- --scenario <name>",
-      "why": "Recorded exploratory runs. Evidence for a human, not a verdict."
+      "command": "npm run verify -- app --record <scenario>",
+      "why": "Recorded runs (video, keyframes, metrics) of 2 scenarios. Evidence for a human, not a verdict; a run must execute a test."
     },
     {
       "id": "chaos",
       "tier": "T4",
       "runner": "wdio",
-      "globs": ["test/e2e/chaos/*.e2e.ts"],
+      "globs": [
+        "test/e2e/chaos/*.e2e.ts"
+      ],
       "triggers": [],
-      "needs": { "display": true, "key": true, "network": true },
+      "needs": {
+        "display": true,
+        "key": true,
+        "network": true
+      },
       "budgetSeconds": 1800,
-      "command": "npm run verify -- explore --mode generic --max-steps 6",
-      "why": "Chaos explore drives the real UI with a model. Leads, not proof; the only layer with proven catches beyond review."
+      "command": "npm run verify -- explore --mode smoke",
+      "why": "Chaos explore drives the real UI with a model (--mode explore --live); smoke is the dry run. Leads, not proof."
     }
   ]
 }

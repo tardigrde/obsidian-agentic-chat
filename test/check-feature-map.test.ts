@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { checkFeatureMap, formatFeatureMapReport } from "../scripts/check-feature-map.mjs";
 
-const FEATURES = path.join(".agents", "skills", "verify-obsidian-chat", "features");
+const FEATURES = path.join(".agents", "skills", "app", "features");
 const SCRIPT = fileURLToPath(new URL("../scripts/check-feature-map.mjs", import.meta.url));
 
 function row(
@@ -253,7 +253,7 @@ describe("check-feature-map", () => {
 
   it("accepts a test/ui file that mounts the real view, but not the same import elsewhere", () => {
     const features = path.join(root, FEATURES);
-    const mounted = 'import { mountChatView } from "./support/mount-chat-view";\nit("mounted flow", () => {});\n';
+    const mounted = 'import { mountChatView } from "./support/mount-chat-view";\nit("mounted flow", async () => {\n  await mountChatView();\n});\n';
     mkdirSync(path.join(root, "test", "ui"), { recursive: true });
     writeFileSync(path.join(root, "test", "ui", "flow.test.ts"), mounted);
     writeFileSync(path.join(features, "sample.md"), journey(row("src/a.ts#alpha", "`test/ui/flow.test.ts#mounted flow`")));
@@ -265,6 +265,10 @@ describe("check-feature-map", () => {
 
     writeFileSync(path.join(root, "test", "ui", "flow.test.ts"), 'import type { mountChatView } from "./support/mount-chat-view";\nit("mounted flow", () => {});\n');
     writeFileSync(path.join(features, "sample.md"), journey(row("src/a.ts#alpha", "`test/ui/flow.test.ts#mounted flow`")));
+    expect(run(root).output).toContain("covered needs a deterministic e2e, probe, or replay reference");
+
+    // The import alone is not proof: the file must call mountChatView.
+    writeFileSync(path.join(root, "test", "ui", "flow.test.ts"), 'import { mountChatView } from "./support/mount-chat-view";\nit("mounted flow", () => {});\n');
     expect(run(root).output).toContain("covered needs a deterministic e2e, probe, or replay reference");
   });
 
