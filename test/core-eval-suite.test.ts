@@ -9,7 +9,7 @@ import {
   type ToolUseCheckResult,
   type ToolUseSuite,
 } from "../scripts/eval/tool-use-core";
-import { generateVault } from "../scripts/eval/vault-generator";
+import { expandCaseSeed } from "../scripts/eval/tool-use-plan";
 
 const SUITES_DIR = path.join(process.cwd(), "test/evals/tool-use");
 const SUITE_PATH = path.join(SUITES_DIR, "core.eval.json");
@@ -70,19 +70,8 @@ function allCases(): ToolUseCase[] {
   return liveSuites().flatMap((suite) => suite.cases);
 }
 
-/** Mirror the runner: case files win over the generated base. */
-function expandCase(evalCase: ToolUseCase): ToolUseCase {
-  const vaultSeed = evalCase.seed.vault;
-  if (!vaultSeed) return evalCase;
-  const generated = generateVault(vaultSeed.size, vaultSeed.seed);
-  return {
-    ...evalCase,
-    seed: {
-      files: { ...generated.files, ...evalCase.seed.files },
-      binaryFiles: evalCase.seed.binaryFiles,
-    },
-  };
-}
+/** The runner's own expansion: case files win over the generated base. */
+const expandCase = expandCaseSeed;
 
 function walkChecks(checks: ToolUseCheck[]): ToolUseCheck[] {
   return checks.flatMap((check) => (check.type === "any_of" ? [check, ...walkChecks(check.checks)] : [check]));

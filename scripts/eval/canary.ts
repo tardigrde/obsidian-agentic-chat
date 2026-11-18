@@ -41,6 +41,7 @@ interface Row {
   passed?: number;
   executed?: number;
   passRate?: number;
+  runResults?: Array<{ status?: string }>;
 }
 
 function rows(input: unknown): Row[] {
@@ -62,9 +63,14 @@ export function formatCanary(summary: unknown, baseline: unknown): string {
   const lines = ["## Canary", "", "| Case | Pass | 95% Wilson | Baseline | Signal |", "|---|---|---|---|---|"];
   const moves: Move[] = [];
   const unknown: string[] = [];
+  let excluded = 0;
   for (const row of rows(summary)) {
     const passed = row.passed ?? 0;
-    const runs = row.executed ?? 0;
+    // A harness error (an upstream 429, a dead window) is not a model result:
+    // it leaves the interval instead of counting as a failed run.
+    const errors = (row.runResults ?? []).filter((run) => run.status === "error").length;
+    excluded += errors;
+    const runs = Math.max(0, (row.executed ?? 0) - errors);
     const interval = wilson(passed, runs);
     const baselineRate = base.get(row.id);
     const signal = canarySignal(passed, runs, baselineRate);
@@ -76,6 +82,7 @@ export function formatCanary(summary: unknown, baseline: unknown): string {
       `| ${row.id} | ${passed}/${runs} | [${pct(interval.lower)}, ${pct(interval.upper)}] | ${baselineRate === undefined ? "-" : pct(baselineRate)} | ${signal} |`,
     );
   }
+  if (excluded > 0) lines.push("", `${excluded} harness error run(s) left out of the intervals; they are not model results.`);
   lines.push("", canaryVerdict(moves, { hasBaseline: base.size > 0, unknown }));
   return `${lines.join("\n")}\n`;
 }

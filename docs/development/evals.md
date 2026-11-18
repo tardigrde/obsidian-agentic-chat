@@ -127,9 +127,7 @@ display. It runs locally only; CI does not run it.
 
 The live calls pin the model, the temperature, and the reasoning level:
 `deepseek/deepseek-v4.1-flash`, temperature 0, and the level the suite names. The
-`core` and `tool-use` suites pin `low`, so a new measurement is explicit. The
-older `tool-use` baseline predates the axis and has no `thinkingLevel` field; do
-not compare it as if it named one. The product default is `off`; a user can pick
+`core` and `regression` suites pin `low`, so a new measurement is explicit. The product default is `off`; a user can pick
 any supported level. A tool or prompt comparison must hold the level fixed.
 
 Reasoning is a first-class axis:
@@ -363,8 +361,10 @@ npm run eval:tool-use -- --write-baseline-from logs/eval-runs/<run id>/summary.j
 - `--parallel N` runs N Obsidian instances side by side, each with its own
   vault and driver port, after one e2e build. All runs of a case stay on one
   instance; the instances share one budget (every record in the run's results
-  folder counts). The summary and baseline record `parallel: N`, and
-  `--compare` warns when the two sides used a different N (time axis only).
+  folder counts). The budget is checked before each run starts, so with N
+  instances the total can pass the cap by up to N-1 runs in flight. The summary
+  and baseline record `parallel: N`, and `--compare` warns when the two sides
+  used a different N (time axis only).
 - `eval:ab` runs the cases on `--base` (default `origin/main`) in a temporary
   detached worktree, then on the current tree, and prints one table. With 2 or
   more cases it adds the paired bootstrap. `--dry-run` prints the plan only.

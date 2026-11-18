@@ -31,7 +31,8 @@ display already.
 Every run writes `logs/verify/<ts>/run-result.json`: verdict, mode (`scripted`,
 `live`), command, counts, cost, and artifact folders. A recorded run that
 executes no test, or skips one, fails. `--live` works only for a scenario that
-drives a real model (`live-chat`). A used `--out` is refused.
+drives a real model (`live-chat`); its cost is not measured (the report says 0).
+A used `--out` is refused.
 
 ## Doctor
 

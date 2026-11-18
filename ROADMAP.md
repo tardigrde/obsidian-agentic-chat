@@ -26,8 +26,7 @@ surfaces.
   the cut lands.
 
 **Exploratory QA**
-- `@break-change` agent skill: seeded vault, model-driven edge cases, removal
-  audits, and a findings report.
+- Chaos explore (`@app`) after big changes, on the owner's request.
 
 ## Later
 

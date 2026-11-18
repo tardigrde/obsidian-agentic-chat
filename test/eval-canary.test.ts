@@ -79,4 +79,21 @@ describe("Wilson interval and the signal rule", () => {
     expect(text).toContain("No signal in the cases with a baseline. No baseline for: new.");
     expect(text).not.toContain("every baseline rate is inside");
   });
+
+  it("leaves harness-error runs (an upstream 429) out of the interval instead of counting them as failures", () => {
+    const text = formatCanary(
+      {
+        cases: [
+          { id: "a", passed: 3, executed: 5, runResults: [{ status: "pass" }, { status: "pass" }, { status: "pass" }, { status: "error" }, { status: "error" }] },
+          { id: "b", passed: 4, executed: 5, runResults: [{ status: "pass" }, { status: "pass" }, { status: "pass" }, { status: "pass" }, { status: "error" }] },
+        ],
+      },
+      { cases: [{ id: "a", passRate: 1 }, { id: "b", passRate: 1 }] },
+    );
+    expect(text).toContain("| a | 3/3 |");
+    expect(text).toContain("| b | 4/4 |");
+    expect(text).toContain("3 harness error run(s) left out of the intervals");
+    expect(text).toContain("No signal");
+  });
 });
+
