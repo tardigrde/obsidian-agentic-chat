@@ -657,6 +657,61 @@ describe("delete", () => {
     expect(app.vault.getAbstractFileByPath("Empty")).toBeNull();
   });
 
+  /**
+   * Obsidian's system trash can return without moving anything (a Linux desktop
+   * with no trash service). Reproduced in real Obsidian by
+   * test/e2e/specs/trash-fallback.e2e.ts; this pins the fallback order.
+   */
+  function withNoOpSystemTrash(app: App, onDisk: Set<string>, options: { localTrashFails?: boolean } = {}) {
+    const calls: string[] = [];
+    (app.fileManager as unknown as { trashFile: (file: TFile) => Promise<void> }).trashFile = async () => {
+      calls.push("trashFile");
+    };
+    (app.vault as unknown as { adapter: unknown }).adapter = {
+      exists: async (path: string) => onDisk.has(path),
+      trashLocal: async (path: string) => {
+        calls.push("trashLocal");
+        if (options.localTrashFails) throw new Error("no .trash");
+        onDisk.delete(path);
+      },
+      remove: async (path: string) => {
+        calls.push("remove");
+        onDisk.delete(path);
+      },
+      rmdir: async (path: string) => {
+        calls.push("rmdir");
+        onDisk.delete(path);
+      },
+    };
+    return calls;
+  }
+
+  it("falls back to the vault trash when the system trash leaves the note in place", async () => {
+    const app = makeApp({ files: { "Note.md": { content: "body" } } });
+    const onDisk = new Set(["Note.md"]);
+    const calls = withNoOpSystemTrash(app, onDisk);
+
+    const result = await run(getTool(app, "delete"), { path: "Note.md" });
+
+    expect(calls).toEqual(["trashFile", "trashLocal"]);
+    expect(onDisk.has("Note.md")).toBe(false);
+    expect(unwrapToolOutput(result.text)).toBe("Moved Note.md to trash.");
+    expect(result.details).not.toHaveProperty("bypassedTrash");
+  });
+
+  it("removes the note and says so when no trash works", async () => {
+    const app = makeApp({ files: { "Note.md": { content: "body" } } });
+    const onDisk = new Set(["Note.md"]);
+    const calls = withNoOpSystemTrash(app, onDisk, { localTrashFails: true });
+
+    const result = await run(getTool(app, "delete"), { path: "Note.md" });
+
+    expect(calls).toEqual(["trashFile", "trashLocal", "remove"]);
+    expect(onDisk.has("Note.md")).toBe(false);
+    expect(unwrapToolOutput(result.text)).toBe("Deleted Note.md (bypassed trash).");
+    expect(result.details).toMatchObject({ bypassedTrash: true });
+  });
+
   it("refuses to delete a non-empty folder", async () => {
     const app = makeApp({ files: { "Full/Note.md": { content: "body" } } });
     const del = getTool(app, "delete");
