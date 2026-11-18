@@ -6,37 +6,36 @@ The detailed pre-2026-11-07 backlog is in
 
 ## Now
 
-**Simplify the interaction surface.** Cut duplicate controls before adding new
-surfaces.
+**Ship the interaction cut.** The surface is cut and merged; the remaining work
+is verification and the release decision.
 
-- Remove the todo tracker.
-- Remove plan mode.
-- Remove `/config`, `/mode`, the `/project` tombstone, and all aliases.
-- Reduce visible settings to three tabs: Models, Agent, Advanced.
+- Run the live chaos pass on the merged cut. Done 2026-11-08; all hostile
+  targets passed.
+- Release the cut only after the user approves. Release automation is paused.
 
 ## Next
 
-**Safety and durability**
-- #152 — atomic session rewrite for compaction and rewind.
-- #150 — max-turns cap.
-
 **Trusted change loop**
 - Keep issues as the durable queue and `ROADMAP.md` as direction.
-- Add deterministic pre-review, patch-id verdicts, and a merge-regret ledger when
-  the cut lands.
+- Add deterministic pre-review, patch-id verdicts, and a merge-regret ledger.
 
 **Exploratory QA**
 - Chaos explore (`@app`) after big changes, on the owner's request.
+
+**Dependency hygiene**
+- Bump the top-level `obsidian-launcher` to match the `3.5.0` service.
+- Triage the pre-existing moderate audit findings and unapproved install
+  scripts.
+
+**Product shape**
+- Discuss the product shape now that the cut has landed.
 
 ## Later
 
 - UI evidence clips: approval Stop, session-switch queued prompt, semantic crash
   repair, plugin install recovery.
-- Live MCP e2e with Context7.
-- Honest context readout (#248).
-- Inline-image retry context fix.
+- Live MCP e2e with Context7 in the regular lane.
 - Subsystem review: semantic index, memory, observability, output styles.
-- Product shape discussion after the cut.
 
 ## Not doing
 

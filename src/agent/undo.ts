@@ -3,6 +3,7 @@ import { normalizeVaultPath } from "../vault/path";
 import { renameVaultEntry } from "../vault/rename";
 import { fnv1a32 } from "../utils/hash";
 import { ensureVaultFolder, ensureVaultParentFolder } from "../vault/storage";
+import { trashVaultEntry } from "../tools/vault/adapter-trash";
 export { UNDOABLE_TOOLS } from "../tools/tool-contracts";
 
 /** Compact fingerprint of a file body for log slimming. The hash is FNV-1a —
@@ -148,8 +149,9 @@ async function applyContentUndo(app: App, entry: Extract<UndoEntry, { kind: "con
   const existing = app.vault.getAbstractFileByPath(entry.path);
   if (entry.before === null) {
     if (existing instanceof TFile) {
-      await app.fileManager.trashFile(existing);
-      return `Removed ${entry.path} (it didn't exist before).`;
+      const disposition = await trashVaultEntry(app, existing);
+      const how = disposition === "trash" ? "" : ", bypassed trash";
+      return `Removed ${entry.path} (it didn't exist before${how}).`;
     }
     return `Nothing to undo for ${entry.path}.`;
   }
