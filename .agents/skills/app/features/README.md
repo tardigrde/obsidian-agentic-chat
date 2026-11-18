@@ -26,7 +26,7 @@ Each one keeps the same five sections, in this order:
 ## Shared preconditions
 
 - Build before you assert. `npm run verify -- app <spec>` rebuilds the e2e
-  bundle. `npm run probe -- --scenario <name>` rebuilds by default.
+  bundle. `npm run verify -- app --record <scenario>` rebuilds too.
 - Use the throwaway sandbox vault that the runner creates, not `~/MyTestVault`.
 - Real Obsidian settings open in a popout window on Obsidian 1.13 and later.
   Use `test/e2e/support/settings-ui.ts`; do not query the main window.
@@ -93,12 +93,10 @@ paths must exist in the repository.
 - The checker cannot judge whether a test asserts the user action. A reviewer
   owns that judgment; a wrong `covered` is still a review finding.
 
-## Break-change
+## Removals
 
-Before a product-cut PR, run `@break-change`. Targeted mode attacks the changed
-entrypoints. Removal mode proves a deleted command or UI entrypoint is absent
-from `/help`, the registry, the UI, docs, this map, imports, and routes. General
-mode lists `partial` and `NONE` rows and targets a small high-risk subset.
-
-A break-change report is a lead, not a proof. It does not upgrade a row. Promote a
+A deleted command or UI entry point needs absence proof: gone from `/help` and
+the command registry, gone from the UI, docs, and this map, with no import or
+route left. Use a `kind: removal` witness ([trust.md](../../../../docs/development/trust.md)).
+An explore run is a lead, not a proof: it does not upgrade a row. Promote a
 confirmed finding into a committed user-action check, then update the table.

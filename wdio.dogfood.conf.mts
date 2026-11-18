@@ -7,7 +7,7 @@ type ObsidianCapability = WebdriverIO.Capabilities & {
 
 const targetVault = env.TARGET_VAULT?.trim();
 if (!targetVault) {
-  throw new Error("TARGET_VAULT must point at the Obsidian vault to dogfood. Use `npm run test:e2e:dogfood` for the generated-vault target.");
+  throw new Error("TARGET_VAULT must point at the Obsidian vault to dogfood. Use `npm run verify -- app --dogfood` for the generated-vault target.");
 }
 
 const copyVault = env.DOGFOOD_COPY !== "false";

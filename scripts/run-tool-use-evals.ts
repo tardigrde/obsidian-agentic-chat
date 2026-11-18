@@ -50,6 +50,7 @@ import {
   type CaseRunEntry,
 } from "./eval/tool-use-report";
 import { applyEnvFile } from "./live-env.mjs";
+import { writeRunReport } from "./lib/run-result.mjs";
 
 const SUITE_DIR = "test/evals/tool-use";
 const DEFAULT_SUITE = `${SUITE_DIR}/core.eval.json`;
@@ -312,6 +313,8 @@ async function main(): Promise<void> {
     await writeJson(paths.summary, summary);
     await writeFile(paths.report, formatReport(summary), "utf8");
     process.stdout.write(formatConsoleSummary(summary, paths));
+    // Under `verify -- eval`, the run's spend and summary go into its run-result.json.
+    writeRunReport({ tokens: summary.budget.used.tokens, usd: summary.budget.used.usd, artifacts: [path.relative(process.cwd(), paths.summary)] });
     if (args.canary) {
       const baselinePath = path.resolve(BASELINE_DIR, baselineFileName(suite.name));
       process.stdout.write(`\n${formatCanary(summary, existsSync(baselinePath) ? await readJson(baselinePath) : undefined)}`);

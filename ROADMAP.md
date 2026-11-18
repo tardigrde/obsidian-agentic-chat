@@ -23,7 +23,7 @@ surfaces.
 **Trusted change loop**
 - Keep issues as the durable queue and `ROADMAP.md` as direction.
 - Add deterministic pre-review, patch-id verdicts, and a merge-regret ledger when
-  the cut lands. See [factory-notes.md](docs/development/factory-notes.md).
+  the cut lands.
 
 **Exploratory QA**
 - `@break-change` agent skill: seeded vault, model-driven edge cases, removal

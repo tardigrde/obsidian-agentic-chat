@@ -23,8 +23,8 @@ npm run verify -- plan --explain src/ui/chat-view.ts   # why a path needs what i
 | T0 static | secret scan, typecheck (src, e2e, scripts), lint, Obsidian lint, feature map, test manifest, doc commands, skip rule | `check`, CI | ≤ 30 s |
 | T1 hermetic logic | vitest by domain group (`unit` project, no DOM), rendering on happy-dom (`ui` project, `test/ui/`), witness self-test | `check`, CI | ≤ 30 s |
 | T2 hermetic real app | real Obsidian with scripted turns: smoke, app specs, mobile, scripted dogfood | `check` (smoke), CI (rest) | smoke ≤ 25 s, suite ≤ 110 s |
-| T3 live | live specs (`test/e2e/live/`, `test/live/`), tool-use evals | local only, needs a key | 1-15 min |
-| T4 exploration | chaos explore, probes, design audit | local, on request | per run |
+| T3 live | live specs (`test/e2e/live/`, `test/live/`), evals (canary, core, regression) | local only, needs a key | canary ≤ 3 min with `--parallel 2`; core ≤ 7 min |
+| T4 exploration | chaos explore, recorded runs (`app --record`) | local, on request | per run |
 
 ## The eight lanes
 
@@ -33,15 +33,17 @@ npm run verify -- plan --explain src/ui/chat-view.ts   # why a path needs what i
 | `plan` | the commands this diff needs |
 | `check [--no-app] [--coverage]` | merge gate: T0 + T1 + production build, the release bundle booted in Obsidian, then the smoke on the e2e bundle. `--no-app` without a display |
 | `change <file...\|pattern>` | the witness loop: one or more unit files, or a `-t` name pattern |
-| `app [spec...] [--mobile] [--dogfood] [--prod] [--reuse-bundle]` | real Obsidian, scripted turns; bare names resolve to `test/e2e/specs/<name>.e2e.ts`; `--prod` boots the release bundle |
+| `app [spec...] [--mobile] [--dogfood] [--prod] [--reuse-bundle]` | real Obsidian, scripted turns; bare names resolve to `test/e2e/specs/<name>.e2e.ts`; `--dogfood` is the generated vault with its oracle; `--prod` boots the release bundle |
+| `app --record <scenario> [--live]` | a recorded run (video, keyframes, metrics) of `layout-smoke` or `live-chat`; must execute a test |
 | `live [spec...]` | real model or MCP calls; local only |
-| `eval [args]` | agentic evals; `--suite core` runs the tool-use suite (live) |
-| `explore [args]` | chaos explore in a throwaway vault: leads, not proof |
+| `eval [args]` | live evals: `--canary`, `--suite core\|regression`, `--runs N`, `--parallel N`; no arguments prints the core plan ([evals.md](evals.md#names)) |
+| `explore [--mode explore --live\|--mode smoke]` | chaos explore in a throwaway vault: leads, not proof |
 | `release` | `check --no-app`, full app suite, mobile specs, scripted dogfood |
 
 All run as `npm run verify -- <lane>`. Each run writes
-`logs/verify/<ts>/summary.json` and `run-result.json`, prints a per-tier counts
-line, and appends to `logs/history.jsonl`.
+`logs/verify/<ts>/summary.json` and `run-result.json` (verdict, mode, command,
+counts, cost, artifacts: one shape for every lane, recorded runs and explore
+included), prints a per-tier counts line, and appends to `logs/history.jsonl`.
 
 ## What to run, by change
 
@@ -51,12 +53,13 @@ line, and appends to `logs/history.jsonl`.
 | test only | `change <test>`, then `check` | the new test runs; the suite is consistent |
 | one module / logic bug | `change <test>` red then green, then `check` | the witness, then no regression |
 | UI (command, panel, row, tab, mode) | `check` + `app <spec>` (+ `app --mobile`) | wiring and lifecycle in real Obsidian |
-| agent, prompt, tool description | `check` + `app --dogfood` + `eval --suite core --runs 3` (live) | correctness, tool choice, cost vs the baseline |
+| agent, prompt, tool description | `check` + `app --dogfood` + `eval --canary` (live); a `Signal` needs `eval:ab` | correctness, tool choice, cost vs the baseline |
 | settings or persisted shape | `check` (upgrade fixtures are unit tests) + `app settings-ui` | save, reload, migration |
 | provider or live path | `live <spec>` | the real API |
 | `scripts/`, CI, gates | `change <script test>` + `check` | the gate still catches what it should |
 | dependency or Obsidian upgrade | `check` + `app` (+ eval if the model path changed) | boot and behavior |
 | big change (new tool, new UI entry point, prompt rewrite, 3+ merged PRs) | the above, then **propose** `explore` to the owner | leads for a human |
+| eval case or baseline | `eval:ab --case <ids>`, then `eval --suite core --runs 3 --write-baseline` | pass^k, cost, time, significance |
 | release | `release` + `eval --suite core` + a real-device mobile smoke (manual) | the full picture |
 
 No display here? Run `check --no-app` and let CI run the app jobs. On a desktop,
@@ -64,20 +67,31 @@ run headed lanes on a nested display: `npm run nested -- npm run verify -- app s
 
 ## Rules
 
-1. Never merge unless the owner writes "merge".
-2. Never claim done without the `logs/verify/<ts>/summary.json` path and its
-   per-tier counts line.
-3. Never go green by skipping. Zero tests or all skipped fails the lane. In T1
-   and T2 the only allowed skip is `it.skip("flaky #<open issue>: <reason>", ...)`;
-   `check` enforces it (`scripts/check-skips.mjs`).
-4. Never call a model from CI. Live work is local, with a key and a display.
-5. Never present scripted as live: every run result states `mode: scripted`,
-   `live`, or `static`.
-6. Never add a retry to a flaky test; fix the observation or the fixture.
-7. Never use `no-behavior-change` for a behavior change or a deletion; a
-   deletion uses the removal witness.
-8. Every test file belongs to exactly one group in `test/manifest.json` (tier,
-   triggers, needs, budget, command). An unlisted file fails `check`.
+The eight rules are in [trust.md](trust.md#the-eight-rules): merge only on
+"merge", cite the summary and counts, never green by skipping, no model in CI,
+never scripted as live, no retries, no `no-behavior-change` for a behavior
+change, every test file in the manifest. `check` enforces the skip rule and the
+manifest.
+
+## Factory flow
+
+One change is one PR (`@ship-change`); a goal of several PRs is the factory
+(`@factory`). The lead agent implements and fixes; delegates only review and
+research.
+
+| Step | Who | Command |
+|---|---|---|
+| map the goal, list the behaviors and their tests | lead agent | read the code |
+| split into as few PRs as the risk allows | lead agent | one line per PR in `NEXT.md` |
+| research, when asked | research agent | `npm run delegate -- research <name> "<question>"` |
+| one worktree per PR | lead agent | `npm run worktree:new -- <name>` |
+| plan, witness, change, verify | lead agent | `npm run verify -- plan`, then what it prints |
+| open the PR | lead agent | `gh pr create` with the template: witness block, counts line, screenshot for UI |
+| agent review, after `ci` and `e2e` are green | reviewer agent | `npm run delegate -- review <pr> <name> "<focus>"` |
+| fix findings, new review at the new head | lead agent | push, then review again |
+| merge | owner | only after the owner writes "merge" |
+| after a big change or 3+ merged PRs | lead agent proposes, owner decides | `npm run verify -- explore --mode explore --live` |
+| clean up | lead agent | `npm run worktree:cleanup -- --dry-run`, then `--apply` |
 
 ## Evidence
 
@@ -110,35 +124,17 @@ It is advisory: nothing fails on it. `AGENTIC_CHAT_HISTORY=0` turns it off for a
 | Which composer state are we in: idle, streaming, approval pending, stopped, error? | `test/ui/chat-view-states.test.ts` |
 | Does it fit the window, scroll, or wire into Obsidian (commands, leaves, settings tab)? | `test/e2e/specs/` (real Obsidian) |
 
-`test/ui/` runs the real view, tabs, composer, transcript, modals, and
-`AgentService`; only the model is scripted (`ReplayTurn`). The Obsidian API there
-is `test/ui/support/obsidian-dom.ts`: element helpers, `Component`, `ItemView`,
-`Modal`, `Setting`, `setIcon`, and a small markdown renderer. happy-dom has no
-layout engine, so a check that needs sizes or scrolling stays in e2e. A feature-map
-row may point at a `test/ui/` file that mounts the view as `covered` proof.
+`test/ui/` runs the real view and `AgentService`; only the model is scripted.
+The Obsidian API there is `test/ui/support/obsidian-dom.ts`. happy-dom has no
+layout engine: sizes and scrolling stay in e2e.
 
 ## Hermetic T1
 
-- **Offline guard.** `test/setup.ts` and `test/ui/support/setup.ts` make `fetch`
-  and raw sockets to a non-loopback host throw. Inject a fake fetcher, or use a
-  local server. `AGENTIC_CHAT_TEST_ALLOW_NETWORK=1` turns the guard off for one run.
-- **No fixed ports.** Bind `listen(0)` and read the port back
-  (`test/offline-guard.test.ts` fails on a fixed `listen(<port>)`).
-- **No real waits.** A retry backoff or a timeout runs under fake timers:
-  `withFakeClock` in `test/support/fake-clock.ts`.
-- **One fake DOM, one fake adapter.** happy-dom (`test/ui/`) and
-  `test/support/fake-adapter.ts`.
-
-## Coverage and mutation (advisory)
-
-```bash
-npm run verify -- check --no-app --coverage
-node scripts/diff-coverage.mjs --base origin/main   # changed src/ lines the unit suite runs
-npm run mutation                                    # weekly, local: the five UI hot spots
-```
-
-CI prints diff coverage in the `ci` job summary of a PR. Neither number fails a
-build. See [mutation.md](mutation.md).
+No network (the offline guard throws on a non-loopback host), no fixed ports
+(`listen(0)`), no real waits (`withFakeClock` in `test/support/fake-clock.ts`),
+one fake DOM (happy-dom) and one fake adapter (`test/support/fake-adapter.ts`).
+Coverage and mutation are advisory: CI prints diff coverage; `npm run mutation`
+is a weekly local run ([mutation.md](mutation.md)).
 
 ## Adding a test
 

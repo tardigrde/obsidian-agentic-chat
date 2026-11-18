@@ -1,12 +1,23 @@
 #!/usr/bin/env node
 import { spawn } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import os from "node:os";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
 import { createLineRedactor, createRedactor } from "./redact-log.mjs";
 import { LANE_NAMES, RETIRED_LANES, lanes, usage } from "./verify-lanes.mjs";
-import { appendHistory, buildRunResult, gitInfo, groupCounts, groupCountsLine, parseVitestJson } from "./lib/run-result.mjs";
+import {
+  RUN_REPORT_ENV,
+  appendHistory,
+  buildRunResult,
+  gitInfo,
+  groupCounts,
+  groupCountsLine,
+  mergeRunReports,
+  parseVitestJson,
+  readRunReport,
+} from "./lib/run-result.mjs";
 import { groupFor, loadManifest } from "./check-test-manifest.mjs";
 
 // Read process.env and .env once. Every child line passes through this.
@@ -26,9 +37,12 @@ function runStep(s) {
     let output = "";
     let settled = false;
     let timedOut = false;
+    // The child may write its spend and artifacts here (lib/run-result.mjs).
+    const reportDir = mkdtempSync(path.join(os.tmpdir(), "verify-report-"));
+    const reportFile = path.join(reportDir, "report.json");
 
     const child = spawn(s.command, s.args, {
-      env: childEnv(s.env),
+      env: childEnv({ ...s.env, [RUN_REPORT_ENV]: reportFile }),
       shell: process.platform === "win32",
       stdio: ["ignore", "pipe", "pipe"],
     });
@@ -37,8 +51,11 @@ function runStep(s) {
       if (settled) return;
       settled = true;
       if (timer) clearTimeout(timer);
+      const report = readRunReport(reportFile);
+      rmSync(reportDir, { recursive: true, force: true });
       resolve({
         ...s,
+        report,
         code: timedOut ? 124 : code ?? 1,
         output,
         durationMs: Date.now() - started,
@@ -352,6 +369,7 @@ async function writeSummary(results, lane, startedAt, finishedAt, verdict, laneA
     `# Verify: ${lane}\n\n- verdict: **${verdict}**\n- duration: ${formatDuration(summary.durationMs)}\n\n| Status | Step | Duration | Detail |\n|---|---|---|---|\n${rows}\n`,
   );
 
+  const childReports = mergeRunReports(results.map((result) => result.report));
   const envelope = buildRunResult({
     lane,
     args: laneArgs,
@@ -366,7 +384,8 @@ async function writeSummary(results, lane, startedAt, finishedAt, verdict, laneA
     })),
     tests: testsFrom(results),
     scope: scopeOf(results),
-    artifacts: [path.relative(process.cwd(), path.join(dir, "summary.json"))],
+    cost: childReports.cost,
+    artifacts: [path.relative(process.cwd(), path.join(dir, "summary.json")), ...childReports.artifacts],
     git: gitInfo(),
   });
   const unitTests = envelope.tests ?? [];

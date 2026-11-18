@@ -261,7 +261,7 @@ A base end-to-end suite drives the plugin in a real Obsidian instance through [`
 ```bash
 npm run test:e2e   # builds the plugin, then boots Obsidian and runs the local e2e suite
 npm run test:e2e -- --spec test/e2e/specs/smoke.e2e.ts
-npm run test:e2e:dogfood
+npm run verify -- app --dogfood
 npm run test:e2e:mobile
 npm run test:e2e:matrix -- --spec test/e2e/specs/smoke.e2e.ts
 npm run verify:mobile
@@ -269,7 +269,7 @@ npm run verify:mobile
 
 CI runs the deterministic suite under `xvfb-run` with a cached Obsidian runtime, then the scripted dogfood eval. Locally the suite launches Electron, so it needs a display and cached Obsidian downloads. `npm run test:e2e` runs one Obsidian version at a time; set `OBSIDIAN_VERSIONS=earliest/earliest` or another single pair for a targeted run. `npm run test:e2e:matrix` covers supported versions sequentially across `OBSIDIAN_VERSION_MATRIX`, or by default `earliest/earliest,latest/latest`. Unit tests are the fast loop. E2e catches integration seams such as view registration, settings tabs, persistence and migration, composer wiring, slash-command routing, and approval gates.
 
-`npm run test:e2e:dogfood` generates a fresh adversarial vault under `logs/dogfood-runs/<run-id>/`, installs the current plugin, drives real Obsidian through WDIO, and fails if the dogfood invariant oracle or the generated report finds a regression. It uses a deterministic scripted model by default, so it needs no live model credentials.
+`npm run verify -- app --dogfood` generates a fresh adversarial vault under `logs/dogfood-runs/<run-id>/`, installs the current plugin, drives real Obsidian through WDIO, and fails if the dogfood invariant oracle or the generated report finds a regression. It uses a deterministic scripted model by default, so it needs no live model credentials.
 
 `npm run verify:mobile` is part of `npm run build`. It blocks direct Node/Electron API use outside documented desktop fallbacks. `npm run test:e2e:mobile` builds the e2e bundle, enables mobile emulation, applies phone-sized device metrics, and runs a WDIO smoke test for layout regressions. Real Obsidian Mobile needs the Android/iOS checklist in [docs/development/mobile-testing.md](docs/development/mobile-testing.md).
 

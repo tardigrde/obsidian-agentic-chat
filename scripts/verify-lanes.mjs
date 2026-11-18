@@ -8,7 +8,7 @@ import process from "node:process";
  *   plan     which commands does this diff need?
  *   check    the merge gate (static, unit, build, real-app smoke)
  *   change   one unit file or a -t pattern
- *   app      real Obsidian with scripted turns (specs, mobile, scripted dogfood)
+ *   app      real Obsidian: specs, --mobile, --dogfood (generated vault), --record (video)
  *   live     real model calls (local only, needs a key)
  *   eval     live tool-use evals (canary, core, regression)
  *   explore  chaos explore in a throwaway vault (leads, not proof)
@@ -43,7 +43,7 @@ export const RETIRED_LANES = {
   upgrade: "change test/upgrade-fixtures.test.ts",
   e2e: "app [spec]",
   dogfood: "app --dogfood",
-  audit: "app test/e2e/specs/design-audit.e2e.ts (with AGENTIC_CHAT_DESIGN_AUDIT=1)",
+  audit: "app --record layout-smoke (the design audit was deleted in #393 T23)",
   all: "release",
 };
 
@@ -129,6 +129,24 @@ function scriptedDogfoodStep() {
   );
 }
 
+/**
+ * `app --record <scenario> [--live] [--max-minutes n]`: a recorded run of one
+ * probe scenario (video, keyframes, timeline, metrics) on its own display. It
+ * must execute at least one test; `--live` only where the scenario drives a
+ * real model. Leads for a human, not a gate.
+ */
+function recordStep(args) {
+  const scenario = args.find((arg) => !arg.startsWith("-"));
+  if (!scenario) throw new Error("verify app --record needs a scenario, for example: npm run verify -- app --record layout-smoke");
+  const rest = args.filter((arg) => arg !== scenario);
+  return step(`recorded run ${scenario}`, NODE, ["--import", "tsx", "scripts/probe.ts", "--scenario", scenario, ...rest], {
+    expectTests: true,
+    tier: "T4",
+    mode: rest.includes("--live") ? "live" : "scripted",
+    timeoutMs: 30 * 60 * 1000,
+  });
+}
+
 const SPEC_DIRS = ["test/e2e/specs", "test/e2e/live"];
 const LIVE_FIRST = ["test/e2e/live", "test/e2e/specs"];
 
@@ -207,6 +225,8 @@ export const lanes = {
 
   app: (input) => {
     const args = [...input];
+    const record = takeFlag(args, "--record");
+    if (record) return [recordStep(args)];
     const mobile = takeFlag(args, "--mobile");
     const dogfood = takeFlag(args, "--dogfood");
     const prod = takeFlag(args, "--prod");
@@ -311,10 +331,16 @@ Lanes: ${LANE_NAMES.join(", ")}
   app [spec...] [--mobile] [--dogfood] [--prod] [--reuse-bundle]
                     Real Obsidian, scripted turns. No spec runs the whole suite;
                     bare names resolve to test/e2e/specs/<name>.e2e.ts.
+                    --dogfood: the generated vault with its invariant oracle.
+  app --record <scenario> [--live] [--max-minutes n]
+                    A recorded run (video, keyframes, metrics) of one scenario in
+                    test/e2e/probe/scenarios. Must execute a test.
   live [spec...]    Real model calls. Local only; needs AGENTIC_CHAT_API_KEY.
   eval [args]       Live tool-use evals (--suite core|regression, --canary, --runs N,
                     --parallel N). No arguments: print the core plan, no model call.
-  explore [args]    Chaos explore in a throwaway vault. Leads, not proof.
+  explore [--mode explore|smoke] [--live] [--charter c]
+                    Chaos explore in a throwaway vault (smoke: a dry run, the
+                    default). Leads, not proof.
   release           check --no-app, full app suite, mobile specs, scripted dogfood.
 
 Examples:
@@ -323,6 +349,7 @@ Examples:
   npm run verify -- change test/settings.test.ts
   npm run verify -- app settings-ui
   npm run verify -- app --mobile
+  npm run verify -- app --record layout-smoke
   npm run verify -- eval --canary
   npm run verify -- eval --suite core --runs 3
 `;

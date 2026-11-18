@@ -16,7 +16,16 @@ import { runAgentReplay } from "./helpers/agent-replay";
 const MAX_TOOL_SCHEMA_TOKENS = 1850;
 const MAX_SYSTEM_PROMPT_CHARS = 4800;
 
-const PROMPT_PHRASES = ["Context hygiene", "Do not re-read", "offset/limit", "treat it as a denied action"];
+const PROMPT_PHRASES = [
+  "Context hygiene",
+  "Do not re-read",
+  "offset/limit",
+  "treat it as a denied action",
+  // Pinned again after #396 deleted their old prose tests.
+  "ignore-listed",
+  "path-only reference",
+  "`self-knowledge` skill",
+];
 
 async function firstRequest(): Promise<{ systemPrompt: string; tools: Tool[] }> {
   let first: Context | undefined;

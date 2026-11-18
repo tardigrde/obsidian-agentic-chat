@@ -4,31 +4,21 @@ Reference for agent-quality evals. Start with [testing.md](testing.md) for
 when to run them. This page is for prompt, tool, context, model, or provider
 changes, and for the eval harness itself.
 
-## Agentic evals
+## Names
 
-```bash
-npm run verify -- eval                    # what needs no display or key; lists skipped cases
-npm run verify -- eval --run-scripted     # also the scripted dogfood case (needs Obsidian)
-```
+One word, one thing (#393 T20):
 
-A plain `npm run verify -- eval` runs what needs no display or key (the static
-context case), lists each skipped case, and prints the command that executes it.
-With `--run-scripted` or `--run-judge` the lane adds `--fail-on-skip`, so a case
-that still cannot run fails the lane. A leading bare `--` is tolerated, but it is
-not needed.
+| Name | What it is | Command |
+|---|---|---|
+| eval | the live tool-use runner: real model, real Obsidian, code-graded cases | `npm run verify -- eval [--canary \| --suite core \| --suite regression]` |
+| canary | 5 sensitive `core` cases x 5 runs, for every prompt or tool change | `npm run verify -- eval --canary` |
+| core | 12 cases that still move, 3 runs each; the committed baseline | `npm run verify -- eval --suite core --runs 3` |
+| regression | 18 saturated or unique cases, 1 run, on demand | `npm run verify -- eval --suite regression` |
+| scripted dogfood | real Obsidian, a generated vault, canned model turns; not an eval | `npm run verify -- app --dogfood` |
+| static context | the default request's prompt phrases, tools, and budgets; a unit test | `test/static-context.test.ts` (in `check`) |
 
-To compare two agentic runs instead of reading one:
-
-```bash
-npm run verify -- eval --run-id baseline --dogfood-run-id <run-id>
-# apply the change
-npm run verify -- eval --run-id candidate --dogfood-run-id <same-or-new-run-id>
-npm run eval:agentic:compare -- \
-  logs/eval-runs/baseline/summary.json \
-  logs/eval-runs/candidate/summary.json \
-  --out logs/eval-runs/candidate/ab-comparison.md \
-  --fail-on-regression
-```
+`npm run verify -- eval` with no arguments prints the `core` plan and spends
+nothing. The LLM judge and the agentic A/B compare were deleted: they never ran.
 
 ## Tool-use evals
 
@@ -85,8 +75,8 @@ npm run eval:tool-use -- --compare logs/eval-runs/base/summary.json logs/eval-ru
 `--case` takes one id or a comma list. `--runs` overrides the run count in the
 suite. `--compare` shows the overall metrics and a per-case table: pass rate,
 pass^K, partial score, median time, mean tokens, mean USD, and flags.
-`--write-baseline` writes `test/evals/baselines/<suite>.json` (`tool-use` →
-`tool-use.json`, `core` → `core.json`) and includes the `overall` object plus the
+`--write-baseline` writes `test/evals/baselines/<suite>.json` (`core` →
+`core.json`) and includes the `overall` object plus the
 per-case metrics. The runner refuses to write a baseline when a run was skipped
 or had a harness error.
 
@@ -119,13 +109,13 @@ npm run eval:tool-use -- --suite test/evals/tool-use/core.eval.json --smoke --ru
 ```
 
 `--smoke` runs the slice that the suite file itself names in its top-level
-`smoke` list. For `core` that is 8 cases, one per category: `find.hard.venue`,
-`edit.hard.status`, `organize.medium.inbox`, `create.medium.summary`,
+`smoke` list. For `core` that is 8 cases, one per category: `find.easy.today`,
+`edit.easy.typo`, `organize.medium.inbox`, `create.hard.weekly`,
 `properties.hard.owners`, `tools.easy.search`, `safety.medium.injection`, and
 `recovery.medium.stale`. The validator rejects a `smoke` id that is not a case
-in the suite, and `--smoke` fails for a suite with no `smoke` list (`tool-use`
-has none). A run takes about 3-5 minutes and needs no baseline. Use the full
-`core` suite (27 cases x 3 runs) for the committed baseline. `--smoke` cannot be
+in the suite, and `--smoke` fails for a suite with no `smoke` list
+(`regression` has none). A run takes about 3 minutes and needs no baseline. Use
+the full `core` suite (12 cases x 3 runs) for the committed baseline. `--smoke` cannot be
 combined with `--case`, and it plans one run per case unless `--runs` is set.
 `--dry-run` prints the 8 cases and needs no key.
 
@@ -334,8 +324,7 @@ Both an old baseline without `runResults` and a fresh `summary.json` work; only
 the per-case `passAllK` and `passRate` fields are read. An old baseline without
 `passRate` falls back to `passAllK` and labels the row. If no case has a
 usable `passAllK` on both sides, the command prints the empty section and exits
-1. The committed `tool-use.json` baseline predates `passAllK` and `overall`, so
-it gives that error until the regression tier gets a new baseline.
+1, as an old baseline without `passAllK` does.
 
 The interval covers the choice of cases, not run-to-run variance, and 25 cases
 make it wide. `not significant` means this suite cannot separate the change from
@@ -356,7 +345,7 @@ does not run them.
 ### The A/B loop: canary, eval:ab, explain, baselines
 
 ```bash
-npm run eval:tool-use -- --suite test/evals/tool-use/core.eval.json --canary --env-file .env
+npm run eval:tool-use -- --suite core --canary [--parallel 2] --env-file .env
 npm run eval:ab -- --case organize.easy.invoice,tools.easy.search --runs 5 --env-file .env
 npm run eval:explain -- logs/eval-runs/<run id>          # first failed run, one page
 npm run eval:explain -- --saturation core               # cases at pass^k in the last 3 baselines
@@ -365,7 +354,19 @@ npm run eval:tool-use -- --write-baseline-from logs/eval-runs/<run id>/summary.j
 
 - `--canary` runs the suite's `canary` slice (5 cases) 5 times each. Each case
   gets a 95% Wilson interval. A case moved ("drop" or "gain") only when its
-  baseline pass rate is outside the interval; otherwise it is noise.
+  baseline pass rate is outside the interval; otherwise it is noise. The
+  verdict is `Signal` for a strong move (60 points or more from the baseline)
+  or two cases moving the same way; one weak move is `Weak: run it once more`.
+  Two canary runs on an unchanged `main` (2026-11-18) each had one weak drop
+  (`tools.easy.search` 4/5 and 3/5 against a 3/3 baseline), which is why one
+  case alone is not a signal. Those runs: $0.027 and $0.028, 4 min 52 s and
+  5 min 24 s of spec time; `organize.easy.invoice` was 4/5 and 3/5, so it stays
+  in the canary.
+- `--parallel N` runs N Obsidian instances side by side, each with its own
+  vault and driver port, after one e2e build. All runs of a case stay on one
+  instance; the instances share one budget (every record in the run's results
+  folder counts). The summary and baseline record `parallel: N`, and
+  `--compare` warns when the two sides used a different N (time axis only).
 - `eval:ab` runs the cases on `--base` (default `origin/main`) in a temporary
   detached worktree, then on the current tree, and prints one table. With 2 or
   more cases it adds the paired bootstrap. `--dry-run` prints the plan only.
@@ -376,6 +377,9 @@ npm run eval:tool-use -- --write-baseline-from logs/eval-runs/<run id>/summary.j
   case time, with the same bootstrap.
 - `eval:explain` shows the prompt, each tool call with its arguments (from
   `results/<case>/<run>.session.jsonl`), the answer, and the check evidence.
+  `--regrade <run dir> [--suite <path>]` grades the saved records of a past run
+  again with the current checks (no model call) and lists each run whose
+  status changed: the way to prove a check fix on runs that already happened.
 - Every baseline write also appends `test/evals/baselines/<suite>/<time>-<head>.json`.
   The saturation flag reads that history. `--write-baseline-from` writes a
   baseline from a finished run with no model call and the same refusal rules.

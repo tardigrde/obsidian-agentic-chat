@@ -118,8 +118,8 @@ export function planFor(files, manifest, testFiles, exists = () => true) {
           budgetSeconds: group.budgetSeconds, why: "the scripted dogfood vault and its invariants; production imports", needs: group.needs,
         }));
       } else if (group.id === "eval-tool-use") {
-        add(command("eval-core", "npm run verify -- eval --suite core --runs 3", {
-          budgetSeconds: group.budgetSeconds, why: "a prompt, tool, or agent change: tool choice and cost vs the baseline", needs: group.needs, live: true,
+        add(command("eval-canary", "npm run verify -- eval --canary --parallel 2", {
+          budgetSeconds: group.budgetSeconds, why: "a prompt, tool, or agent change: the 5-case canary vs the baseline; a Signal needs eval:ab", needs: group.needs, live: true,
         }));
       } else if (group.id === "live-e2e" || group.id === "live-unit") {
         add(command(`live-${group.id}`, group.command.replace("<spec>", "").trim(), {
@@ -156,14 +156,14 @@ export function planFor(files, manifest, testFiles, exists = () => true) {
     }
   }
 
-  const order = ["change:", "docs-build", "check", "app", "app:", "app-mobile", "app-dogfood", "live-", "eval-core"];
+  const order = ["change:", "docs-build", "check", "app", "app:", "app-mobile", "app-dogfood", "live-", "eval-canary"];
   const rank = (id) => order.findIndex((prefix) => id === prefix || id.startsWith(prefix));
   const ordered = [...steps.values()].sort((a, b) => rank(a.id) - rank(b.id));
 
   const proposals = [];
   if (srcCount >= BIG_CHANGE_SRC_FILES) {
     proposals.push(
-      `This is a big change (${srcCount} src/ files). Propose a chaos explore run to the owner: npm run verify -- explore --mode generic --max-steps 6`,
+      `This is a big change (${srcCount} src/ files). Propose a chaos explore run to the owner: npm run verify -- explore --mode explore --live`,
     );
   }
   return { files, steps: ordered, proposals, explain };

@@ -1,7 +1,9 @@
 #!/usr/bin/env node
-/* eslint-disable no-console -- CLI prints the config or one verdict state. */
+/* eslint-disable no-console -- CLI prints the config. */
 /**
- * Sandbox rules for `scripts/delegate.sh` (opencode workers and reviewers).
+ * Sandbox rules for `scripts/delegate.sh` (opencode reviewers and researchers).
+ * A delegate is read-only with one writable file; the lead agent implements
+ * (#393 T26).
  *
  * OpenCode V2 `permissions`: an ordered list, the last matching rule wins, and
  * `*` matches any characters including `/` and spaces. So the catch-all deny
@@ -12,12 +14,11 @@
  * a boundary against a malicious repository.
  */
 import { pathToFileURL } from "node:url";
-import { parseVerdict } from "./check-review-gate.mjs";
 
 const SECRET_PATHS = ["*.env", "*.env.*", "*auth.json"];
 
 /**
- * Files that make git or npm run code. A worker that could edit `.git` (a file
+ * Files that make git or npm run code. A delegate that could edit `.git` (a file
  * in a worktree) pointed it at a fake git dir with `core.fsmonitor` set to its
  * own script, so every allowed `git status` ran any command (2026-11-13).
  * These denies come after the edit allow, so they win.
@@ -66,24 +67,22 @@ const READ_SHELL = [
   "wc *",
 ];
 
-/** Extra commands a worker needs to build and commit. */
-const WORK_SHELL = ["git add *", "git commit *", "git stash *", "npx tsc *", "npx eslint *", "npm run lint *", "npm run typecheck *"];
-
 /**
  * Patterns that beat any allow: output redirection (writes past the edit rule),
  * `git diff --no-index` (prints any file on disk), `--output` (writes a file),
- * and `--fix` (rewrites files) for a reviewer.
+ * and `--fix` / `-u` (rewrite files).
  */
-const SHELL_DENY = ["*>*", "*--no-index*", "*--output*", "*--outFile*", "*--outDir*", "* -o *", "* -o"];
-const REVIEW_SHELL_DENY = ["*--fix*", "* -u*", "*--update*"];
+const SHELL_DENY = ["*>*", "*--no-index*", "*--output*", "*--outFile*", "*--outDir*", "* -o *", "* -o", "*--fix*", "* -u*", "*--update*"];
 
 const rule = (action, resource, effect) => ({ action, resource, effect });
 
 /**
- * @param {{ mode: "work" | "review", main: string, edit: string }} options
- *   `edit` is relative to the worktree: `*` for a worker, the verdict path for a reviewer.
+ * @param {{ mode: "review", main: string, edit: string }} options
+ *   `edit` is the one file the delegate may write (a verdict or a research
+ *   report), relative to the directory it runs in.
  */
 export function delegatePermissions({ mode, main, edit }) {
+  if (mode !== "review") throw new Error("a delegate is read-only: mode must be review");
   const rules = [rule("*", "*", "deny")];
   for (const action of ["read", "glob", "grep", "list", "todowrite", "todoread"]) rules.push(rule(action, "*", "allow"));
   // The grep tool reads file content too, so the secret deny covers it as well as read.
@@ -92,8 +91,8 @@ export function delegatePermissions({ mode, main, edit }) {
   rules.push(rule("external_directory", `${main}/.obsidian-cache/*`, "allow"));
   rules.push(rule("edit", edit, "allow"));
   for (const path of EXEC_CONFIG_PATHS) rules.push(rule("edit", path, "deny"));
-  for (const command of mode === "work" ? [...READ_SHELL, ...WORK_SHELL] : READ_SHELL) rules.push(rule("shell", command, "allow"));
-  for (const pattern of mode === "work" ? SHELL_DENY : [...SHELL_DENY, ...REVIEW_SHELL_DENY]) rules.push(rule("shell", pattern, "deny"));
+  for (const command of READ_SHELL) rules.push(rule("shell", command, "allow"));
+  for (const pattern of SHELL_DENY) rules.push(rule("shell", pattern, "deny"));
   return rules;
 }
 
@@ -116,50 +115,15 @@ export function decide(rules, action, resource) {
   return effect;
 }
 
-/** True when the last verdict (by order) in these comment bodies is a FAIL, as the gate parses it. */
-export function lastVerdictIsFail(bodies) {
-  const verdicts = bodies.map((body) => parseVerdict(body)).filter(Boolean);
-  return verdicts.length > 0 && verdicts[verdicts.length - 1].verdict === "FAIL";
-}
-
-/**
- * A re-check may only carry a passing review across a merge from main: the
- * reviewed head must have a PASS or PASS+NOTES, and the last verdict must not be FAIL.
- */
-export function recheckAllowed(bodies, reviewedHead) {
-  if (lastVerdictIsFail(bodies)) return false;
-  return bodies
-    .map((body) => parseVerdict(body))
-    .some((verdict) => verdict && verdict.verdict !== "FAIL" && reviewedHead.startsWith(verdict.head));
-}
-
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const [command, ...args] = process.argv.slice(2);
   if (command === "permissions") {
     const [mode, main, edit] = args;
-    if (mode !== "work" && mode !== "review") throw new Error("mode must be work or review");
     console.log(JSON.stringify({ permissions: delegatePermissions({ mode, main, edit }) }));
   } else if (command === "git-env") {
     // Shell `export` lines for scripts/delegate.sh.
     for (const [key, value] of Object.entries(gitGuardEnv())) console.log(`export ${key}=${JSON.stringify(value)}`);
-  } else if (command === "recheck") {
-    // stdin: JSON array of comment bodies, oldest first; argv: the reviewed head.
-    // Exit 0: a re-check is allowed. 1: it is not. 2: the input is unreadable.
-    const [reviewedHead] = args;
-    let input = "";
-    process.stdin.setEncoding("utf8");
-    process.stdin.on("data", (chunk) => (input += chunk));
-    process.stdin.on("end", () => {
-      let bodies;
-      try {
-        bodies = JSON.parse(input);
-      } catch {
-        process.exit(2);
-      }
-      if (!Array.isArray(bodies)) process.exit(2);
-      process.exit(/^[0-9a-f]{40}$/.test(reviewedHead ?? "") && recheckAllowed(bodies.map(String), reviewedHead) ? 0 : 1);
-    });
   } else {
-    throw new Error("usage: delegate-config.mjs permissions <work|review> <main> <edit> | git-env | recheck <reviewed-head> < bodies.json");
+    throw new Error("usage: delegate-config.mjs permissions review <main> <edit> | git-env");
   }
 }

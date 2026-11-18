@@ -1,18 +1,18 @@
 import { $, browser, expect } from "@wdio/globals";
 import { describe, it } from "mocha";
-import { mark } from "../../support/record";
 import {
   closeAgenticChatSettings,
   openAgenticChatSettings,
   selectSettingsTab,
   waitForSetting,
-} from "../../support/settings-ui";
+} from "../support/settings-ui";
 
 /**
- * Disposable probe: show the overwrite confirm while creating a skill whose
- * package already exists. Used for the issue #259 UI evidence clip.
+ * Creating a skill whose package already exists asks before it replaces it
+ * (issue #259). Promoted from a probe scenario in #393 T23: it was the only
+ * coverage of this modal.
  */
-describe("probe: overwrite confirm", function () {
+describe("skill overwrite confirm", function () {
   this.timeout(180_000);
 
   it("shows the overwrite confirm modal", async function () {
@@ -47,9 +47,7 @@ describe("probe: overwrite confirm", function () {
 
     const nameInput = await $('input[placeholder="e.g. release-notes"]');
     await nameInput.waitForExist();
-    await mark("new skill form open");
     await nameInput.setValue("demo-skill");
-    await browser.pause(400);
 
     await browser.execute(() => {
       const buttons = Array.from(document.querySelectorAll<HTMLButtonElement>(".modal button"));
@@ -65,8 +63,6 @@ describe("probe: overwrite confirm", function () {
         ),
       { timeout: 10_000, timeoutMsg: "overwrite confirm modal did not open" },
     );
-    await mark("overwrite confirm modal");
-    await browser.pause(1_500);
 
     const buttons = await browser.execute(() => {
       const confirmModal = Array.from(document.querySelectorAll<HTMLElement>(".modal")).find((modal) =>
@@ -86,7 +82,16 @@ describe("probe: overwrite confirm", function () {
       const buttons = Array.from(confirmModal?.querySelectorAll<HTMLButtonElement>("button") ?? []);
       buttons.find((button) => button.textContent?.trim() === "Replace")?.click();
     });
-    await browser.pause(800);
+    await browser.waitUntil(
+      async () =>
+        await browser.execute(
+          () =>
+            !Array.from(document.querySelectorAll<HTMLElement>(".modal")).some((modal) =>
+              modal.textContent?.includes("Replace existing skill package?"),
+            ),
+        ),
+      { timeout: 10_000, timeoutMsg: "overwrite confirm modal did not close after Replace" },
+    );
     await closeAgenticChatSettings();
   });
 });

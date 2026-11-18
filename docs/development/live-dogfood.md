@@ -96,21 +96,6 @@ Redact keys, private URLs, and unrelated note content before you copy anything.
 
 Never turn a flaky live path into a CI gate.
 
-## Live dogfood specs
-
-`test/e2e/dogfood/marketplace-live.dogfood.ts` installs the `swe` package from
-`tardigrde/ai-marketplace` (pinned to commit `20bedd4`; bump `MARKETPLACE_REF`
-after review) and drives a `/skill` call, a Context7 MCP round trip, and
-`/doctor`. `subagent-live.dogfood.ts` needs `AGENTIC_CHAT_SUBAGENT_DOGFOOD=true`.
-Both spend tokens:
-
-```bash
-AGENTIC_CHAT_API_KEY=... AGENTIC_CHAT_MODEL=openrouter/auto \
-  npm run test:e2e:dogfood -- --spec test/e2e/dogfood/marketplace-live.dogfood.ts
-```
-
-Overrides: `AGENTIC_CHAT_MARKETPLACE_URL`, `AGENTIC_CHAT_MARKETPLACE_PATH`.
-
 ## At the end
 
 Report bugs found, fixes made, tests run, and whether the patched plugin is

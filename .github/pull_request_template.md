@@ -4,6 +4,10 @@
 
 <!-- The problem and the approach. 1-3 short sentences. -->
 
+<!-- For a fix: the layer that found the defect, one of review, chaos, e2e, unit,
+eval, user, ci, dogfood. `npm run tests:status -- --digest` counts it. -->
+Found by: <layer>
+
 ## What changed
 
 <!-- 1-3 short bullets. Name the real symbol or path only when it carries the change. -->

@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
 /**
@@ -12,6 +12,54 @@ import path from "node:path";
  */
 
 export const RUN_RESULT_SCHEMA = "agentic-chat.run-result/1";
+/**
+ * A child of `verify` (probe recording, chaos explore, tool-use eval) writes
+ * its spend and artifact paths to the file this variable names. `verify`
+ * folds it into the envelope, so every app-family run has one report shape:
+ * verdict, mode, command, counts, cost { tokens, usd }, artifacts[] (#393 T23).
+ */
+export const RUN_REPORT_ENV = "AGENTIC_CHAT_RUN_REPORT";
+
+/** Write the child side of the report when a parent asked for it; a no-op otherwise. */
+export function writeRunReport(report, env = process.env) {
+  const file = env[RUN_REPORT_ENV];
+  if (!file) return false;
+  const clean = {
+    tokens: Number.isFinite(report.tokens) ? report.tokens : 0,
+    usd: Number.isFinite(report.usd) ? report.usd : 0,
+    artifacts: (report.artifacts ?? []).filter((entry) => typeof entry === "string"),
+  };
+  writeFileSync(file, `${JSON.stringify(clean)}\n`);
+  return true;
+}
+
+/** Read a child report; undefined when the child wrote none or it is torn. */
+export function readRunReport(file) {
+  if (!file || !existsSync(file)) return undefined;
+  try {
+    const parsed = JSON.parse(readFileSync(file, "utf8"));
+    return {
+      tokens: Number(parsed.tokens) || 0,
+      usd: Number(parsed.usd) || 0,
+      artifacts: Array.isArray(parsed.artifacts) ? parsed.artifacts.filter((entry) => typeof entry === "string") : [],
+    };
+  } catch {
+    return undefined;
+  }
+}
+
+/** Sum the child reports of a run: cost when any child spent or counted tokens. */
+export function mergeRunReports(reports) {
+  const present = reports.filter(Boolean);
+  if (present.length === 0) return { cost: undefined, artifacts: [] };
+  return {
+    cost: {
+      tokens: present.reduce((total, report) => total + report.tokens, 0),
+      usd: present.reduce((total, report) => total + report.usd, 0),
+    },
+    artifacts: present.flatMap((report) => report.artifacts),
+  };
+}
 export const HISTORY_FILE = path.join("logs", "history.jsonl");
 const SLOW_TESTS_KEPT = 25;
 const FAILED_TESTS_KEPT = 200;

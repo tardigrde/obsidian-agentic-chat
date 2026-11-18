@@ -48,7 +48,7 @@ await $(".agentic-chat-action-list").waitForExist();
 | Model calls the `subagent` tool | `src/tools/subagent-tool.ts#toPersistedChild` | `test/subagents.test.ts#aborts in-flight children when the dispatch signal aborts` (unit only) | `partial` |
 | Built-in Explorer role | `src/agent/subagents.ts#BUILTIN_AGENT_ROLES` | `test/subagent-runtime.test.ts#makeRuntime` (unit only) | `partial` |
 | Parallel cap of ten and queueing | `src/tools/subagent-tool.ts#MAX_CONCURRENCY` | `test/subagents.test.ts#caps concurrent dispatches at 10 and queues the rest, promoting on stop` (unit only) | `partial` |
-| Live child status tree | `src/ui/assistant-bubble.ts#updateStep` | `test/e2e/specs/design-audit.e2e.ts#captures the full design journey screenshots` (disabled unless `AGENTIC_CHAT_DESIGN_AUDIT=1`) | `partial` |
+| Live child status tree | `src/ui/assistant-bubble.ts#updateStep` | `test/ui/chat-render.test.ts#labels a stopped child as stopped, not failed, and never shows a green check` | `partial` |
 | Per-child Stop button | `src/ui/subagent-tree.ts#renderSubagentHeader` | `test/subagents.test.ts#lets a caller abort one dispatch without stopping its siblings` (abort path only, no button click) | `partial` |
 | Replay a done dispatch | `src/ui/assistant-bubble.ts#endStep` | `test/ui/chat-render.test.ts#rehydrates a done dispatch from tool_execution_end alone, collapsed with its summary` | `covered` |
 | Replay a stopped dispatch | `src/ui/assistant-bubble.ts#endStep` | `test/ui/chat-render.test.ts#rehydrates an aborted dispatch as stopped (red) and an error dispatch as failed` | `covered` |
@@ -64,7 +64,7 @@ await $(".agentic-chat-action-list").waitForExist();
 | Deferred tools: a direct call to an unloaded tool loads it | `src/agent/runtime-resource-state.ts#toolsForNextStep` | `test/runtime-resource-state.test.ts#loads a deferred tool after a direct call failed because it was not loaded` (unit only) | `partial` |
 | Deferred tools: reopened session keeps loaded tools | `src/agent/tool-loading.ts#restoreFromMessages` | `test/runtime-resource-state.test.ts#restores the loaded tools of a reopened session from its transcript` (unit only) | `partial` |
 | `current_time` tool always loaded; no date in the system prompt | `src/tools/current-time-tool.ts#createCurrentTimeTool` | `test/runtime-resource-state.test.ts#keeps the date out of the system prompt and always loads current_time` (unit only) | `partial` |
-| Context-window bar | `src/ui/chat-view.ts#buildLayout` | `test/e2e/probe/scenarios/context-readout.e2e.ts#shows the full-load percentage with a section breakdown` | `covered` |
+| Context-window bar | `src/ui/chat-view.ts#buildLayout` | `test/context-bar.test.ts#is high at 90% and above` (levels only; the recorded probe was deleted in #393 T23) | `partial` |
 
 ## Gotchas
 

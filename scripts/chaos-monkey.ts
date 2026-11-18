@@ -44,6 +44,7 @@ import {
   stopProcess,
   trimLeadIn,
 } from "./live-support";
+import { writeRunReport } from "./lib/run-result.mjs";
 
 /**
  * Chaos-monkey runner.
@@ -125,7 +126,7 @@ const SESSION_DIR = "logs/chaos";
 const BOOT_ALLOWANCE_MS = 120_000;
 /** An explore step can wait up to 180 s for a live turn after the time cap is reached. */
 const EXPLORE_GRACE_MS = 300_000;
-const CHARTER_DIR = ".agents/skills/chaos-monkey/charters";
+const CHARTER_DIR = ".agents/skills/app/charters";
 
 /** `--charter broad` reads the charter file; any other text is the charter itself. */
 function resolveCharter(value: string | undefined): string {
@@ -494,6 +495,8 @@ ${logRows}
 `;
 
   await writeFile(path.join(outDir, "report.md"), text);
+  // Under `verify -- explore`, the run's spend and folder go into its run-result.json.
+  writeRunReport({ tokens: driver?.tokens ?? 0, usd: 0, artifacts: [path.relative(process.cwd(), outDir)] });
 }
 
 function explorerSection(options: Options, driver: ReportDriver | undefined): string {
@@ -518,7 +521,7 @@ Charter:
 
 async function main(): Promise<void> {
   if (process.argv.includes("--help") || process.argv.includes("-h")) {
-    process.stdout.write("Usage: npm run verify -- explore --mode <focused|generic> [--target <area>] [--live] [--max-steps n] [--max-seconds n] [--max-calls n] [--max-tokens n]\n");
+    process.stdout.write("Usage: npm run verify -- explore [--mode explore|smoke] [--live] [--charter c] [--max-steps n] [--max-seconds n] [--max-calls n] [--max-tokens n]\n");
     return;
   }
   const envFile = path.resolve(".env");

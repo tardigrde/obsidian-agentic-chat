@@ -1,126 +1,94 @@
 ---
 name: Verify PR
-description: Use when you must give an agent-review verdict on a pull request you did not write. Reproduces the red/green witness, runs the merge lane, checks for new global state, and reports PASS, PASS+NOTES, or FAIL. Do not use it to review your own change, and do not merge.
+description: Use when you must give an agent-review verdict on a pull request you did not write. Reproduces the red/green witness, checks the merge lane, checks for new global state, and reports PASS, PASS+NOTES, or FAIL. Do not use it to review your own change, and do not merge.
 ---
 
 # Verify PR
 
-An agent-review verdict is a claim about a run, not an opinion about a diff. You
-did not write the code; your job is to prove the author's witness or reject it.
+A verdict is a claim about a run, not an opinion about a diff. You did not write
+the code; prove the author's witness or reject it. Rules and lanes:
+[testing.md](../../../docs/development/testing.md); the witness contract and the
+comment format: [trust.md](../../../docs/development/trust.md).
+
+```bash
+npm run verify:witness -- --base origin/main --test-file <test> --src <path> [--src <path>]
+gh pr checks <pr>              # ci and e2e green at the head? cite them
+npm run verify -- check        # only when CI did not run at this head
+```
 
 ## Inputs
 
-- PR number or branch.
-- The witness block from the PR body.
-- The source paths the fix changed.
-
-If the PR body does not name a witness for a source change, stop and return
-`FAIL` with `missing witness`. The only exception is the `no-behavior-change`
-label: confirm against the diff that the change is a pure refactor, then verify
-the existing tests still pass. A behavior change with that label is `FAIL`.
+The PR number, the witness block in its body, and the source paths it changed.
+A source change with no witness is `FAIL: missing witness`. The only exception
+is the `no-behavior-change` label: confirm against the diff that it is a pure
+refactor; a behavior change with that label is `FAIL`.
 
 ## Protocol
 
-1. Work in a clean checkout or worktree of the PR head. Never verify in the
-   author's dirty tree. Record `git rev-parse HEAD`.
-2. Run the witness on the head. It must pass, with counts.
-3. Prove the witness is real:
-
-   ```bash
-   npm run verify:witness -- \
-     --base origin/main \
-     --test-file <test> \
-     --src <source-path> [--src <source-path>]
-   ```
-
-   It reverts the source diff, runs the test (must fail on an assertion),
-   restores the diff, and runs the test again (must pass). The command prints
-   `verify-witness: PASS` and writes `logs/witness/<timestamp>/report.md`.
-
-4. Run the merge lane, unless CI already ran it at this head:
-
-   ```bash
-   gh pr checks <pr>          # ci and e2e passing at the PR head? cite them
-   npm run verify -- check     # otherwise run it
-   ```
-
-   Read the counts. Zero tests, or every test skipped, is a failure.
-
-5. Check for new module-level mutable state in the diff:
-
-   ```bash
-   git diff origin/main...HEAD -- '*.ts' | rg '^(\+.*)(new Map|new Set|= \[\]|= \{\})'
-   ```
-
-   A new global registry needs a comment that names its owner and a test that
-   proves isolation. Without both, return `PASS+NOTES` at best.
-
-6. Judge the test, not only the result. It must assert behavior a caller can
-   observe. Reject a test that mirrors the implementation, mocks the subject, or
-   would pass with the source change reverted.
-
-7. Check that the PR body evidence matches the runs: the command, the counts,
-   and the report path. Stale evidence is a `FAIL`.
-
-8. Check the `no-behavior-change` claim against the diff. A new branch, a changed
-   output, or a changed error path is behavior. Return `FAIL`.
-
-9. Ask the bug-class questions from #290. Each "yes" needs a test that models
-   it, or a note in the verdict:
-   - Does it touch per-instance state that another tab or window shares (a
-     session folder, a lease, a cache)? Model two instances over one adapter.
-   - Does it change a persisted shape (`data.json`, session JSONL)? The
-     upgrade lane (`npm run verify -- change test/upgrade-fixtures.test.ts`) must still pass, and a removed
-     key needs a user notice.
-   - Does it add a second estimator of a number that already exists (context
-     fill, cost, turn count)? Add a test that the two agree.
-   - Does it queue work for the runtime (steer, follow-up)? Assert that the
-     queue is empty or returned at `agent_end`.
-
-10. Report the verdict. Do not merge.
+1. Work in a clean worktree at the PR head. Record `git rev-parse HEAD`.
+2. Run the witness at the head: it passes, with counts.
+3. Prove it is real with `verify:witness`: the source diff reverted, the test
+   fails on an assertion; restored, it passes. It writes
+   `logs/witness/<ts>/report.md`.
+4. Cite CI (`ci` and `e2e` green at this head), or run `check` and read the
+   counts. Zero tests or all skipped is a failure.
+5. Look for new module-level mutable state:
+   `git diff origin/main...HEAD -- '*.ts' | rg '^(\+.*)(new Map|new Set|= \[\]|= \{\})'`.
+   A new global registry needs an owner comment and an isolation test, or the
+   verdict is `PASS+NOTES` at best.
+6. Judge the test: it asserts behavior a caller can see. Reject a test that
+   mirrors the implementation, mocks the subject, or passes with the fix
+   reverted.
+7. Check that the PR body evidence (command, counts, report path) matches the
+   runs. Stale evidence is `FAIL`.
+8. Ask the bug-class questions; each "yes" needs a test or a note:
+   - Per-instance state that another tab or window shares? Model two instances
+     over one adapter.
+   - A persisted shape (`data.json`, session JSONL)? The upgrade fixtures must
+     pass; a removed key needs a user notice.
+   - A second estimator of an existing number (context fill, cost, turn count)?
+     Test that the two agree.
+   - Work queued for the runtime (steer, follow-up)? Assert the queue is empty
+     at `agent_end`.
+   - A prompt or tool change? The canary table must be in the PR.
+9. Report the verdict. Do not merge and do not fix.
 
 ## Verdicts
 
-- `PASS`: witness red then green, `check` (or CI) green with counts, no unresolved blocker.
-- `PASS+NOTES`: proven, but a non-blocking risk needs the human's attention.
+- `PASS`: witness red then green, CI or `check` green with counts, no blocker.
+- `PASS+NOTES`: proven, but a non-blocking risk needs the owner's attention.
 - `FAIL`: the witness passes without the fix, the red run never reached an
-  assertion, `check` fails, the test is not a witness, or a new global state has
-  no isolation proof.
+  assertion, the merge lane fails, the test is not a witness, or new global
+  state has no isolation proof.
 
 ## Output
 
 ```text
 Verdict: PASS | PASS+NOTES | FAIL
 Head: <full or 7+ char sha>
-Reviewer: <agent/session, not the author>
+Reviewer: <agent, not the author>
 Witness: <command>
   before fix: FAIL (assertion, counts)
   after fix:  PASS (counts)
-Witness proof: logs/witness/<timestamp>/report.md
+Witness proof: logs/witness/<ts>/report.md
 Fast lane: PASS (X passed, Y files) | CI (ci + e2e green at this head)
 Behavior change: none | yes (<one line>)
 New global state: none | <file:line + isolation test>
 Notes: none | <max 5 bullets>
 ```
 
-Post the output as one PR comment, after `ci` and `e2e` are green. The `review`
-check only reports it (advisory, #393 D4); the owner reads it before "merge".
-`Fast lane: CI` is the default when `ci` and `e2e` passed at the head; the field
-name is historical. `Behavior change: none` lets the delegate script set
-the `no-behavior-change` label; write it only for a pure refactor you checked. The `Head`
-must be the current PR head; a push invalidates the verdict.
-
-Do not apply fixes. Report the failure and the command that proves it. The author
-owns the change. The repository owner alone decides to merge.
+Post it as one PR comment after `ci` and `e2e` are green. It is advisory: the
+owner reads it before "merge". `Behavior change: none` lets the delegate script
+set the `no-behavior-change` label; write it only for a pure refactor you
+checked. A push makes the verdict stale.
 
 ## Stop conditions
 
-- The witness passes with the fix reverted. Stop; it is not a witness.
-- The red run fails in the loader, a skip, or a timeout. Stop; no assertion ran.
-- The source diff is empty. Stop; there is nothing to verify.
-- `check` fails for a reason the PR claims to fix. Stop; report the failure.
-- The PR changes product behavior or data format without an explicit decision in
-  the body. Return `FAIL`; that decision is the human's call.
-- The PR adds more than roughly 400 lines, or touches more than 10 files, under
-  `src/`. Return `PASS+NOTES` and ask for a split unless the change is one
-  mechanical unit. Deletions, tests, and docs do not count.
+- The witness passes with the fix reverted: not a witness.
+- The red run fails in the loader, a skip, or a timeout: no assertion ran.
+- The source diff is empty: nothing to verify.
+- The PR changes product behavior or a data format without an explicit
+  decision in the body: `FAIL`; that decision is the owner's.
+- More than about 400 lines or 10 files under `src/` (tests, docs, and
+  deletions do not count): `PASS+NOTES` and ask for a split, unless it is one
+  mechanical unit.

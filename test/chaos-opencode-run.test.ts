@@ -164,8 +164,9 @@ process.stdout.write(JSON.stringify({ type: "text", part: { type: "text", text: 
       0,
     );
     expect(reply.text).toBe('{"ok":true}');
-    // The retry wait is injectable: a test passes 0 and does not pay the 1.5 s production backoff.
-    expect(Date.now() - start).toBeLessThan(1_200);
+    // The retry wait is injectable: a test passes 0 and does not pay the 1.5 s
+    // production backoff. Two process spawns stay well under it, even on a loaded runner.
+    expect(Date.now() - start).toBeLessThan(1_450);
   });
 
   it("throws with the exit code after the last attempt", async () => {

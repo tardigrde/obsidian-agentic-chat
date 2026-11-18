@@ -217,9 +217,9 @@ function runDogfoodE2e(options: {
   reportRoot: string;
 }): Promise<number> {
   const dogfoodArgs = [
-    "run",
-    "test:e2e:dogfood",
-    "--",
+    "--import",
+    "tsx",
+    "scripts/run-dogfood-e2e.ts",
     "--run-id",
     options.dogfoodRunId,
     "--report-dir",
@@ -234,7 +234,7 @@ function runDogfoodE2e(options: {
   }
 
   return new Promise((resolve) => {
-    const child = spawn(npmCommand(), dogfoodArgs, {
+    const child = spawn(process.execPath, dogfoodArgs, {
       stdio: "inherit",
       env: {
         ...process.env,
@@ -405,10 +405,6 @@ function slug(value: string): string {
 
 function timestampRunId(): string {
   return `agentic-eval-${new Date().toISOString().replace(/[:.]/g, "-")}`;
-}
-
-function npmCommand(): string {
-  return process.platform === "win32" ? "npm.cmd" : "npm";
 }
 
 function mergeNoProxy(current: string | undefined): string {

@@ -34,7 +34,7 @@ import { openAgenticChatSettings } from "../support/settings-ui";
 import { configurePlugin, openChat } from "../probe/support/probe-helpers";
 
 /**
- * Open-ended explorer for `npm run chaos -- --mode explore`.
+ * Open-ended explorer for `npm run verify -- explore --mode explore`.
  *
  * Each step: observe every window, ask the explorer model for one action (or
  * take the next recorded one in replay), perform it, then run the oracles. The

@@ -1348,3 +1348,33 @@ describe("tool-use eval core", () => {
     expect(existsSync(outputDir)).toBe(false);
   });
 });
+
+describe("tool-use runner selector guards", () => {
+  const cli = (args: string[]) =>
+    spawnSync(process.execPath, ["--import", "tsx", "scripts/run-tool-use-evals.ts", ...args], {
+      cwd: process.cwd(),
+      encoding: "utf8",
+      env: { ...process.env, AGENTIC_CHAT_API_KEY: "" },
+    });
+
+  it.each([
+    [["--smoke", "--case", "x"], "--smoke cannot be combined with --case; use one selector."],
+    [["--canary", "--smoke"], "--canary cannot be combined with --case or --smoke."],
+    [["--canary", "--case", "x"], "--canary cannot be combined with --case or --smoke."],
+    [["--write-baseline-from", "p", "--compare", "a", "b"], "--write-baseline-from cannot be combined with --compare."],
+    [["--git-head", "abc"], "--git-head needs --write-baseline-from."],
+    [["--parallel", "0", "--dry-run"], "--parallel must be an integer of at least 1."],
+  ])("refuses %j before it reads a suite", (args, message) => {
+    const result = cli(args);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain(message);
+    expect(result.stdout).toBe("");
+  });
+
+  it("lets a valid --git-head pair through the guard", () => {
+    const result = cli(["--git-head", "abc", "--write-baseline-from", "/nonexistent/summary.json"]);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("ENOENT");
+  });
+});
+

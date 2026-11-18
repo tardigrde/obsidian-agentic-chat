@@ -65,6 +65,17 @@ describe("verify lanes", () => {
     );
   });
 
+  it("app --record runs one recorded scenario that must execute a test, live only when asked", () => {
+    const [scripted] = build("app", ["--record", "layout-smoke"]);
+    expect(scripted.args).toEqual(["--import", "tsx", "scripts/probe.ts", "--scenario", "layout-smoke"]);
+    expect(scripted.expectTests).toBe(true);
+    expect((scripted as Step & { mode?: string }).mode).toBe("scripted");
+    const [live] = build("app", ["--record", "live-chat", "--live"]);
+    expect((live as Step & { mode?: string }).mode).toBe("live");
+    expect(live.args).toContain("--live");
+    expect(() => build("app", ["--record"])).toThrow(/needs a scenario/);
+  });
+
   it("live sets AGENTIC_CHAT_LIVE for e2e specs", () => {
     const steps = build("live", ["openwebui-live"]);
     expect(steps[1].env).toEqual({ AGENTIC_CHAT_LIVE: "1" });

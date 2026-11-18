@@ -28,8 +28,8 @@ import { llmHeaders, parseLlmName, resolveChaosLlm, type ChaosLlmName } from "./
  * Mine a finished chaos run: `npm run chaos:mine -- logs/chaos/<run>`.
  *
  * Writes `findings.md`, `miner-report.json`, and `issues/NN-<slug>.md` drafts
- * into the run folder. It never files an issue; `npm run chaos:file` does that
- * after a person picks the drafts.
+ * into the run folder. It never files an issue; a person picks the drafts
+ * and files them.
  */
 
 export type MineOptions = {
