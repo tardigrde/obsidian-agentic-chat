@@ -136,6 +136,24 @@ describe("ApprovalModal decisions", () => {
     await expect(decision).resolves.toEqual({ approved: true, remember: false });
   });
 
+  it("walks idle -> open -> deny-armed -> open -> settled, and a settled prompt ignores later input", async () => {
+    modal = new ApprovalModal(fakeApp().app, { toolName: "write", label: "write", args: { path: "a.md", content: "" } } as ToolApprovalRequest);
+    expect(modal.phase).toBe("idle");
+    const decision = modal.ask();
+    expect(modal.phase).toBe("open");
+    const deny = button("Deny")!;
+    deny.click();
+    expect(modal.phase).toBe("deny-armed");
+    $<HTMLTextAreaElement>(".agentic-chat-deny-reason-input")!.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    expect(modal.phase).toBe("open");
+    button("Allow")!.click();
+    expect(modal.phase).toBe("settled");
+    // A stale click on a detached button must neither re-arm nor re-decide.
+    deny.click();
+    expect(modal.phase).toBe("settled");
+    await expect(decision).resolves.toEqual({ approved: true, remember: false });
+  });
+
   it("closing the modal without a choice denies; Stop turn denies as stopped and calls onStop once", async () => {
     const app = fakeApp();
     const dismissed = ask(app, { toolName: "write", args: { path: "a.md", content: "" } });

@@ -11,14 +11,28 @@ import { normalizeVaultPath } from "../vault/path";
 const MAX_DIFF_DISPLAY_LINES = 400;
 const DEFAULT_DIFF_CONTEXT_LINES = 5;
 
+/**
+ * Lifecycle of one approval prompt. `settled` is terminal: the promise has
+ * resolved and no later click, key, abort, or close can change the choice.
+ *
+ *   idle ──ask()──▶ open ──Deny──▶ deny-armed      (Esc in the reason: back to open)
+ *   idle | open | deny-armed ──choice, Stop, abort, close──▶ settled
+ *
+ * Only a prompt that left `idle` was opened, so only it closes on settle.
+ */
+export type ApprovalModalPhase = "idle" | "open" | "deny-armed" | "settled";
+
 /** Confirm dialog shown when a tool's approval policy is "ask". */
 export class ApprovalModal extends Modal {
-  private decided = false;
-  private denyArmed = false;
+  private phaseValue: ApprovalModalPhase = "idle";
   private resolve: ((choice: UserApprovalChoice) => void) | null = null;
   private abortSignal?: AbortSignal;
   private abortListener?: () => void;
-  private opened = false;
+
+  /** The prompt's current lifecycle phase. */
+  get phase(): ApprovalModalPhase {
+    return this.phaseValue;
+  }
 
   constructor(
     app: App,
@@ -39,7 +53,7 @@ export class ApprovalModal extends Modal {
       this.abortListener = () =>
         this.settle({ approved: false, remember: false, reason: STOPPED_APPROVAL_REASON, stopped: true });
       signal?.addEventListener("abort", this.abortListener, { once: true });
-      this.opened = true;
+      this.phaseValue = "open";
       this.open();
     });
   }
@@ -133,7 +147,7 @@ export class ApprovalModal extends Modal {
           .setClass("mod-warning")
           .onClick(() => {
             if (!denyButton) return;
-            if (this.denyArmed) {
+            if (this.phaseValue === "deny-armed") {
               this.decide({ approved: false, remember, reason: reasonInput.value.trim() || undefined });
             } else {
               this.armDeny(denyButton, denyReasonEl, reasonInput);
@@ -150,9 +164,9 @@ export class ApprovalModal extends Modal {
     // Enter accepts (Escape already dismisses via the default modal handler).
     // Let a focused button handle Enter itself so Tab-to-Deny still works.
     this.scope.register([], "Enter", (event) => {
-      if (this.decided || isInteractiveElement(activeDocument.activeElement)) return;
+      if (this.phaseValue === "settled" || isInteractiveElement(activeDocument.activeElement)) return;
       event.preventDefault();
-      if (this.denyArmed) {
+      if (this.phaseValue === "deny-armed") {
         // Focus left the reason field (e.g. the user clicked the diff preview):
         // Enter must confirm the in-progress deny, not approve the call.
         this.decide({ approved: false, remember, reason: reasonInput.value.trim() || undefined });
@@ -164,7 +178,8 @@ export class ApprovalModal extends Modal {
   }
 
   private armDeny(button: ButtonComponent, container: HTMLElement, input: HTMLTextAreaElement): void {
-    this.denyArmed = true;
+    if (this.phaseValue !== "open") return;
+    this.phaseValue = "deny-armed";
     // The title says what Confirm will do, not the Allow it replaced.
     this.titleEl.setText(approvalTitle(this.request, "deny"));
     container.show();
@@ -173,7 +188,8 @@ export class ApprovalModal extends Modal {
   }
 
   private disarmDeny(button: ButtonComponent, container: HTMLElement, input: HTMLTextAreaElement): void {
-    this.denyArmed = false;
+    if (this.phaseValue !== "deny-armed") return;
+    this.phaseValue = "open";
     this.titleEl.setText(approvalTitle(this.request, "allow"));
     container.hide();
     button.setButtonText("Deny");
@@ -182,12 +198,12 @@ export class ApprovalModal extends Modal {
 
   onClose(): void {
     this.contentEl.empty();
-    this.cleanupAbortListener();
-    if (!this.decided) this.resolve?.({ approved: false, remember: false });
+    // Escape, the scrim, or a closing tab: a background approval must not stay live.
+    this.finish({ approved: false, remember: false }, false);
   }
 
   private stopTurn(): void {
-    if (this.decided) return;
+    if (this.phaseValue === "settled") return;
     // Settle first so pi records a terminating denial. Abort synchronously after
     // settling: a 0ms timer leaves a window where sibling tool calls prepared in
     // the same batch can still execute before the turn signal is aborted.
@@ -196,13 +212,19 @@ export class ApprovalModal extends Modal {
   }
 
   private settle(choice: UserApprovalChoice): void {
-    if (this.decided) return;
-    this.decided = true;
+    this.finish(choice, true);
+  }
+
+  /** The one transition into `settled`; a second call is a no-op. */
+  private finish(choice: UserApprovalChoice, closeIfOpen: boolean): void {
+    const previous = this.phaseValue;
+    if (previous === "settled") return;
+    this.phaseValue = "settled";
     this.cleanupAbortListener();
     const resolve = this.resolve;
     this.resolve = null;
     resolve?.(choice);
-    if (this.opened) this.close();
+    if (closeIfOpen && previous !== "idle") this.close();
   }
 
   private cleanupAbortListener(): void {
@@ -256,7 +278,7 @@ export class ApprovalModal extends Modal {
       }
     }
     // The modal may have been dismissed while we were reading the file.
-    if (this.decided) return;
+    if (this.phaseValue === "settled") return;
     const preview = buildEditPreview(this.request.toolName, this.request.args, current);
     if (preview.kind === "none") return; // keep the raw-args fallback already shown
     container.empty();
