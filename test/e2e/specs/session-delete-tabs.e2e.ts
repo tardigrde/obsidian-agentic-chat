@@ -140,6 +140,13 @@ describe("session delete across tabs", function () {
     expect(broken).toEqual([]);
     expect(heads.some((file) => file.path === deletedPath)).toBe(false);
     expect(await tabSessionPath(1)).not.toBe(deletedPath);
+    // The deleted conversation is in the vault trash, so the user can get it back.
+    const trashed = await browser.executeObsidian(async ({ app }, name) => {
+      if (!(await app.vault.adapter.exists(".trash"))) return false;
+      const listing = await app.vault.adapter.list(".trash");
+      return listing.files.some((path) => path.endsWith(name));
+    }, deletedPath.slice(deletedPath.lastIndexOf("/") + 1));
+    expect(trashed).toBe(true);
   });
 
   it("/sessions clear in one tab leaves the other tab on a valid, listed session", async function () {

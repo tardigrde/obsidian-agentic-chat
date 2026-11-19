@@ -222,7 +222,7 @@ export class ObsidianSessionManager {
   async deleteSession(path: string): Promise<void> {
     const sessionPath = normalizeFolderPath(path, { allowPluginInternals: true });
     if (await this.adapter.exists(sessionPath)) {
-      await this.adapter.remove(sessionPath);
+      await this.trashSessionFile(sessionPath);
     }
     await removeIfExists(this.adapter, `${sessionPath}${SESSION_BACKUP_SUFFIX}`);
     if (this.sessionFile === sessionPath) {
@@ -231,6 +231,20 @@ export class ObsidianSessionManager {
       this.entries = [];
       this.leafId = null;
     }
+  }
+
+  /**
+   * A deleted conversation goes to the vault's `.trash` folder, so the user can
+   * get it back. When the vault trash fails, the file is removed for good: a
+   * delete must not leave the conversation in history.
+   */
+  private async trashSessionFile(path: string): Promise<void> {
+    try {
+      await this.adapter.trashLocal(path);
+    } catch {
+      // Fall through to the check and permanent removal.
+    }
+    if (await this.adapter.exists(path)) await this.adapter.remove(path);
   }
 
   async listReferencedArtifactIds(): Promise<Set<string>> {

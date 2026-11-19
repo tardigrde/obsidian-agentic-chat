@@ -74,9 +74,9 @@ All paths are vault-relative. The plugin rejects absolute paths and `..` escapes
 | `edit` | Replace exact strings in a note. |
 | `set_properties` | Write YAML frontmatter through Obsidian's API. |
 | `rename` | Rename or move a note and update inbound wikilinks. |
-| `delete` | Move a note or folder to trash. A non-empty folder needs `recursive:true`, which asks even in YOLO unless `delete` is set to allow. |
+| `delete` | Move a note or folder to trash. If the system trash does nothing, it uses the vault `.trash`; if that fails too, the result says "bypassed trash". A non-empty folder needs `recursive:true`, which asks even in YOLO unless `delete` is set to allow. |
 
-`vault_inspect` is the default model-facing tool for list, search, active note, graph, and frontmatter reads. The older `ls`, `search`, `find`, `grep`, `get_active_note`, `get_backlinks`, `get_links`, `local_graph`, and `get_properties` tools are compatibility-only and are not sent to the model by default. There is no settings toggle for them.
+`vault_inspect` does every list, search, active note, graph, and frontmatter read. It replaces the older `ls`, `search`, `find`, `grep`, `get_active_note`, `get_backlinks`, `get_links`, `local_graph`, and `get_properties` tools, which are gone.
 
 ## Standing instructions (AGENTS.md)
 
@@ -210,13 +210,13 @@ Then click the chat ribbon icon, or run *Agentic Chat: Open chat*.
 | Command | What it does |
 |---|---|
 | `/new` | Start a new conversation. |
-| `/sessions` | Browse, search, reopen, rename, or delete past conversations. `clear --confirm` clears all sessions in the current scope. |
+| `/sessions` | Browse, search, reopen, rename, or delete past conversations. A deleted conversation goes to the vault `.trash`. `clear --confirm` moves all sessions in the current scope there. |
 | `/model` | Switch model. Shift applies a next-prompt-only override. |
 | `/effort [level]` | Set reasoning effort (`off`, `minimal`, `low`, `medium`, `high`, `xhigh`). The level persists. |
 | `/compact [instructions]` | Summarize older turns now. Optional text guides the summary. |
 | `/init [instructions]` | Curate the vault standing-instructions file. Optional text guides the update. |
 | `/skill [name] [args]` | Run a vault skill. |
-| `/<skill-name>` | Run a skill directly when no built-in command has that name. |
+| `/<skill-name>` | Run a skill directly when no built-in command has that name. Any other `/word` shows "Unknown command" and is not sent to the model. |
 | `/agent [name] [task]` | Delegate a task to a subagent. Without arguments, opens a picker. |
 | `/undo` | Undo the last vault change the agent made. |
 | `/status` | Show provider, model, mode, session, MCP servers, and tools. |
