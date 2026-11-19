@@ -23,10 +23,17 @@ export const RETIRED_COMMANDS = [
   "/project",
 ] as const;
 
-/** Retired commands that still reach the model; the rest get a local replacement hint (#284). */
-export const MODEL_RETIRED_COMMANDS: readonly string[] = RETIRED_COMMANDS.filter(
-  (command) => retiredCommandHint(command.slice(1)) === undefined,
-);
+/**
+ * Retired commands that still reach the model. None since v1: a retired
+ * command shows its replacement hint (#284), and any other unknown command
+ * shows "Unknown command". Both answer locally.
+ */
+export const MODEL_RETIRED_COMMANDS: readonly string[] = [];
+
+/** The text a retired command's local answer contains. */
+export function retiredCommandLocalText(command: string): string {
+  return retiredCommandHint(command.slice(1)) !== undefined ? `${command} was removed` : "is not a command or a skill";
+}
 
 export type ChaosActionKind =
   | "prompt"

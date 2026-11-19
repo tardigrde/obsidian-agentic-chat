@@ -58,7 +58,7 @@ export interface AcResolution {
  * Decide whether the caret sits inside an autocompletable token.
  *
  * - `^/word` (no space yet) → command menu.
- * - `/skill <partial>` or `/template <partial>` (first arg) → skill menu.
+ * - `/skill <partial>` (first arg) → skill menu.
  * - `@partial` preceded by start-of-line or whitespace → mention menu. The token
  *   may contain spaces so multi-word paths (e.g. `@200 Resources`) match; it ends
  *   only at a newline. Picking a candidate or pressing Escape closes the menu, and
@@ -74,7 +74,7 @@ export function detectQuery(text: string, caret: number): AcQuery | null {
   const command = /^\/(\S*)$/.exec(before);
   if (command) return { kind: "command", range: [0, end], query: command[1] };
 
-  const skill = /^\/(?:skill|template)\s+(\S*)$/.exec(before);
+  const skill = /^\/skill\s+(\S*)$/.exec(before);
   if (skill) return { kind: "skill", range: [end - skill[1].length, end], query: skill[1] };
 
   const at = before.lastIndexOf("@");

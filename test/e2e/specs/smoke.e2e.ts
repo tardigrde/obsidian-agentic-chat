@@ -199,7 +199,7 @@ describe("agentic-chat smoke", function () {
     }
   });
 
-  it("renders a scripted turn, treats /plan and /skill as chat, and Stop clears a running turn", async function () {
+  it("renders a scripted turn, answers /plan locally, runs /skill, and Stop clears a running turn", async function () {
     await submitComposer("/new");
     await installScriptedTurns([
       textTurn("plain answer", "Scripted smoke answer."),
@@ -207,14 +207,16 @@ describe("agentic-chat smoke", function () {
       textTurn("held answer", "This answer is held.", { hold: true }),
     ]);
 
-    // `/plan` is gone: it is a normal prompt now, and the model answers it.
+    // `/plan` is gone and is no command: it answers locally, with no model call
+    // (the queued "plain answer" turn stays unused until the plain prompt).
     await submitComposer("/plan outline the vault cleanup");
+    await waitForTranscript("Unknown command");
+    await expect($(".agentic-chat-plan-badge")).not.toExist();
+    await submitComposer("outline the vault cleanup");
     await waitForTranscript("Scripted smoke answer.");
     await waitForIdle();
     const transcript = await transcriptText();
-    expect(transcript.indexOf("/plan outline the vault cleanup")).toBeGreaterThanOrEqual(0);
-    expect(transcript.indexOf("/plan outline the vault cleanup")).toBeLessThan(transcript.indexOf("Scripted smoke answer."));
-    await expect($(".agentic-chat-plan-badge")).not.toExist();
+    expect(transcript.indexOf("Unknown command")).toBeLessThan(transcript.indexOf("Scripted smoke answer."));
 
     // `/skill <name>` names the loaded skill before the turn starts.
     await submitComposer("/skill self-knowledge e2e chip probe");

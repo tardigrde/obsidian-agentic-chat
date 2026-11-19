@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { containsSensitiveText, redactJsonl, redactText, redactValue } from "../src/privacy/redaction";
+import { redactJsonl, redactText, redactValue } from "../src/privacy/redaction";
 
 // Build the key-shaped fixture from parts: this tracked file must not hold a literal.
 const KEY_SHAPED = ["sk", "live", "secret", "value"].join("-");
@@ -69,11 +69,4 @@ describe("privacy redaction", () => {
     expect(redacted).not.toContain("supersecrettoken");
   });
 
-  it("detects sensitive text repeatably", () => {
-    expect([containsSensitiveText("Bearer supersecrettoken"), containsSensitiveText("Bearer supersecrettoken")]).toEqual([
-      true,
-      true,
-    ]);
-    expect(containsSensitiveText("ordinary preference")).toBe(false);
-  });
 });

@@ -241,3 +241,31 @@ describe("ObsidianSessionManager unreadable session files", () => {
   });
 });
 
+describe("ObsidianSessionManager.deleteSession", () => {
+  it("moves the conversation to the vault trash, so the user can get it back", async () => {
+    const { sm, adapter } = manager();
+    const info = await sm.createSession(DEFAULTS);
+    await sm.appendMessage(userMessage("keep me"));
+    const fileName = info.path.slice(info.path.lastIndexOf("/") + 1);
+
+    await sm.deleteSession(info.path);
+
+    expect(await adapter.exists(info.path)).toBe(false);
+    expect(await adapter.read(`.trash/${fileName}`)).toContain("keep me");
+    expect(await sm.listSessions()).toEqual([]);
+  });
+
+  it("removes the file for good when the vault trash fails", async () => {
+    const { sm, adapter } = manager();
+    const info = await sm.createSession(DEFAULTS);
+    adapter.trashLocal = async () => {
+      throw new Error("no .trash");
+    };
+
+    await sm.deleteSession(info.path);
+
+    expect(await adapter.exists(info.path)).toBe(false);
+    expect(await sm.listSessions()).toEqual([]);
+  });
+});
+

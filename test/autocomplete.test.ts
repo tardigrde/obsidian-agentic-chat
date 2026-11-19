@@ -39,8 +39,8 @@ describe("detectQuery", () => {
   it("detects an empty skill arg right after the space", () => {
     expect(detectQuery("/skill ", 7)).toEqual({ kind: "skill", range: [7, 7], query: "" });
   });
-  it("treats /template like /skill for arg completion", () => {
-    expect(detectQuery("/template tr", 12)).toEqual({ kind: "skill", range: [10, 12], query: "tr" });
+  it("does not open the skill menu for /template, which is not a command", () => {
+    expect(detectQuery("/template tr", 12)).toBeNull();
   });
   it("closes skill completion once a second arg begins", () => {
     expect(detectQuery("/skill summarize foo", 20)).toBeNull();

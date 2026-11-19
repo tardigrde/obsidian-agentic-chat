@@ -96,9 +96,46 @@ describe("slash command dispatch", () => {
     expect(stubs.runSkill).toHaveBeenCalledWith("Daily", "x y", "/daily x y");
   });
 
-  it("falls back to the retired-command hint for an unknown word", async () => {
+  it("checks the retired-command hint first for an unknown word", async () => {
     const { view, stubs } = makeView();
-    await expect(view.handleSlashCommand("/todo")).resolves.toBe(false);
+    await view.handleSlashCommand("/todo");
     expect(stubs.showRetiredCommandHint).toHaveBeenCalledWith("todo");
+  });
+});
+
+describe("unknown slash words", () => {
+  function actionsWithInfo() {
+    const renderInfoMessage = vi.fn();
+    const actions = new ChatActions({
+      slashCtx: () => ({}) as SlashContext,
+      service: () => ({ getSkills: () => [] }) as unknown as AgentService,
+      tabs: () => ({}) as ChatTabs,
+      switchToTab: vi.fn(),
+      loadConversation: vi.fn(),
+      clearQueuedPrompt: vi.fn(),
+      clearEmptyState: vi.fn(),
+      renderErrorMessage: vi.fn(),
+      renderInfoMessage,
+    });
+    return { actions, renderInfoMessage };
+  }
+
+  it("shows a hint for a word that is not a command or a skill, and does not send it", async () => {
+    const { actions, renderInfoMessage } = actionsWithInfo();
+
+    await expect(actions.handleSlashCommand("/sesions clear")).resolves.toBe(true);
+
+    expect(renderInfoMessage).toHaveBeenCalledWith("Unknown command", [
+      ["/sesions", expect.stringContaining("/help")],
+    ]);
+  });
+
+  it("still sends text that only starts with a slash, such as a path, to the model", async () => {
+    const { actions, renderInfoMessage } = actionsWithInfo();
+
+    await expect(actions.handleSlashCommand("/home/me/notes.md what is in it?")).resolves.toBe(false);
+    await expect(actions.handleSlashCommand("/ what")).resolves.toBe(false);
+
+    expect(renderInfoMessage).not.toHaveBeenCalled();
   });
 });

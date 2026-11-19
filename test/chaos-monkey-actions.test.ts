@@ -176,7 +176,12 @@ describe("chaos scripted turns", () => {
     for (const target of NEW_TARGETS) {
       const action = focusedSequence(target)[0];
       const turns = scriptedTurnsForAction(action);
-      if (action.kind === "settings-persistence" || action.kind === "mcp-lifecycle") {
+      // These answer without a model call; retired commands answer locally since v1.
+      if (
+        action.kind === "settings-persistence" ||
+        action.kind === "mcp-lifecycle" ||
+        action.kind === "retired-commands"
+      ) {
         expect(turns).toEqual([]);
       } else {
         expect(turns.length).toBeGreaterThan(0);
@@ -230,10 +235,9 @@ describe("chaos scripted turns", () => {
     const { MODEL_RETIRED_COMMANDS, focusedSequence, scriptedTurnsFor } = await loadActions();
     const sequence = focusedSequence("retired-commands");
     const turns = scriptedTurnsFor(sequence);
-    // Hinted retired commands answer locally; only the rest reach the scripted model (#284).
-    expect([...MODEL_RETIRED_COMMANDS]).toEqual(["/plan", "/project"]);
-    expect(turns).toHaveLength(MODEL_RETIRED_COMMANDS.length);
-    expect(turns[0].label).toContain(MODEL_RETIRED_COMMANDS[0]);
-    expect(turns.at(-1)?.label).toContain(MODEL_RETIRED_COMMANDS.at(-1));
+    // Every retired command answers locally since v1: a replacement hint
+    // (#284), or "Unknown command" for /plan and /project. None reaches the model.
+    expect([...MODEL_RETIRED_COMMANDS]).toEqual([]);
+    expect(turns).toEqual([]);
   });
 });
