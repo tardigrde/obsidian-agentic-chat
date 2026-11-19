@@ -72,3 +72,45 @@ describe("TranscriptView renderer agreement", () => {
     expect(snapshotLastAssistant(historyEl)).toBe(snapshotLastAssistant(liveEl));
   });
 });
+
+describe("TranscriptView scroll scheduling", () => {
+  function scrollable(): { view: TranscriptView; el: HTMLElement; frames: FrameRequestCallback[] } {
+    const frames: FrameRequestCallback[] = [];
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => frames.push(callback));
+    const el = document.createElement("div");
+    Object.defineProperty(el, "scrollHeight", { configurable: true, value: 1_000 });
+    Object.defineProperty(el, "clientHeight", { configurable: true, value: 400 });
+    return { view: new TranscriptView(el, host()), el, frames };
+  }
+
+  it("coalesces calls in one frame into a single scroll, and a forced call wins", () => {
+    const { view, el, frames } = scrollable();
+    view.scrollToBottom();
+    view.scrollToBottom();
+    view.scrollToBottom({ force: true });
+    expect(frames).toHaveLength(1);
+
+    // The user scrolled up before the frame ran: only the forced request still scrolls.
+    el.scrollTop = 0;
+    view.markUserScrollIntent();
+    view.updateScrollPinning();
+    frames.shift()!(0);
+    expect(el.scrollTop).toBe(1_000);
+
+    // After the frame, a new request schedules a new frame.
+    view.scrollToBottom({ force: true });
+    expect(frames).toHaveLength(1);
+    view.dispose();
+  });
+
+  it("a follow request does not scroll once the user unpinned before the frame", () => {
+    const { view, el, frames } = scrollable();
+    view.scrollToBottom();
+    el.scrollTop = 0;
+    view.markUserScrollIntent();
+    view.updateScrollPinning();
+    frames.shift()!(0);
+    expect(el.scrollTop).toBe(0);
+    view.dispose();
+  });
+});

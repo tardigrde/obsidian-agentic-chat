@@ -127,9 +127,12 @@ describe("McpHttpClient", () => {
     };
 
     const client = new McpHttpClient({ server: server(), fetcher });
+    expect(client.phase).toBe("uninitialized");
 
     await expect(client.listTools()).rejects.toThrow("initialized notification failed");
+    expect(client.phase).toBe("uninitialized");
     await expect(client.listTools()).resolves.toEqual([]);
+    expect(client.phase).toBe("ready");
     expect(notifyAttempts).toBe(2);
     expect(requests.filter((request) => JSON.parse(request.body ?? "{}").method === "initialize")).toHaveLength(2);
   });
@@ -781,6 +784,7 @@ describe("McpHttpClient", () => {
 
     const client = new McpHttpClient({ server: server(), fetcher });
     await expect(client.listTools()).resolves.toMatchObject([{ name: "get_time" }]);
+    expect(client.phase).toBe("ready");
 
     expect(requests.map((request) => JSON.parse(request.body ?? "{}").method)).toEqual([
       "initialize",
@@ -875,7 +879,10 @@ describe("shared handshake", () => {
     };
     const client = new McpHttpClient({ server: server(), fetcher });
 
-    await Promise.all([client.callTool("a", {}), client.callTool("b", {})]);
+    const calls = Promise.all([client.callTool("a", {}), client.callTool("b", {})]);
+    expect(client.phase).toBe("handshaking");
+    await calls;
+    expect(client.phase).toBe("ready");
 
     expect(methods.filter((method) => method === "initialize")).toHaveLength(1);
     expect(methods.filter((method) => method === "tools/call")).toHaveLength(2);

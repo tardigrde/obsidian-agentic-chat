@@ -160,11 +160,14 @@ export class SessionListModal extends Modal {
     titleEl.firstChild?.remove();
     input.focus();
     input.select();
-    let committed = false;
-    let blurArmed = false;
+    // arming: for the first 100ms a blur is focus still settling after the
+    // click that opened the input, so refocus instead of committing.
+    // editing: a blur commits. committed: Enter, Escape, or blur already
+    // settled the rename, so every later event is a no-op.
+    let phase: "arming" | "editing" | "committed" = "arming";
     const commit = async (save: boolean): Promise<void> => {
-      if (committed) return;
-      committed = true;
+      if (phase === "committed") return;
+      phase = "committed";
       const next = resolveSessionRename(session, input.value, save);
       if (next !== null) {
         try {
@@ -189,10 +192,10 @@ export class SessionListModal extends Modal {
       }
     });
     window.setTimeout(() => {
-      blurArmed = true;
+      if (phase === "arming") phase = "editing";
     }, 100);
     input.addEventListener("blur", () => {
-      if (!blurArmed) {
+      if (phase === "arming") {
         input.focus();
         return;
       }
