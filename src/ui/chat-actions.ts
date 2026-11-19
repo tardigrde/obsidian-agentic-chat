@@ -1,5 +1,5 @@
 import type { AgentService } from "../agent/agent-service";
-import type { ChatTab, ChatTabs } from "./chat-tabs";
+import type { ChatTabs } from "./chat-tabs";
 import {
   parseSlashInput,
   retiredCommandHint,
@@ -116,18 +116,12 @@ export class ChatActions {
 
   showHelp(): void { showHelp(this.deps.slashCtx()); }
 
-  /** Delete from the history list; the tab that has the session open swaps to a fresh one. */
+  /** Delete from the history list; a tab that has the session open swaps to a fresh one. */
   async deleteSessionFromList(path: string): Promise<void> {
-    // A conversation open in a background tab is deleted through that tab.
-    // Deleting it from here would leave that tab appending to the deleted
-    // file, which comes back without a session header: gone from history and
-    // lost on reload.
-    const background = this.backgroundTabsWithSession().find((entry) => entry.path === path);
-    if (background) {
-      background.tab.state.queuedPromptArmed = false;
-      await background.tab.service.deleteSession(path);
-      return;
-    }
+    // A background tab that has the conversation open lets go of it first, in
+    // its own queue. Otherwise it keeps appending to the deleted file, which
+    // comes back without a session header: gone from history, lost on reload.
+    await this.releaseInBackgroundTabs(new Set([path]));
     if (this.deps.service().getSessionInfo()?.path === path) this.deps.clearQueuedPrompt();
     // Let the history modal restore its optimistically removed row and show
     // the delete failure. Swallowing the rejection would leave the row gone.
@@ -141,39 +135,36 @@ export class ChatActions {
    */
   async clearAllSessions(): Promise<number> {
     this.deps.clearQueuedPrompt();
-    // Captured before the clear: it deletes every file, including the ones
-    // background tabs have open. Each of those tabs then starts a fresh
-    // session instead of appending to a deleted file.
-    const background = this.backgroundTabsWithSession();
-    for (const { tab } of background) tab.state.queuedPromptArmed = false;
-    let deleted: number;
+    let deleted: string[];
     try {
       deleted = await this.deps.service().clearSessions();
     } catch (error) {
       this.deps.renderErrorMessage(errorMessage(error));
       return -1;
     }
-    // The files are gone now: reset every tab even if one reset fails, and
-    // report the failure without claiming the clear failed.
-    for (const { tab, path } of background) {
+    // The clear deleted files that background tabs may have open, or were
+    // loading while it ran. Each of those tabs starts a fresh session.
+    await this.releaseInBackgroundTabs(new Set(deleted));
+    return deleted.length;
+  }
+
+  /**
+   * Every background tab checks, in its own queue, whether its session is in
+   * `paths`, and starts a fresh one if so. A failure in one tab is reported
+   * and does not stop the others or fail the delete.
+   */
+  private async releaseInBackgroundTabs(paths: ReadonlySet<string>): Promise<void> {
+    const tabs = this.deps.tabs();
+    const background = tabs.allTabs().filter((_tab, index) => index !== tabs.activeIndexValue);
+    for (const tab of background) {
+      const path = tab.service.getSessionInfo()?.path;
+      if (path && paths.has(path)) tab.state.queuedPromptArmed = false;
       try {
-        await tab.service.deleteSession(path);
+        await tab.service.releaseDeletedSession(paths);
       } catch (error) {
         this.deps.renderErrorMessage(`A background tab could not start a fresh conversation: ${errorMessage(error)}`);
       }
     }
-    return deleted;
-  }
-
-  private backgroundTabsWithSession(): Array<{ tab: ChatTab; path: string }> {
-    const tabs = this.deps.tabs();
-    const result: Array<{ tab: ChatTab; path: string }> = [];
-    tabs.allTabs().forEach((tab, index) => {
-      if (index === tabs.activeIndexValue) return;
-      const path = tab.service.getSessionInfo()?.path;
-      if (path) result.push({ tab, path });
-    });
-    return result;
   }
 
   async loadSession(path: string): Promise<void> {

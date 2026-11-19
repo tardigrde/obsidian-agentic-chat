@@ -209,3 +209,35 @@ describe("deriveAutoName", () => {
     expect(deriveAutoName("   ")).toBeUndefined();
   });
 });
+
+describe("ObsidianSessionManager unreadable session files", () => {
+  it("lists a session file it cannot read, so history shows it instead of hiding it", async () => {
+    const { sm, adapter } = manager();
+    const good = await sm.createSession(DEFAULTS);
+    await sm.appendMessage(userMessage("hello"));
+    await adapter.write("sessions/broken.jsonl", '{"type":"action_audit"}\n');
+
+    const sessions = await sm.listSessions();
+
+    expect(sessions.map((session) => session.path).sort()).toEqual([good.path, "sessions/broken.jsonl"].sort());
+    expect(sessions.find((session) => session.path === "sessions/broken.jsonl")).toMatchObject({
+      unreadable: true,
+      messageCount: 0,
+    });
+    expect(sessions.find((session) => session.path === good.path)?.unreadable).toBeUndefined();
+  });
+
+  it("continues the most recent readable session, never an unreadable one", async () => {
+    const { sm, adapter } = manager();
+    const good = await sm.createSession(DEFAULTS);
+    await sm.appendMessage(userMessage("hello"));
+    await adapter.write("sessions/zz-broken.jsonl", "not json\n");
+
+    // A fresh manager, as on plugin start. The broken file is the newest one.
+    const fresh = new ObsidianSessionManager(adapter.asDataAdapter(), "sessions", "vault:test", new SessionWriteRegistry());
+    const info = await fresh.continueRecentSession(DEFAULTS);
+
+    expect(info.path).toBe(good.path);
+  });
+});
+

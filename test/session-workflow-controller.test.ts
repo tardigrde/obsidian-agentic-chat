@@ -112,6 +112,15 @@ describe("SessionWorkflowController", () => {
     expect(ctx.renamed).toEqual([{ path: active.path, name: "Renamed" }]);
   });
 
+  it("lists an unreadable session file instead of hiding it", async () => {
+    const broken = session({ id: "broken", path: "sessions/broken.jsonl", messageCount: 0, unreadable: true });
+    const ctx = makeController({ sessions: [broken] });
+
+    await ctx.controller.run("");
+
+    expect(ctx.opened[0]?.sessions).toEqual([broken]);
+  });
+
   it("rejects unknown session subcommands without clearing", async () => {
     const ctx = makeController({ clearCount: 2 });
 

@@ -158,4 +158,34 @@ describe("session delete across tabs", function () {
     expect(heads.filter((file) => !file.head.includes('"type":"session"'))).toEqual([]);
     expect(heads.some((file) => file.path === before)).toBe(false);
   });
+
+  it("history shows an unreadable session file as a row the user can delete", async function () {
+    const brokenPath = await browser.executeObsidian(async ({ app }) => {
+      const path = `${app.vault.configDir}/plugins/agentic-chat/sessions/2026-01-01T00-00-00-000Z_broken.jsonl`;
+      // A file with no session header, as a crash or a stray append leaves it.
+      await app.vault.adapter.write(path, '{"type":"action_audit"}\n');
+      return path;
+    });
+
+    await $('[aria-label="Conversation history"]').click();
+    await $(".agentic-chat-session-list").waitForExist();
+    const row = $(".agentic-chat-session-row.is-unreadable");
+    await row.waitForExist({ timeout: 5_000, timeoutMsg: "history hid the unreadable session file" });
+    await expect(row.$(".agentic-chat-session-title")).toHaveText(
+      "Unreadable conversation (2026-01-01T00-00-00-000Z_broken.jsonl)",
+    );
+    expect(await row.$(".agentic-chat-session-rename").isExisting()).toBe(false);
+    if (process.env.AGENTIC_CHAT_SCREENSHOT_DIR) {
+      await browser.saveScreenshot(`${process.env.AGENTIC_CHAT_SCREENSHOT_DIR}/unreadable-session-row.png`);
+    }
+
+    await row.$(".agentic-chat-session-delete").click();
+    await browser.waitUntil(async () => !(await $(".agentic-chat-session-row.is-unreadable").isExisting()), {
+      timeout: 5_000,
+      timeoutMsg: "the unreadable row stayed in the list",
+    });
+    await browser.keys("Escape");
+    const heads = await sessionFileHeads();
+    expect(heads.some((file) => file.path === brokenPath)).toBe(false);
+  });
 });

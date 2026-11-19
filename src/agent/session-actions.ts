@@ -65,6 +65,12 @@ export interface AgentSessionActionsOptions {
  */
 export class AgentSessionActions {
   private readonly sessionSwaps = new AgentSessionSwapQueue();
+  /**
+   * Set when this tab lost its session to a delete in another tab and could
+   * not start a fresh one. The next recovery then creates a session instead of
+   * continuing the most recent one, which can be open in another tab.
+   */
+  private freshOnRecovery = false;
 
   constructor(private readonly options: AgentSessionActionsOptions) {}
 
@@ -114,7 +120,11 @@ export class AgentSessionActions {
   async ensureSessionAgent(): Promise<void> {
     return this.sessionSwaps.enqueue(async (setPhase) => {
       if (this.options.activation.currentAgent) return;
-      await this.loadIntoNewAgent(setPhase, () => this.options.sessions.continueRecent());
+      const fresh = this.freshOnRecovery;
+      await this.loadIntoNewAgent(setPhase, () =>
+        fresh ? this.options.sessions.create() : this.options.sessions.continueRecent(),
+      );
+      this.freshOnRecovery = false;
     });
   }
 
@@ -204,12 +214,13 @@ export class AgentSessionActions {
     });
   }
 
-  async clearSessions(): Promise<number> {
+  /** Delete every session file. Resolves with the deleted paths. */
+  async clearSessions(): Promise<string[]> {
     return this.sessionSwaps.enqueue(async (setPhase) => {
       const sessions = await this.options.sessions.list();
       if (sessions.length === 0) {
         this.options.notifyChange();
-        return 0;
+        return [];
       }
       const previousPath = this.options.sessions.activePath;
       await this.options.activation.prepareResources();
@@ -222,11 +233,41 @@ export class AgentSessionActions {
         const { messages } = await this.options.sessions.create();
         setPhase("activating");
         await this.activateSession(messages);
-        return sessions.length;
+        return sessions.map((session) => session.path);
       } catch (error) {
         if (await this.recoverLiveSession(previousPath, setPhase)) {
           throw new Error("Could not clear sessions; a session is still open.", { cause: error });
         }
+        throw error;
+      }
+    });
+  }
+
+  /**
+   * Another tab deletes `paths`. When this tab's session is one of them, drop
+   * it and start a fresh session. It runs in this tab's queue, so a load that
+   * was in flight when the delete started lands first and is checked too. The
+   * delete here also removes the file again if a late append from the old
+   * agent recreated it without a header. A failure never falls back to the
+   * most recent session: that one can be open in another tab.
+   */
+  async releaseDeletedSession(paths: ReadonlySet<string>): Promise<void> {
+    return this.sessionSwaps.enqueue(async (setPhase) => {
+      const active = this.options.sessions.activePath;
+      if (!active || !paths.has(active)) return;
+      // The file is gone or going: stop the old agent before anything else,
+      // so it cannot append to the deleted path.
+      this.commitSessionChange();
+      this.options.activation.detachAgent();
+      setPhase("loading");
+      try {
+        await this.options.sessions.delete(active);
+        await this.options.activation.prepareResources();
+        const { messages } = await this.options.sessions.create();
+        setPhase("activating");
+        await this.activateSession(messages);
+      } catch (error) {
+        this.freshOnRecovery = true;
         throw error;
       }
     });

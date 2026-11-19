@@ -83,12 +83,27 @@ async function stillOnDisk(adapter: App["vault"]["adapter"] | undefined, path: s
 
 /**
  * Trash an indexed folder bottom-up so non-empty deletes work without the
- * adapter. Returns "removed" if any part bypassed the trash.
+ * adapter. Resolves with every path that bypassed the trash (empty when all of
+ * it went to the trash).
  */
-export async function trashTreeFolderRecursive(app: App, folder: TFolder): Promise<"trash" | "removed"> {
+export async function trashTreeFolderRecursive(app: App, folder: TFolder): Promise<string[]> {
   const bypassed: string[] = [];
   await trashTreeInto(app, folder, bypassed);
-  return bypassed.length > 0 ? "removed" : "trash";
+  return bypassed;
+}
+
+/** The most bypassed paths a recursive delete message names one by one. */
+const BYPASSED_PATHS_SHOWN = 20;
+
+/**
+ * The result of a recursive delete. A recursive delete has no per-file undo,
+ * so the message names what bypassed the trash and is gone for good.
+ */
+export function recursiveDeletionMessage(path: string, bypassed: readonly string[]): string {
+  if (bypassed.length === 0) return `Moved ${path} to trash.`;
+  const shown = bypassed.slice(0, BYPASSED_PATHS_SHOWN).join(", ");
+  const more = bypassed.length > BYPASSED_PATHS_SHOWN ? `, and ${bypassed.length - BYPASSED_PATHS_SHOWN} more` : "";
+  return `Deleted ${path}. These bypassed the trash and are gone for good: ${shown}${more}.`;
 }
 
 /**

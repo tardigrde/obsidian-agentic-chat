@@ -19,6 +19,7 @@ import {
   inspectAdapterTarget,
   trashAdapterFile,
   trashAdapterFolder,
+  recursiveDeletionMessage,
   trashTreeFolderRecursive,
   trashVaultEntry,
 } from "../vault/adapter-trash";
@@ -187,13 +188,13 @@ async function deleteIndexedEntry(
   // trash semantics match single-file deletes (no adapter needed —
   // works in tests and offline). No per-file undo is captured, so a
   // recursive delete is OS-trash-only: /undo covers single files.
-  const disposition = await trashTreeFolderRecursive(app, entry);
+  const bypassedPaths = await trashTreeFolderRecursive(app, entry);
   memo?.invalidate(path);
-  return textResult(adapterDeletionMessage(path, disposition), {
+  return textResult(recursiveDeletionMessage(path, bypassedPaths), {
     path,
     kind: "folder",
     recursive: true,
-    ...bypassed(disposition),
+    ...(bypassedPaths.length > 0 ? { bypassedTrash: true, bypassedPaths } : {}),
   });
 }
 

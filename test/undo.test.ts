@@ -75,6 +75,37 @@ describe("captureUndo + applyUndo", () => {
     expect(files.has("n.md")).toBe(false);
   });
 
+  it("removes a created file and says so when the system trash leaves it in place", async () => {
+    const { app, files } = makeApp();
+    const entry = await captureUndo(app, "write", { path: "n.md", content: "hi" });
+    files.set("n.md", "hi"); // simulate create
+    // Obsidian's system trash can return without moving anything (a Linux
+    // desktop with no trash service), and this vault has no .trash folder.
+    const calls: string[] = [];
+    const target = app as unknown as {
+      fileManager: { trashFile: (file: TFile) => Promise<void> };
+      vault: { adapter: unknown };
+    };
+    target.fileManager.trashFile = async () => void calls.push("trashFile");
+    target.vault.adapter = {
+      exists: async (path: string) => files.has(path),
+      trashLocal: async () => {
+        calls.push("trashLocal");
+        throw new Error("no .trash");
+      },
+      remove: async (path: string) => {
+        calls.push("remove");
+        files.delete(path);
+      },
+    };
+
+    const message = await applyUndo(app, entry!);
+
+    expect(calls).toEqual(["trashFile", "trashLocal", "remove"]);
+    expect(files.has("n.md")).toBe(false);
+    expect(message).toBe("Removed n.md (it didn't exist before, bypassed trash).");
+  });
+
   it("captures edit only when the file exists", async () => {
     const { app } = makeApp({ "n.md": "x" });
     expect(await captureUndo(app, "edit", { path: "n.md", edits: [] })).toMatchObject({ kind: "content", before: "x" });

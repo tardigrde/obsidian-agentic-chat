@@ -50,6 +50,19 @@ afterEach(() => {
 });
 
 describe("SessionListModal", () => {
+  it("shows an unreadable session file as a row that can only be deleted", async () => {
+    const cb = open([session("broken", { messageCount: 0, firstMessage: "", unreadable: true })]);
+
+    expect(titles()).toEqual(["Unreadable conversation (broken.jsonl)"]);
+    expect(rows()[0].classList.contains("is-unreadable")).toBe(true);
+    expect(rows()[0].querySelector(".agentic-chat-session-rename")).toBeNull();
+    rows()[0].querySelector<HTMLElement>(".agentic-chat-session-main")?.click();
+    expect(cb.load).not.toHaveBeenCalled();
+    rows()[0].querySelector<HTMLElement>(".agentic-chat-session-delete")?.click();
+    await settle();
+    expect(cb.delete).toHaveBeenCalledTimes(1);
+  });
+
   it("lists sessions by display name or first prompt, with a count line and the active row marked", () => {
     open([session("a", { name: "Weekly plan", messageCount: 1 }), session("b")], callbacks(), "sessions/b.jsonl");
     expect(document.querySelector(".modal-title")?.textContent).toBe("Conversations");

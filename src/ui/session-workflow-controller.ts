@@ -51,7 +51,9 @@ export class SessionWorkflowController {
       this.options.renderer.error(`Could not list conversations: ${errorMessage(error)}`);
       return;
     }
-    const sessions = listed.filter((session) => session.messageCount > 0);
+    // Empty sessions stay hidden; an unreadable file is shown so it is not lost
+    // without a notice.
+    const sessions = listed.filter((session) => session.messageCount > 0 || session.unreadable);
     this.options.openList(sessions, this.options.activeSessionPath(), {
       load: (session) => this.options.loadSession(session.path),
       delete: (session) => this.options.deleteSession(session.path),

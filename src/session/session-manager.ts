@@ -68,6 +68,12 @@ export interface SessionInfo {
   name?: string;
   messageCount: number;
   firstMessage: string;
+  /**
+   * The file is in the session folder but cannot be read as a session (no
+   * header, bad JSON, read error). History still lists it, so the user can
+   * see and delete it instead of losing it without a notice.
+   */
+  unreadable?: true;
 }
 
 interface SessionFileInfo extends SessionInfo {
@@ -170,9 +176,9 @@ export class ObsidianSessionManager {
   }
 
   async continueRecentSession(defaults: SessionDefaults): Promise<SessionInfo> {
-    const sessions = await this.listSessions();
-    if (sessions[0]) {
-      await this.loadSession(sessions[0].path);
+    const recent = (await this.listSessions()).find((session) => !session.unreadable);
+    if (recent) {
+      await this.loadSession(recent.path);
       return this.getActiveSessionInfo();
     }
     return this.createSession(defaults);
@@ -626,12 +632,33 @@ export class ObsidianSessionManager {
       const content = await this.readSessionContent(path);
       const stat = await this.adapter.stat(path);
       const entries = parseSessionEntries(content);
-      if (entries[0]?.type !== "session") return null;
+      if (entries[0]?.type !== "session") return this.unreadableSessionInfo(path);
       const modifiedTime = getSessionModifiedTime(entries, stat?.mtime ?? Date.now());
       return { ...summarizeSession(path, entries, modifiedTime), modifiedTime };
     } catch {
-      return null;
+      return this.unreadableSessionInfo(path);
     }
+  }
+
+  /** A history row for a session file that cannot be read. */
+  private async unreadableSessionInfo(path: string): Promise<SessionFileInfo> {
+    let modifiedTime = 0;
+    try {
+      modifiedTime = (await this.adapter.stat(path))?.mtime ?? 0;
+    } catch {
+      // Keep 0: the row sorts last.
+    }
+    const when = new Date(modifiedTime).toISOString();
+    return {
+      id: sessionFileName(path),
+      path,
+      createdAt: when,
+      updatedAt: when,
+      messageCount: 0,
+      firstMessage: "",
+      unreadable: true,
+      modifiedTime,
+    };
   }
 }
 

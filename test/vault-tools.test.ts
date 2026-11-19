@@ -722,6 +722,20 @@ describe("delete", () => {
     expect(result.details).toMatchObject({ bypassedTrash: true });
   });
 
+  it("names every path a recursive delete removed without trash", async () => {
+    const app = makeApp({ files: { "Full/A.md": { content: "a" }, "Full/B.md": { content: "b" } } });
+    const onDisk = new Set(["Full/A.md", "Full/B.md", "Full"]);
+    withNoOpSystemTrash(app, onDisk, { localTrashFails: true });
+
+    const result = await run(getTool(app, "delete"), { path: "Full", recursive: true });
+
+    expect(onDisk.size).toBe(0);
+    expect(unwrapToolOutput(result.text)).toBe(
+      "Deleted Full. These bypassed the trash and are gone for good: Full/A.md, Full/B.md, Full.",
+    );
+    expect(result.details).toMatchObject({ bypassedTrash: true, bypassedPaths: ["Full/A.md", "Full/B.md", "Full"] });
+  });
+
   it("refuses to delete a non-empty folder", async () => {
     const app = makeApp({ files: { "Full/Note.md": { content: "body" } } });
     const del = getTool(app, "delete");
