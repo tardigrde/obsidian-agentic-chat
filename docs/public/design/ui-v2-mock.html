@@ -1,0 +1,852 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Agentic Chat UI v2</title>
+<!--
+  Design mock for the Agentic Chat UI v2 redesign. Self-contained: open this file
+  in any browser. Spec: docs/development/design/ui-v2.md.
+
+  The `--background-*`, `--text-*`, `--interactive-*` names below stand in for
+  Obsidian's theme variables so the mock reads like the real plugin. The plugin
+  itself never defines them; it only defines the `--ac-*` layer on top.
+-->
+<style>
+  /* ---------- Obsidian stand-in theme (default theme, approx.) ---------- */
+  :root, :root[data-theme="light"] {
+    color-scheme: light;
+    --background-primary: #ffffff;
+    --background-secondary: #f6f6f6;
+    --background-modifier-border: #e3e3e3;
+    --background-modifier-hover: rgba(0,0,0,.055);
+    --text-normal: #222222;
+    --text-muted: #5c5c5c;
+    --text-faint: #8f8f8f;
+    --text-on-accent: #ffffff;
+    --interactive-accent: #7852ee;
+    --color-green: #08a14a;
+    --color-orange: #d9730d;
+    --color-red: #e93147;
+    --page: #ececf0;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --background-primary: #1e1e1e;
+      --background-secondary: #262626;
+      --background-modifier-border: #363636;
+      --background-modifier-hover: rgba(255,255,255,.075);
+      --text-normal: #dadada;
+      --text-muted: #a8a8a8;
+      --text-faint: #6f6f6f;
+      --text-on-accent: #ffffff;
+      --interactive-accent: #8a6cf0;
+      --color-green: #44cf6e;
+      --color-orange: #e9973f;
+      --color-red: #fb464c;
+      --page: #121212;
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --background-primary: #1e1e1e;
+    --background-secondary: #262626;
+    --background-modifier-border: #363636;
+    --background-modifier-hover: rgba(255,255,255,.075);
+    --text-normal: #dadada;
+    --text-muted: #a8a8a8;
+    --text-faint: #6f6f6f;
+    --text-on-accent: #ffffff;
+    --interactive-accent: #8a6cf0;
+    --color-green: #44cf6e;
+    --color-orange: #e9973f;
+    --color-red: #fb464c;
+    --page: #121212;
+  }
+
+  /* ---------- The --ac-* token layer (what the plugin ships) ---------- */
+  .ac {
+    --ac-space-1: 4px;
+    --ac-space-2: 8px;
+    --ac-space-3: 12px;
+    --ac-space-4: 16px;
+    --ac-space-6: 24px;
+
+    --ac-radius-s: 6px;
+    --ac-radius-m: 10px;
+    --ac-radius-l: 16px;
+    --ac-radius-pill: 999px;
+
+    --ac-font-ui: 13px;
+    --ac-font-small: 12px;
+    --ac-font-body: 14.5px;
+    --ac-line-body: 1.6;
+
+    --ac-surface: var(--background-primary);
+    --ac-surface-raised: var(--background-secondary);
+    --ac-border: var(--background-modifier-border);
+    --ac-hover: var(--background-modifier-hover);
+    --ac-text: var(--text-normal);
+    --ac-text-muted: var(--text-muted);
+    --ac-text-faint: var(--text-faint);
+    --ac-accent: var(--interactive-accent);
+
+    /* One status vocabulary for tabs, activity lines, steps, and subagents. */
+    --ac-status-running: var(--interactive-accent);
+    --ac-status-needs-you: var(--color-orange);
+    --ac-status-error: var(--color-red);
+    --ac-status-done: var(--color-green);
+    --ac-status-unread: var(--interactive-accent);
+
+    --ac-hit: 28px;          /* desktop min target */
+    --ac-motion: 160ms cubic-bezier(.2,.7,.2,1);
+  }
+  .ac.is-mobile { --ac-hit: 44px; --ac-font-body: 16px; }
+
+  /* ---------- Page chrome (mock only) ---------- */
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--page);
+    color: var(--text-normal);
+    font: 14px/1.5 ui-sans-serif, -apple-system, "Segoe UI", Inter, Roboto, sans-serif;
+  }
+  .page { max-width: 1240px; margin: 0 auto; padding: 24px 16px 64px; }
+  .page-head { display: flex; flex-wrap: wrap; gap: 12px; align-items: baseline; justify-content: space-between; }
+  .page-head h1 { font-size: 22px; margin: 0; letter-spacing: -.01em; }
+  .page-head p { margin: 4px 0 0; color: var(--text-muted); max-width: 64ch; }
+  .theme-switch { display: inline-flex; border: 1px solid var(--background-modifier-border); border-radius: 999px; padding: 2px; background: var(--background-primary); }
+  .theme-switch button { border: 0; background: none; color: var(--text-muted); padding: 4px 12px; border-radius: 999px; font: inherit; font-size: 13px; cursor: pointer; }
+  .theme-switch button[aria-pressed="true"] { background: var(--background-secondary); color: var(--text-normal); }
+  .frames { display: flex; flex-wrap: wrap; gap: 28px; margin-top: 28px; align-items: flex-start; }
+  .frame { display: flex; flex-direction: column; gap: 8px; }
+  .frame-label { font-size: 12px; color: var(--text-muted); text-transform: uppercase; letter-spacing: .06em; }
+  .frame-note { font-size: 12.5px; color: var(--text-muted); max-width: 380px; margin: 0; }
+  .pane {
+    width: 380px; height: 760px; border-radius: 12px; overflow: hidden;
+    border: 1px solid var(--background-modifier-border);
+    box-shadow: 0 10px 30px rgba(0,0,0,.08);
+  }
+  .phone {
+    width: 390px; height: 800px; border-radius: 36px; overflow: hidden;
+    border: 8px solid #111; box-shadow: 0 10px 30px rgba(0,0,0,.18);
+    display: flex; flex-direction: column; background: var(--background-primary);
+  }
+  .phone-status { height: 34px; flex: none; display: flex; justify-content: space-between; align-items: center; padding: 0 22px; font-size: 12px; font-weight: 600; color: var(--text-normal); }
+  .phone .ac { flex: 1; min-height: 0; }
+  .legend { margin-top: 40px; display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
+  .legend section { background: var(--background-primary); border: 1px solid var(--background-modifier-border); border-radius: 12px; padding: 14px 16px; }
+  .legend h2 { font-size: 14px; margin: 0 0 8px; }
+  .legend ul { margin: 0; padding-left: 18px; color: var(--text-muted); font-size: 13px; }
+  .legend li { margin: 3px 0; }
+  .swatches { display: flex; flex-wrap: wrap; gap: 10px; font-size: 12.5px; color: var(--text-muted); }
+  .swatches span { display: inline-flex; align-items: center; gap: 6px; }
+  .swatches .dot { display: inline-block; }
+  @media (max-width: 440px) {
+    .pane, .phone { width: 100%; }
+  }
+
+  /* ---------- The view ---------- */
+  .ac {
+    height: 100%; display: flex; flex-direction: column;
+    background: var(--ac-surface); color: var(--ac-text);
+    font-size: var(--ac-font-ui); position: relative;
+  }
+  .ac svg { width: 16px; height: 16px; flex: none; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  .ac button { font: inherit; color: inherit; }
+  .icon-btn {
+    min-width: var(--ac-hit); height: var(--ac-hit); border: 0; background: none; border-radius: var(--ac-radius-s);
+    display: inline-flex; align-items: center; justify-content: center; color: var(--ac-text-muted); cursor: pointer;
+    transition: background var(--ac-motion), color var(--ac-motion);
+  }
+  .icon-btn:hover { background: var(--ac-hover); color: var(--ac-text); }
+
+  /* Header: tab strip + actions */
+  .ac-header {
+    flex: none; display: flex; align-items: center; gap: var(--ac-space-1);
+    padding: var(--ac-space-2) var(--ac-space-2) var(--ac-space-1) var(--ac-space-3);
+    border-bottom: 1px solid transparent; position: relative;
+  }
+  .ac-tabs { flex: 1; min-width: 0; display: flex; gap: 2px; align-items: center; overflow: hidden; }
+  .ac-tab {
+    position: relative; flex: none; max-width: 140px; height: var(--ac-hit);
+    display: inline-flex; align-items: center; gap: 6px; padding: 0 10px;
+    border-radius: var(--ac-radius-pill); color: var(--ac-text-muted); cursor: pointer; user-select: none;
+    transition: background var(--ac-motion), color var(--ac-motion);
+  }
+  .ac-tab:hover { background: var(--ac-hover); color: var(--ac-text); }
+  .ac-tab[aria-selected="true"] { background: var(--ac-surface-raised); color: var(--ac-text); font-weight: 600; box-shadow: inset 0 0 0 1px var(--ac-border); }
+  .ac-tab-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ac-tab.is-number .ac-tab-label { font-variant-numeric: tabular-nums; min-width: 1ch; text-align: center; }
+  .ac-tab input {
+    width: 108px; border: 0; outline: 0; background: transparent; color: var(--ac-text); font: inherit; font-weight: 600; padding: 0;
+  }
+  .ac-tab.is-editing { box-shadow: inset 0 0 0 1.5px var(--ac-accent); background: var(--ac-surface); }
+  .dot { width: 7px; height: 7px; border-radius: 50%; flex: none; }
+  .dot.running { background: var(--ac-status-running); animation: pulse 1.4s ease-in-out infinite; }
+  .dot.needs-you { background: var(--ac-status-needs-you); }
+  .dot.error { background: var(--ac-status-error); }
+  .dot.unread { background: var(--ac-status-unread); }
+  .dot.done { background: var(--ac-status-done); }
+  @keyframes pulse { 0%,100% { opacity: 1; transform: scale(1); } 50% { opacity: .35; transform: scale(.8); } }
+  .ac-overflow {
+    flex: none; height: var(--ac-hit); padding: 0 8px; border: 0; background: none; border-radius: var(--ac-radius-pill);
+    display: inline-flex; align-items: center; gap: 4px; color: var(--ac-text-muted); cursor: pointer;
+  }
+  .ac-overflow:hover { background: var(--ac-hover); color: var(--ac-text); }
+  .ac-actions { flex: none; display: flex; gap: 2px; }
+
+  .ac-menu {
+    position: absolute; top: calc(100% - 2px); right: var(--ac-space-2); z-index: 5; width: 240px;
+    background: var(--ac-surface); border: 1px solid var(--ac-border); border-radius: var(--ac-radius-m);
+    box-shadow: 0 12px 32px rgba(0,0,0,.16); padding: var(--ac-space-1); display: none;
+  }
+  .ac-menu.is-open { display: block; }
+  .ac-menu-label { padding: 6px 10px 4px; font-size: var(--ac-font-small); color: var(--ac-text-faint); }
+  .ac-menu-item {
+    width: 100%; border: 0; background: none; display: flex; align-items: center; gap: 8px; min-height: var(--ac-hit);
+    padding: 0 10px; border-radius: var(--ac-radius-s); cursor: pointer; text-align: left; color: var(--ac-text);
+  }
+  .ac-menu-item:hover { background: var(--ac-hover); }
+  .ac-menu-item .num { color: var(--ac-text-faint); font-variant-numeric: tabular-nums; width: 1.2em; }
+  .ac-menu-item .grow { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ac-menu-sep { height: 1px; background: var(--ac-border); margin: 4px 6px; }
+
+  /* Transcript */
+  .ac-transcript {
+    flex: 1; min-height: 0; overflow-y: auto; padding: var(--ac-space-3) var(--ac-space-4) var(--ac-space-6);
+    display: flex; flex-direction: column; gap: var(--ac-space-6);
+  }
+  .turn { display: flex; flex-direction: column; gap: var(--ac-space-3); }
+  .msg-user {
+    align-self: flex-end; max-width: 85%; background: var(--ac-surface-raised);
+    border-radius: var(--ac-radius-l) var(--ac-radius-l) var(--ac-radius-s) var(--ac-radius-l);
+    padding: 8px 12px; font-size: var(--ac-font-body); line-height: 1.5;
+  }
+  .chip-inline {
+    display: inline-flex; align-items: center; gap: 4px; padding: 0 6px; border-radius: var(--ac-radius-s);
+    background: var(--ac-hover); font-size: var(--ac-font-small); color: var(--ac-text-muted); vertical-align: 1px;
+  }
+  .chip-inline svg { width: 12px; height: 12px; }
+  .msg-assistant { font-size: var(--ac-font-body); line-height: var(--ac-line-body); }
+  .msg-assistant p { margin: 0 0 .7em; }
+  .msg-assistant p:last-child { margin-bottom: 0; }
+  .msg-assistant a { color: var(--ac-accent); text-decoration: none; }
+  .msg-assistant ul { margin: 0 0 .7em; padding-left: 1.2em; }
+  .caret { display: inline-block; width: .5em; height: 1em; vertical-align: -2px; background: var(--ac-text); opacity: .5; animation: pulse 1s steps(2) infinite; }
+
+  /* Activity line: one collapsed summary per turn */
+  .activity { display: flex; flex-direction: column; }
+  .activity-head {
+    align-self: flex-start; display: inline-flex; align-items: center; gap: 8px; min-height: var(--ac-hit);
+    padding: 0 10px 0 6px; margin-left: -6px; border: 0; background: none; border-radius: var(--ac-radius-pill);
+    color: var(--ac-text-muted); cursor: pointer; max-width: 100%;
+  }
+  .activity-head:hover { background: var(--ac-hover); color: var(--ac-text); }
+  .activity-head .summary { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .activity-head .time { color: var(--ac-text-faint); font-variant-numeric: tabular-nums; }
+  .activity-head .fail { color: var(--ac-status-error); }
+  .activity-head .chev { transition: transform var(--ac-motion); width: 14px; height: 14px; color: var(--ac-text-faint); }
+  .activity.is-open .activity-head .chev { transform: rotate(90deg); }
+  .status-ic { width: 16px; height: 16px; display: inline-flex; align-items: center; justify-content: center; flex: none; }
+  .status-ic.done svg { color: var(--ac-status-done); width: 15px; height: 15px; }
+  .status-ic.error svg { color: var(--ac-status-error); width: 15px; height: 15px; }
+  .status-ic.needs-you svg { color: var(--ac-status-needs-you); width: 15px; height: 15px; }
+  .spinner { width: 13px; height: 13px; border-radius: 50%; border: 2px solid color-mix(in srgb, var(--ac-status-running) 25%, transparent); border-top-color: var(--ac-status-running); animation: spin .8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .activity-body { display: none; margin: 4px 0 0 7px; padding-left: 14px; border-left: 1.5px solid var(--ac-border); }
+  .activity.is-open .activity-body { display: block; }
+  .step {
+    display: flex; align-items: center; gap: 8px; min-height: 26px; color: var(--ac-text-muted); font-size: var(--ac-font-ui);
+  }
+  .step .name { color: var(--ac-text); }
+  .step .arg { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ac-text-muted); }
+  .step .arg.link { color: var(--ac-accent); }
+  .step .t { margin-left: auto; color: var(--ac-text-faint); font-size: var(--ac-font-small); font-variant-numeric: tabular-nums; }
+  .step.error .name { color: var(--ac-status-error); }
+  .step-detail { margin: 2px 0 6px 24px; font-size: var(--ac-font-small); color: var(--ac-text-muted); background: var(--ac-surface-raised); border-radius: var(--ac-radius-s); padding: 6px 8px; }
+  .thought { font-size: var(--ac-font-ui); color: var(--ac-text-muted); font-style: italic; padding: 2px 0 6px; }
+
+  /* Inline approval card (replaces the modal) */
+  .approval {
+    border: 1px solid color-mix(in srgb, var(--ac-status-needs-you) 45%, var(--ac-border));
+    background: color-mix(in srgb, var(--ac-status-needs-you) 6%, var(--ac-surface));
+    border-radius: var(--ac-radius-m); overflow: hidden;
+  }
+  .approval-head { display: flex; align-items: center; gap: 8px; padding: 10px 12px 6px; font-weight: 600; }
+  .approval-head .path { font-weight: 400; color: var(--ac-accent); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .approval-sub { padding: 0 12px 8px 36px; color: var(--ac-text-muted); font-size: var(--ac-font-small); }
+  .diff { margin: 0 12px; border-radius: var(--ac-radius-s); background: var(--ac-surface); border: 1px solid var(--ac-border); font: 12px/1.55 ui-monospace, "SF Mono", Menlo, monospace; overflow: hidden; }
+  .diff div { padding: 0 8px; white-space: pre-wrap; }
+  .diff .del { background: color-mix(in srgb, var(--color-red) 12%, transparent); }
+  .diff .add { background: color-mix(in srgb, var(--color-green) 13%, transparent); }
+  .diff .ctx { color: var(--ac-text-faint); }
+  .approval-actions { display: flex; flex-wrap: wrap; gap: 6px; padding: 10px 12px 12px; align-items: center; }
+  .btn {
+    height: var(--ac-hit); padding: 0 12px; border-radius: var(--ac-radius-s); border: 1px solid var(--ac-border);
+    background: var(--ac-surface); cursor: pointer; font-weight: 500;
+  }
+  .btn:hover { background: var(--ac-hover); }
+  .btn.primary { background: var(--ac-accent); border-color: var(--ac-accent); color: var(--text-on-accent); }
+  .btn.primary:hover { filter: brightness(1.07); }
+  .btn.ghost { border-color: transparent; color: var(--ac-text-muted); }
+  .approval-actions .kbd { margin-left: auto; color: var(--ac-text-faint); font-size: 11px; }
+  .approval.is-resolved { border-color: var(--ac-border); background: none; }
+
+  /* Sources + turn actions */
+  .sources { display: flex; flex-wrap: wrap; gap: 6px; }
+  .source {
+    display: inline-flex; align-items: center; gap: 5px; height: 24px; padding: 0 8px; border-radius: var(--ac-radius-pill);
+    border: 1px solid var(--ac-border); font-size: var(--ac-font-small); color: var(--ac-text-muted); cursor: pointer;
+  }
+  .source svg { width: 12px; height: 12px; }
+  .source:hover { color: var(--ac-text); background: var(--ac-hover); }
+  .turn-actions { display: flex; gap: 2px; margin-left: -6px; opacity: .0; transition: opacity var(--ac-motion); }
+  .turn:hover .turn-actions, .ac.is-mobile .turn-actions, .turn-actions:focus-within { opacity: 1; }
+  .turn-actions .icon-btn { min-width: 26px; height: 26px; }
+  .turn-actions svg { width: 14px; height: 14px; }
+  .turn-meta { margin-left: 6px; align-self: center; color: var(--ac-text-faint); font-size: var(--ac-font-small); }
+
+  .inline-error {
+    display: flex; gap: 8px; align-items: flex-start; padding: 8px 10px; border-radius: var(--ac-radius-m);
+    background: color-mix(in srgb, var(--ac-status-error) 7%, var(--ac-surface));
+    border: 1px solid color-mix(in srgb, var(--ac-status-error) 30%, var(--ac-border));
+    font-size: var(--ac-font-ui);
+  }
+  .inline-error svg { color: var(--ac-status-error); margin-top: 2px; }
+  .inline-error .grow { flex: 1; }
+  .inline-error .muted { color: var(--ac-text-muted); font-size: var(--ac-font-small); }
+
+  /* Empty state */
+  .empty { margin: auto 0; display: flex; flex-direction: column; gap: var(--ac-space-4); padding: 0 var(--ac-space-2); }
+  .empty h2 { margin: 0; font-size: 20px; font-weight: 600; letter-spacing: -.01em; }
+  .empty p { margin: 0; color: var(--ac-text-muted); }
+  .suggestions { display: flex; flex-direction: column; gap: 6px; }
+  .suggestion {
+    display: flex; align-items: center; gap: 10px; text-align: left; min-height: var(--ac-hit); padding: 8px 12px;
+    border: 1px solid var(--ac-border); border-radius: var(--ac-radius-m); background: var(--ac-surface); cursor: pointer; color: var(--ac-text);
+  }
+  .suggestion:hover { background: var(--ac-hover); }
+  .suggestion svg { color: var(--ac-text-muted); }
+
+  /* Composer */
+  .ac-composer { flex: none; padding: 0 var(--ac-space-3) var(--ac-space-3); }
+  .ac-status-line { display: flex; align-items: center; gap: 6px; padding: 0 6px 6px; font-size: var(--ac-font-small); color: var(--ac-text-muted); min-height: 22px; }
+  .card {
+    border: 1px solid var(--ac-border); border-radius: var(--ac-radius-l); background: var(--ac-surface);
+    box-shadow: 0 1px 2px rgba(0,0,0,.04), 0 4px 16px rgba(0,0,0,.04);
+    transition: border-color var(--ac-motion), box-shadow var(--ac-motion);
+  }
+  .card:focus-within { border-color: color-mix(in srgb, var(--ac-accent) 55%, var(--ac-border)); box-shadow: 0 0 0 3px color-mix(in srgb, var(--ac-accent) 14%, transparent); }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; padding: 10px 10px 0; }
+  .chip {
+    display: inline-flex; align-items: center; gap: 5px; height: 24px; padding: 0 4px 0 8px; border-radius: var(--ac-radius-s);
+    background: var(--ac-surface-raised); font-size: var(--ac-font-small); color: var(--ac-text-muted); max-width: 100%;
+  }
+  .chip svg { width: 12px; height: 12px; }
+  .chip .x { width: 18px; height: 18px; border: 0; background: none; border-radius: 4px; display: inline-flex; align-items: center; justify-content: center; color: var(--ac-text-faint); cursor: pointer; padding: 0; }
+  .chip .x:hover { background: var(--ac-hover); color: var(--ac-text); }
+  .chip.is-active-note { border: 1px dashed var(--ac-border); background: none; }
+  .ac textarea {
+    display: block; width: 100%; border: 0; outline: 0; resize: none; background: transparent; color: var(--ac-text);
+    font: inherit; font-size: var(--ac-font-body); line-height: 1.5; padding: 10px 12px 4px; min-height: 48px;
+  }
+  .ac textarea::placeholder { color: var(--ac-text-faint); }
+  .toolbar { display: flex; align-items: center; gap: 4px; padding: 4px 6px 6px; }
+  .pill-btn {
+    height: var(--ac-hit); display: inline-flex; align-items: center; gap: 4px; padding: 0 8px; border: 0; background: none;
+    border-radius: var(--ac-radius-pill); color: var(--ac-text-muted); cursor: pointer; font-size: var(--ac-font-small); white-space: nowrap;
+  }
+  .pill-btn:hover { background: var(--ac-hover); color: var(--ac-text); }
+  .pill-btn svg { width: 14px; height: 14px; }
+  .pill-btn .effort { color: var(--ac-text-faint); }
+  .pill-btn.is-yolo { color: var(--ac-status-needs-you); }
+  .spacer { flex: 1; }
+  .ctx-ring { width: 18px; height: 18px; }
+  .ctx-ring circle { fill: none; stroke-width: 3; }
+  .ctx-ring .track { stroke: var(--ac-border); }
+  .ctx-pct { font-variant-numeric: tabular-nums; }
+  .ctx-ring .val { stroke: var(--ac-text-muted); stroke-linecap: round; transform: rotate(-90deg); transform-origin: 50% 50%; }
+  .send {
+    width: 32px; height: 32px; border-radius: 50%; border: 0; background: var(--ac-accent); color: var(--text-on-accent);
+    display: inline-flex; align-items: center; justify-content: center; cursor: pointer; flex: none;
+  }
+  .ac.is-mobile .send { width: 40px; height: 40px; }
+  .send:disabled { background: var(--ac-hover); color: var(--ac-text-faint); cursor: default; }
+  .send.stop { background: var(--ac-text); color: var(--ac-surface); }
+  .send.stop svg { fill: currentColor; stroke: none; width: 12px; height: 12px; }
+  .queued { margin: 0 0 6px; padding: 6px 10px; border: 1px dashed var(--ac-border); border-radius: var(--ac-radius-m); color: var(--ac-text-muted); font-size: var(--ac-font-small); display: flex; gap: 6px; align-items: center; }
+
+  .hint { position: absolute; left: 50%; transform: translateX(-50%); bottom: 150px; background: var(--ac-text); color: var(--ac-surface); padding: 6px 10px; border-radius: var(--ac-radius-s); font-size: var(--ac-font-small); opacity: 0; pointer-events: none; transition: opacity var(--ac-motion); white-space: nowrap; }
+  .hint.is-on { opacity: .92; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .dot.running, .spinner, .caret { animation: none; }
+  }
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+    <symbol id="i-history" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5M12 7v5l4 2"/></symbol>
+    <symbol id="i-chev" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></symbol>
+    <symbol id="i-chev-down" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="m8.5 12.2 2.4 2.4 4.6-4.9"/></symbol>
+    <symbol id="i-alert" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 8v4.5M12 16h.01"/></symbol>
+    <symbol id="i-hand" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7.5v5M12 16h.01"/></symbol>
+    <symbol id="i-file" viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></symbol>
+    <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></symbol>
+    <symbol id="i-pencil" viewBox="0 0 24 24"><path d="M17 3a2.8 2.8 0 0 1 4 4L7.5 20.5 2 22l1.5-5.5z"/></symbol>
+    <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></symbol>
+    <symbol id="i-up" viewBox="0 0 24 24"><path d="M12 19V5M5 12l7-7 7 7"/></symbol>
+    <symbol id="i-stop" viewBox="0 0 24 24"><rect x="5" y="5" width="14" height="14" rx="2"/></symbol>
+    <symbol id="i-clip" viewBox="0 0 24 24"><path d="m21.4 11.1-9.2 9.2a6 6 0 0 1-8.5-8.5l9.2-9.2a4 4 0 0 1 5.7 5.7l-9.2 9.2a2 2 0 0 1-2.8-2.8l8.5-8.5"/></symbol>
+    <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></symbol>
+    <symbol id="i-copy" viewBox="0 0 24 24"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></symbol>
+    <symbol id="i-retry" viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/></symbol>
+    <symbol id="i-note" viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></symbol>
+    <symbol id="i-sparkle" viewBox="0 0 24 24"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/></symbol>
+    <symbol id="i-dots" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></symbol>
+    <symbol id="i-bot" viewBox="0 0 24 24"><rect x="4" y="8" width="16" height="12" rx="3"/><path d="M12 4v4M9 13h.01M15 13h.01"/></symbol>
+  </defs>
+</svg>
+
+<div class="page">
+  <div class="page-head">
+    <div>
+      <h1>Agentic Chat: UI v2 mock</h1>
+      <p>Three frames of the same view. Things you can try: double-click a tab to rename it, long-press a tab in the phone frame, type <code>/rename Weekly review</code> in a composer and press Enter, click an activity line to expand it, click Allow or Deny on the approval card, or open the <code>+3</code> overflow menu.</p>
+    </div>
+    <div class="theme-switch" role="group" aria-label="Theme">
+      <button data-theme-set="auto" aria-pressed="true">Auto</button>
+      <button data-theme-set="light" aria-pressed="false">Light</button>
+      <button data-theme-set="dark" aria-pressed="false">Dark</button>
+    </div>
+  </div>
+
+  <div class="frames">
+    <!-- ============ Frame A: sidebar, agent running, approval needed ============ -->
+    <div class="frame">
+      <div class="frame-label">A · Right sidebar · agent working, needs approval</div>
+      <div class="pane">
+        <div class="ac" data-frame="a">
+          <header class="ac-header">
+            <div class="ac-tabs" role="tablist">
+              <div class="ac-tab is-number" role="tab" aria-selected="false" tabindex="-1" data-default="1"><span class="ac-tab-label">1</span><span class="dot unread" title="New reply"></span></div>
+              <div class="ac-tab" role="tab" aria-selected="true" tabindex="0" data-default="2"><span class="ac-tab-label">Project plan</span><span class="dot needs-you" title="Needs approval"></span></div>
+              <div class="ac-tab is-number" role="tab" aria-selected="false" tabindex="-1" data-default="3"><span class="ac-tab-label">3</span><span class="dot running" title="Working"></span></div>
+            </div>
+            <button class="ac-overflow" data-menu-toggle aria-haspopup="menu" aria-expanded="false" title="3 more tabs">+3 <svg><use href="#i-chev-down"/></svg></button>
+            <div class="ac-actions">
+              <button class="icon-btn" title="New tab"><svg><use href="#i-plus"/></svg></button>
+              <button class="icon-btn" title="History"><svg><use href="#i-history"/></svg></button>
+            </div>
+            <div class="ac-menu" role="menu">
+              <div class="ac-menu-label">More tabs</div>
+              <button class="ac-menu-item" role="menuitem"><span class="num">4</span><span class="grow">Reading list triage</span><span class="dot done"></span></button>
+              <button class="ac-menu-item" role="menuitem"><span class="num">5</span><span class="grow">5</span></button>
+              <button class="ac-menu-item" role="menuitem"><span class="num">6</span><span class="grow">Weekly review</span><span class="dot error" title="Error"></span></button>
+              <div class="ac-menu-sep"></div>
+              <button class="ac-menu-item" role="menuitem"><svg><use href="#i-pencil"/></svg><span class="grow">Rename current tab</span></button>
+              <button class="ac-menu-item" role="menuitem"><svg><use href="#i-history"/></svg><span class="grow">Open from history…</span></button>
+              <button class="ac-menu-item" role="menuitem"><svg><use href="#i-x"/></svg><span class="grow">Close current tab</span></button>
+            </div>
+          </header>
+
+          <main class="ac-transcript">
+            <div class="turn">
+              <div class="msg-user">Turn my meeting notes from this week into a project plan and update <span class="chip-inline"><svg><use href="#i-file"/></svg>Project plan</span></div>
+              <div class="activity is-open">
+                <button class="activity-head" aria-expanded="true">
+                  <span class="status-ic needs-you"><svg><use href="#i-hand"/></svg></span>
+                  <span class="summary">Read 4 notes · needs you</span>
+                  <span class="time">14s</span>
+                  <svg class="chev"><use href="#i-chev"/></svg>
+                </button>
+                <div class="activity-body">
+                  <div class="thought">Thought for 3s: the user means the notes tagged #meeting from Mon–Fri…</div>
+                  <div class="step"><span class="status-ic done"><svg><use href="#i-check"/></svg></span><span class="name">Search</span><span class="arg">tag:#meeting this week</span><span class="t">0.4s</span></div>
+                  <div class="step"><span class="status-ic done"><svg><use href="#i-check"/></svg></span><span class="name">Read</span><span class="arg link">Meetings/2026-11-16 Kickoff</span><span class="t">0.1s</span></div>
+                  <div class="step"><span class="status-ic done"><svg><use href="#i-check"/></svg></span><span class="name">Read</span><span class="arg link">Meetings/2026-11-18 Sync</span><span class="t">0.1s</span></div>
+                  <div class="step"><span class="status-ic done"><svg><use href="#i-check"/></svg></span><span class="name">Read</span><span class="arg">+2 more</span><span class="t">0.2s</span></div>
+                </div>
+              </div>
+
+              <div class="approval" data-approval>
+                <div class="approval-head"><span class="status-ic needs-you"><svg><use href="#i-pencil"/></svg></span>Edit <span class="path">Projects/Project plan.md</span></div>
+                <div class="approval-sub">+6 −1 · replaces the "Next steps" section</div>
+                <div class="diff">
+                  <div class="ctx">  ## Next steps</div>
+                  <div class="del">- TBD</div>
+                  <div class="add">+ - [ ] Draft scope doc (Ana, Fri)</div>
+                  <div class="add">+ - [ ] Pick vendor shortlist (me, Wed)</div>
+                  <div class="add">+ - [ ] Book design review</div>
+                </div>
+                <div class="approval-actions">
+                  <button class="btn primary" data-approve>Allow</button>
+                  <button class="btn" data-approve-always>Always for this note</button>
+                  <button class="btn ghost" data-deny>Deny</button>
+                  <span class="kbd">⏎ allow · Esc deny</span>
+                </div>
+              </div>
+            </div>
+          </main>
+
+          <footer class="ac-composer">
+            <div class="ac-status-line"><span class="spinner"></span>Waiting for your approval</div>
+            <div class="card">
+              <div class="chips">
+                <span class="chip is-active-note" title="Active note, attached automatically"><svg><use href="#i-file"/></svg>Project plan<button class="x" title="Remove"><svg><use href="#i-x"/></svg></button></span>
+              </div>
+              <textarea rows="1" placeholder="Reply, or queue a follow-up…"></textarea>
+              <div class="toolbar">
+                <button class="icon-btn" title="Attach (@)"><svg><use href="#i-clip"/></svg></button>
+                <button class="pill-btn" title="Model · effort">Sonnet 5.5 <span class="effort">· high</span><svg><use href="#i-chev-down"/></svg></button>
+                <span class="spacer"></span>
+                <button class="pill-btn" title="Context used: 38%"><svg class="ctx-ring" viewBox="0 0 20 20"><circle class="track" cx="10" cy="10" r="7"/><circle class="val" cx="10" cy="10" r="7" stroke-dasharray="44" stroke-dashoffset="27"/></svg><span class="ctx-pct">38%</span></button>
+                <button class="pill-btn" title="Permission mode: Safe (click for YOLO)"><svg><use href="#i-shield"/></svg>Safe</button>
+                <button class="send stop" title="Stop"><svg><use href="#i-stop"/></svg></button>
+              </div>
+            </div>
+          </footer>
+          <div class="hint"></div>
+        </div>
+      </div>
+      <p class="frame-note">The tabs sit in a header row, and a renamed tab shows its name. The tool calls collapse into one activity line. The approval is a card inside the turn, so the transcript stays visible behind it. Hidden tabs collapse into <b>+3</b>.</p>
+    </div>
+
+    <!-- ============ Frame B: sidebar, finished turn ============ -->
+    <div class="frame">
+      <div class="frame-label">B · Right sidebar · finished turn, one failed step</div>
+      <div class="pane">
+        <div class="ac" data-frame="b">
+          <header class="ac-header">
+            <div class="ac-tabs" role="tablist">
+              <div class="ac-tab is-number" role="tab" aria-selected="true" tabindex="0" data-default="1"><span class="ac-tab-label">1</span></div>
+              <div class="ac-tab" role="tab" aria-selected="false" tabindex="-1" data-default="2"><span class="ac-tab-label">Project plan</span><span class="dot needs-you"></span></div>
+              <div class="ac-tab is-number" role="tab" aria-selected="false" tabindex="-1" data-default="3"><span class="ac-tab-label">3</span><span class="dot running"></span></div>
+            </div>
+            <div class="ac-actions">
+              <button class="icon-btn" title="New tab"><svg><use href="#i-plus"/></svg></button>
+              <button class="icon-btn" title="History"><svg><use href="#i-history"/></svg></button>
+            </div>
+          </header>
+
+          <main class="ac-transcript">
+            <div class="turn">
+              <div class="msg-user">What did I decide about the vendor shortlist?</div>
+              <div class="activity">
+                <button class="activity-head" aria-expanded="false">
+                  <span class="status-ic done"><svg><use href="#i-check"/></svg></span>
+                  <span class="summary">Searched vault, read 3 notes <span class="fail">· 1 failed</span></span>
+                  <span class="time">6s</span>
+                  <svg class="chev"><use href="#i-chev"/></svg>
+                </button>
+                <div class="activity-body">
+                  <div class="step"><span class="status-ic done"><svg><use href="#i-check"/></svg></span><span class="name">Search</span><span class="arg">vendor shortlist</span><span class="t">0.3s</span></div>
+                  <div class="step"><span class="status-ic done"><svg><use href="#i-check"/></svg></span><span class="name">Read</span><span class="arg link">Meetings/2026-11-18 Sync</span><span class="t">0.1s</span></div>
+                  <div class="step error"><span class="status-ic error"><svg><use href="#i-alert"/></svg></span><span class="name">Fetch</span><span class="arg">vendors.example.com/pricing</span><span class="t">5.0s</span></div>
+                  <div class="step-detail">Timed out after 5s. The agent went on without it.</div>
+                  <div class="step"><span class="status-ic done"><svg><use href="#i-check"/></svg></span><span class="name">Read</span><span class="arg link">Vendors/Shortlist</span><span class="t">0.1s</span></div>
+                </div>
+              </div>
+              <div class="msg-assistant">
+                <p>In the <a href="#">Nov 18 sync</a> you narrowed it to <b>two vendors</b>:</p>
+                <ul>
+                  <li><b>Northwind</b>: preferred, pending a security review</li>
+                  <li><b>Contoso</b>: the fallback if Northwind's pricing is over budget</li>
+                </ul>
+                <p>The pricing page timed out, so I couldn't check current prices.</p>
+              </div>
+              <div class="sources">
+                <span class="source"><svg><use href="#i-file"/></svg>2026-11-18 Sync</span>
+                <span class="source"><svg><use href="#i-file"/></svg>Shortlist</span>
+              </div>
+              <div class="turn-actions">
+                <button class="icon-btn" title="Copy"><svg><use href="#i-copy"/></svg></button>
+                <button class="icon-btn" title="Retry"><svg><use href="#i-retry"/></svg></button>
+                <button class="icon-btn" title="Save as note"><svg><use href="#i-note"/></svg></button>
+                <span class="turn-meta">6s · 4.1k tokens · $0.004</span>
+              </div>
+            </div>
+
+            <div class="turn">
+              <div class="msg-user">Draft an email to Northwind asking for the security questionnaire</div>
+              <div class="activity">
+                <button class="activity-head" aria-expanded="false">
+                  <span class="status-ic"><span class="spinner"></span></span>
+                  <span class="summary">Thinking…</span>
+                  <span class="time">2s</span>
+                  <svg class="chev"><use href="#i-chev"/></svg>
+                </button>
+                <div class="activity-body"><div class="thought">Keep it short, mention the Nov 18 decision, ask for the SOC 2 report…</div></div>
+              </div>
+              <div class="msg-assistant"><p>Here's a draft:<span class="caret"></span></p></div>
+            </div>
+          </main>
+
+          <footer class="ac-composer">
+            <div class="queued"><svg><use href="#i-history"/></svg>Queued: "make it more formal"</div>
+            <div class="card">
+              <textarea rows="1" placeholder="Ask about your vault…  / commands · @ notes"></textarea>
+              <div class="toolbar">
+                <button class="icon-btn" title="Attach (@)"><svg><use href="#i-clip"/></svg></button>
+                <button class="pill-btn">Sonnet 5.5 <span class="effort">· high</span><svg><use href="#i-chev-down"/></svg></button>
+                <span class="spacer"></span>
+                <button class="pill-btn" title="Context used: 52%"><svg class="ctx-ring" viewBox="0 0 20 20"><circle class="track" cx="10" cy="10" r="7"/><circle class="val" cx="10" cy="10" r="7" stroke-dasharray="44" stroke-dashoffset="21"/></svg><span class="ctx-pct">52%</span></button>
+                <button class="pill-btn is-yolo" title="Permission mode: YOLO"><svg><use href="#i-shield"/></svg>YOLO</button>
+                <button class="send stop" title="Stop"><svg><use href="#i-stop"/></svg></button>
+              </div>
+            </div>
+          </footer>
+          <div class="hint"></div>
+        </div>
+      </div>
+      <p class="frame-note">The finished activity line shows a red <b>1 failed</b>. Streaming turns show <i>Thinking…</i> with a spinner. Turn actions appear on hover and are always visible on touch. A follow-up typed while the agent works appears above the composer as a queued item.</p>
+    </div>
+
+    <!-- ============ Frame C: phone ============ -->
+    <div class="frame">
+      <div class="frame-label">C · Mobile · new tab, empty state</div>
+      <div class="phone">
+        <div class="phone-status"><span>9:41</span><span>●●● ▮</span></div>
+        <div class="ac is-mobile" data-frame="c">
+          <header class="ac-header">
+            <div class="ac-tabs" role="tablist">
+              <div class="ac-tab" role="tab" aria-selected="false" tabindex="-1" data-default="1"><span class="ac-tab-label">Project plan</span><span class="dot needs-you"></span></div>
+              <div class="ac-tab is-number" role="tab" aria-selected="true" tabindex="0" data-default="2"><span class="ac-tab-label">2</span></div>
+            </div>
+            <button class="ac-overflow" data-menu-toggle aria-haspopup="menu" aria-expanded="false">+1 <svg><use href="#i-chev-down"/></svg></button>
+            <div class="ac-actions">
+              <button class="icon-btn" title="New tab"><svg><use href="#i-plus"/></svg></button>
+              <button class="icon-btn" title="History"><svg><use href="#i-history"/></svg></button>
+            </div>
+            <div class="ac-menu" role="menu">
+              <div class="ac-menu-label">More tabs</div>
+              <button class="ac-menu-item" role="menuitem"><span class="num">3</span><span class="grow">3</span><span class="dot running"></span></button>
+              <div class="ac-menu-sep"></div>
+              <button class="ac-menu-item" role="menuitem"><svg><use href="#i-pencil"/></svg><span class="grow">Rename current tab</span></button>
+              <button class="ac-menu-item" role="menuitem"><svg><use href="#i-x"/></svg><span class="grow">Close current tab</span></button>
+            </div>
+          </header>
+
+          <main class="ac-transcript">
+            <div class="empty">
+              <span style="color:var(--ac-accent)"><svg style="width:28px;height:28px"><use href="#i-sparkle"/></svg></span>
+              <h2>What should we work on?</h2>
+              <p>I can search, read, and edit your vault. You approve every change.</p>
+              <div class="suggestions">
+                <button class="suggestion"><svg><use href="#i-file"/></svg>Summarize <b>Project plan</b></button>
+                <button class="suggestion"><svg><use href="#i-search"/></svg>Find notes I haven't linked yet</button>
+                <button class="suggestion"><svg><use href="#i-pencil"/></svg>Draft today's daily note</button>
+              </div>
+            </div>
+          </main>
+
+          <footer class="ac-composer">
+            <div class="card">
+              <div class="chips"><span class="chip is-active-note"><svg><use href="#i-file"/></svg>Project plan<button class="x" title="Remove"><svg><use href="#i-x"/></svg></button></span></div>
+              <textarea rows="1" placeholder="Ask about your vault…"></textarea>
+              <div class="toolbar">
+                <button class="icon-btn" title="Attach"><svg><use href="#i-clip"/></svg></button>
+                <button class="pill-btn">Sonnet 5.5<svg><use href="#i-chev-down"/></svg></button>
+                <span class="spacer"></span>
+                <button class="pill-btn" title="Permission mode: Safe"><svg><use href="#i-shield"/></svg></button>
+                <button class="send" disabled title="Send"><svg><use href="#i-up"/></svg></button>
+              </div>
+            </div>
+          </footer>
+          <div class="hint"></div>
+        </div>
+      </div>
+      <p class="frame-note">The layout is the same as on desktop, with 44px touch targets and 16px body text so iOS doesn't zoom in. Long-press a tab to rename it. The empty state suggests things to do with the active note.</p>
+    </div>
+  </div>
+
+  <div class="legend">
+    <section>
+      <h2>Status vocabulary (one meaning everywhere)</h2>
+      <div class="swatches">
+        <span><i class="dot running"></i>working</span>
+        <span><i class="dot needs-you"></i>needs you</span>
+        <span><i class="dot error"></i>error</span>
+        <span><i class="dot unread"></i>new reply</span>
+        <span><i class="dot done"></i>done</span>
+      </div>
+      <ul style="margin-top:8px">
+        <li>A tab dot shows the most urgent state in that tab: needs you, then error, then working, then new reply.</li>
+        <li>An activity line uses the same icon set, just larger.</li>
+      </ul>
+    </section>
+    <section>
+      <h2>Tabs</h2>
+      <ul>
+        <li>Numbered by default. A renamed tab shows its name.</li>
+        <li>Rename by double-clicking, long-pressing on touch, or typing <code>/rename &lt;name&gt;</code>. Enter saves, Esc cancels, and an empty name brings the number back.</li>
+        <li>Up to 8 tabs. Tabs that don't fit go into the <b>+N</b> menu.</li>
+      </ul>
+    </section>
+    <section>
+      <h2>What changed vs today</h2>
+      <ul>
+        <li>The tabs move from the composer row to a header row.</li>
+        <li>Each tool call no longer gets its own card; one activity line covers the turn.</li>
+        <li>The approval modal becomes a card inside the turn.</li>
+        <li>The assistant reply has no bubble, the user's message has a soft one, and there's more vertical rhythm.</li>
+        <li>Model, context and permission mode stay in the toolbar but take less visual weight.</li>
+      </ul>
+    </section>
+  </div>
+</div>
+
+<script>
+(function () {
+  // Theme switch
+  const root = document.documentElement;
+  document.querySelectorAll("[data-theme-set]").forEach((b) => {
+    b.addEventListener("click", () => {
+      const v = b.dataset.themeSet;
+      if (v === "auto") root.removeAttribute("data-theme"); else root.setAttribute("data-theme", v);
+      document.querySelectorAll("[data-theme-set]").forEach((o) => o.setAttribute("aria-pressed", String(o === b)));
+    });
+  });
+
+  function hint(view, text) {
+    const el = view.querySelector(".hint");
+    if (!el) return;
+    el.textContent = text;
+    el.classList.add("is-on");
+    clearTimeout(el._t);
+    el._t = setTimeout(() => el.classList.remove("is-on"), 1600);
+  }
+
+  // Tabs: select, double-click / long-press to rename
+  function setLabel(tab, name) {
+    const label = tab.querySelector(".ac-tab-label");
+    const trimmed = name.trim();
+    label.textContent = trimmed || tab.dataset.default;
+    tab.classList.toggle("is-number", !trimmed);
+    tab.title = trimmed ? trimmed : "Tab " + tab.dataset.default + " (double-click to rename)";
+  }
+  function beginRename(tab) {
+    if (tab.classList.contains("is-editing")) return;
+    const label = tab.querySelector(".ac-tab-label");
+    const current = tab.classList.contains("is-number") ? "" : label.textContent;
+    const input = document.createElement("input");
+    input.value = current;
+    input.placeholder = "Tab " + tab.dataset.default;
+    input.setAttribute("aria-label", "Tab name");
+    label.replaceWith(input);
+    tab.classList.add("is-editing");
+    input.focus();
+    input.select();
+    let done = false;
+    const finish = (commit) => {
+      if (done) return;
+      done = true;
+      const span = document.createElement("span");
+      span.className = "ac-tab-label";
+      input.replaceWith(span);
+      tab.classList.remove("is-editing");
+      setLabel(tab, commit ? input.value : current);
+    };
+    input.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") { e.preventDefault(); finish(true); }
+      if (e.key === "Escape") { e.preventDefault(); finish(false); }
+    });
+    input.addEventListener("blur", () => finish(true));
+  }
+  document.querySelectorAll(".ac").forEach((view) => {
+    view.querySelectorAll(".ac-tab").forEach((tab) => {
+      tab.addEventListener("click", () => {
+        if (tab.classList.contains("is-editing")) return;
+        view.querySelectorAll(".ac-tab").forEach((t) => {
+          t.setAttribute("aria-selected", String(t === tab));
+          t.tabIndex = t === tab ? 0 : -1;
+        });
+        const dot = tab.querySelector(".dot.unread, .dot.done");
+        if (dot) dot.remove();
+      });
+      tab.addEventListener("dblclick", () => beginRename(tab));
+      let timer;
+      tab.addEventListener("touchstart", () => { timer = setTimeout(() => beginRename(tab), 500); }, { passive: true });
+      tab.addEventListener("touchend", () => clearTimeout(timer));
+      tab.addEventListener("touchmove", () => clearTimeout(timer));
+      tab.addEventListener("contextmenu", (e) => { if (view.classList.contains("is-mobile")) { e.preventDefault(); beginRename(tab); } });
+      tab.addEventListener("keydown", (e) => { if (e.key === "F2") beginRename(tab); });
+    });
+
+    // Overflow menu
+    const toggle = view.querySelector("[data-menu-toggle]");
+    const menu = view.querySelector(".ac-menu");
+    if (toggle && menu) {
+      toggle.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const open = !menu.classList.contains("is-open");
+        menu.classList.toggle("is-open", open);
+        toggle.setAttribute("aria-expanded", String(open));
+      });
+      document.addEventListener("click", () => { menu.classList.remove("is-open"); toggle.setAttribute("aria-expanded", "false"); });
+      menu.querySelectorAll(".ac-menu-item").forEach((item) => item.addEventListener("click", () => {
+        if (item.textContent.includes("Rename")) {
+          const active = view.querySelector('.ac-tab[aria-selected="true"]');
+          if (active) setTimeout(() => beginRename(active), 0);
+        }
+      }));
+    }
+
+    // Activity lines
+    view.querySelectorAll(".activity-head").forEach((head) => head.addEventListener("click", () => {
+      const act = head.closest(".activity");
+      const open = act.classList.toggle("is-open");
+      head.setAttribute("aria-expanded", String(open));
+    }));
+
+    // Composer: /rename <name>
+    const ta = view.querySelector("textarea");
+    ta.addEventListener("keydown", (e) => {
+      if (e.key !== "Enter" || e.shiftKey) return;
+      e.preventDefault();
+      const m = ta.value.match(/^\/rename(?:\s+(.*))?$/);
+      if (m) {
+        const active = view.querySelector('.ac-tab[aria-selected="true"]');
+        if (active) setLabel(active, m[1] || "");
+        hint(view, m[1] ? 'Tab renamed to "' + m[1].trim() + '"' : "Tab name cleared");
+      } else if (ta.value.trim()) {
+        hint(view, "Mock only: try /rename <name>");
+      }
+      ta.value = "";
+    });
+
+    // Approval card
+    const card = view.querySelector("[data-approval]");
+    if (card) {
+      const resolve = (text, allowed) => {
+        card.classList.add("is-resolved");
+        card.querySelector(".diff").remove();
+        card.querySelector(".approval-sub").remove();
+        const actions = card.querySelector(".approval-actions");
+        actions.innerHTML = '<span style="color:var(--ac-text-muted)">' + text + "</span>";
+        const ic = card.querySelector(".approval-head .status-ic");
+        ic.className = "status-ic " + (allowed ? "done" : "error");
+        ic.innerHTML = '<svg><use href="#i-' + (allowed ? "check" : "x") + '"/></svg>';
+        const head = view.querySelector(".activity-head");
+        head.querySelector(".summary").textContent = allowed ? "Read 4 notes, edited 1" : "Read 4 notes · edit denied";
+        head.querySelector(".status-ic").className = "status-ic " + (allowed ? "done" : "error");
+        head.querySelector(".status-ic").innerHTML = '<svg><use href="#i-' + (allowed ? "check" : "alert") + '"/></svg>';
+        const tabDot = view.querySelector('.ac-tab[aria-selected="true"] .dot');
+        if (tabDot) tabDot.className = "dot running";
+        const status = view.querySelector(".ac-status-line");
+        if (status) status.innerHTML = '<span class="spinner"></span>Writing the plan…';
+      };
+      card.querySelector("[data-approve]").addEventListener("click", () => resolve("Allowed once", true));
+      card.querySelector("[data-approve-always]").addEventListener("click", () => resolve("Allowed: always for this note", true));
+      card.querySelector("[data-deny]").addEventListener("click", () => resolve("Denied", false));
+    }
+  });
+})();
+</script>
+</body>
+</html>

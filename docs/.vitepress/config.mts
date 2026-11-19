@@ -61,6 +61,7 @@ export default defineConfig({
           { text: "Testing", link: "/development/testing" },
           { text: "Verification", link: "/development/verification" },
           { text: "Evals", link: "/development/evals" },
+          { text: "UI v2 design", link: "/development/design/ui-v2" },
           { text: "Publishing docs", link: "/reference/publishing-docs" },
         ],
       },
