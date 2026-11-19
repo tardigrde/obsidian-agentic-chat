@@ -159,7 +159,7 @@ export const DEFAULT_SETTINGS: AgenticChatSettings = {
   provider: "openrouter",
   openrouterApiKeySecretId: OPENROUTER_API_KEY_SECRET_ID,
   openrouterApiKey: "",
-  openrouterModel: "moonshotai/kimi-k2.6",
+  openrouterModel: "deepseek/deepseek-v4.1-flash",
   ollamaBaseUrl: DEFAULT_OLLAMA_BASE_URL,
   ollamaModel: "llama3.1",
   openaiCompatibleBaseUrl: DEFAULT_OPENAI_COMPATIBLE_BASE_URL,

@@ -27,6 +27,17 @@ import {
   mcpTestButtonState,
 } from "../src/settings-mcp-state";
 
+describe("default OpenRouter model", () => {
+  it("is DeepSeek v4.1 Flash for a new install", () => {
+    expect(DEFAULT_SETTINGS.openrouterModel).toBe("deepseek/deepseek-v4.1-flash");
+    expect(mergeSettings(undefined).openrouterModel).toBe("deepseek/deepseek-v4.1-flash");
+  });
+
+  it("keeps a model an existing user already saved", () => {
+    expect(mergeSettings({ openrouterModel: "moonshotai/kimi-k2.6" }).openrouterModel).toBe("moonshotai/kimi-k2.6");
+  });
+});
+
 describe("mergeSettings — retired working directories", () => {
   it("loads an old data.json with approval.workingDirs and drops the key", () => {
     const merged = mergeSettings({

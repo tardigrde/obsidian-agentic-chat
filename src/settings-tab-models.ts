@@ -148,7 +148,7 @@ export function openRouterDefinitions(settings: AgenticChatSettings, host: Setti
         .setDesc('OpenRouter model id. "Browse" lists models that support tool calling.')
         .addText((text) =>
           text
-            .setPlaceholder("moonshotai/kimi-k2.6")
+            .setPlaceholder("deepseek/deepseek-v4.1-flash")
             .setValue(settings.openrouterModel)
             .onChange(async (value) => {
               settings.openrouterModel = value.trim();
