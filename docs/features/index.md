@@ -40,6 +40,7 @@ Agentic Chat is a sidebar chat panel (`ItemView`) with streaming answers, inline
 
 ## Extensibility
 
+- [Agent workflows](agent-workflows.md): standing instructions (`AGENTS.md`), skills, and subagents.
 - [Agent plugins](agent-plugins.md): packages in the vault (`.agentic-plugins/`) that follow the Agent Plugins 1.0.0 spec and contribute skills and MCP servers.
 - Skills loaded from plugin `SKILL.md` files, alongside built-in skills. Plugin skills load first and win name collisions.
 - Built-in self-knowledge skill with tool inventory, loop guards, and error patterns.

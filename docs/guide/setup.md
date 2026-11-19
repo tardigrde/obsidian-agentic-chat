@@ -4,7 +4,7 @@ Open **Settings > Agentic Chat** after you install the plugin, then pick a provi
 
 ## OpenRouter
 
-OpenRouter is the default provider. The default model is `moonshotai/kimi-k2.6`.
+OpenRouter is the default provider. The default model is `deepseek/deepseek-v4.1-flash`, the model the eval suite measures. See [Choosing a model](./models.md).
 
 1. Create an API key at [openrouter.ai/keys](https://openrouter.ai/keys).
 2. Paste it into **Settings > Agentic Chat** on the **Models** tab.
@@ -18,7 +18,7 @@ OpenRouter is the default provider. The default model is `moonshotai/kimi-k2.6`.
 3. The inline step card shows which notes the agent read before it answered.
 4. Ask for a small edit, approve the diff, then run `/undo` to revert it.
 
-If the model list is empty, see [Troubleshoot](./troubleshoot.md#no-model-answers).
+If the model list is empty, see [Troubleshoot](./troubleshoot.md#no-model-answers). For more prompts, see [Recipes](./recipes.md).
 
 ## Ollama
 

@@ -4,7 +4,9 @@ Agentic Chat sends vault content only to services you configure. Chat requests g
 
 ## Defaults
 
-- No telemetry is sent by default.
+- No telemetry and no analytics. The only request the plugin makes on its own
+  fetches OpenRouter's public model catalog to update local pricing, when the
+  cache is missing or older than three days. It contains no vault content.
 - Web access is off by default.
 - MCP is off by default.
 - Observability export is off by default.
@@ -27,6 +29,13 @@ Strict routing can mean a model has no compliant endpoint. In that case, choose 
 
 Ollama keeps prompts, note content, and tool results on your device, assuming your Ollama server itself is local.
 
+## Ignore list
+
+Globs in **Settings > Advanced > Ignored files** (for example `Private/`,
+`*.secret.md`, `**/diary/**`) hide notes from the agent. Matching files report
+as not found to every tool and are never auto-attached, so their content never
+reaches the model.
+
 ## Tool visibility
 
 The conversation shows every read, search, write, edit, rename, delete, frontmatter change, web request, and MCP call as a step.
@@ -45,3 +54,25 @@ Observability sends trace data to the OTLP or Langfuse endpoint you configure. M
 ## Document import privacy
 
 The `import_document` tool extracts text from vault files into plugin-managed source artifacts. The plugin stores the extracted text locally in the artifact system and sends it to the model only when the agent reads the artifact.
+
+## Disclosures
+
+In line with the [Obsidian Developer Policies](https://docs.obsidian.md/Developer+policies):
+
+- **Network use.** With OpenRouter, prompts, attached or read note content, and
+  tool results go to OpenRouter and the provider it routes to, subject to the
+  routing settings above. With Ollama or an OpenAI-compatible gateway, requests
+  go to the server you configure. Web access, MCP, and observability are opt-in
+  and send data only when enabled. The pricing-cache request contains no vault
+  content.
+- **Account and payment.** OpenRouter needs your account and API key and bills
+  hosted models to that account. The plugin is free and takes no payment.
+  Ollama needs no account.
+- **File access.** The agent reads and changes vault files through Obsidian's
+  vault API, only in response to your prompts. Mutating tools pass the approval
+  gate. Deletes go to trash when Obsidian or the OS can trash them; if both trash
+  paths fail, the plugin removes the file permanently. Ignored files are never
+  exposed.
+- **Telemetry.** None. Observability sends data only after you enable it and set
+  an endpoint.
+- **Source.** Open source under the MIT license.

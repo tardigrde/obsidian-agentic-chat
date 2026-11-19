@@ -9,7 +9,7 @@ Provider, API key, model id, and request behavior.
 | Setting | Default | Notes |
 | --- | --- | --- |
 | Provider | `openrouter` | `openrouter`, `ollama`, or `openai-compatible`. |
-| OpenRouter model | `moonshotai/kimi-k2.6` | Must support tools. The **Browse** list hides models without tool support and, with strict routing on, models without a zero-retention endpoint. |
+| OpenRouter model | `deepseek/deepseek-v4.1-flash` | Must support tools. The **Browse** list hides models without tool support and, with strict routing on, models without a zero-retention endpoint. |
 | Ollama server URL | `http://localhost:11434` | No API key needed. |
 | Ollama model | `llama3.1` | The tag must support tools. |
 | OpenAI-compatible base URL | `http://localhost:3000/api` | Must serve `/chat/completions`. A bare gateway root resolves to `/api`. |

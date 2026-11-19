@@ -94,8 +94,30 @@ npm run verify -- live test/e2e/live/openwebui-live.e2e.ts
 AGENTIC_CHAT_E2E_MCP_URL=https://mcp.context7.com/mcp npm run verify -- live test/e2e/live/mcp-live.e2e.ts
 ```
 
-The MCP spec skips when `AGENTIC_CHAT_E2E_MCP_URL` is unset. Read the passing
-count. Live dogfood runbook:
+The MCP spec skips when `AGENTIC_CHAT_E2E_MCP_URL` is unset and refuses
+insecure endpoints. `AGENTIC_CHAT_E2E_MCP_TOOL` and
+`AGENTIC_CHAT_E2E_MCP_ARGS_JSON` pick a tool call; static-header servers also
+need `AGENTIC_CHAT_E2E_MCP_HEADER_NAME` and `AGENTIC_CHAT_E2E_MCP_HEADER_VALUE`.
+Read the passing count. Behind a corporate proxy, keep
+`NO_PROXY=localhost,127.0.0.1,::1`.
+
+When provider transport, model settings, proxy handling, or request formatting
+changes, run `npm run verify:provider-live`. Unlike the default e2e command it
+requires live credentials and fails instead of accepting skipped provider specs.
+It also runs `npm run eval:provider-cache-live`, which sends repeated large
+stable prompts through the OpenAI-compatible gateway and fails unless a warm
+request reports provider cache-read tokens. The probe accepts
+`OPENAI_COMPATIBLE_*` or `OPENWEBUI_*` variables; pass `-- --env-file .env` to
+load a dotenv file without shell-sourcing secrets.
+
+### Obsidian version matrix
+
+`npm run test:e2e` runs one Obsidian version pair; set
+`OBSIDIAN_VERSIONS=earliest/earliest` (or another single pair) for a targeted
+run. `npm run test:e2e:matrix` runs the pairs in `OBSIDIAN_VERSION_MATRIX`
+sequentially, by default `earliest/earliest,latest/latest`.
+
+Live dogfood runbook:
 [`live-dogfood.md`](https://github.com/tardigrde/obsidian-agentic-chat/blob/main/docs/development/live-dogfood.md)
 (maintainer only, not on the site).
 

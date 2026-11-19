@@ -13,8 +13,8 @@ hero:
       text: First chat in 5 minutes
       link: /guide/setup#first-chat
     - theme: alt
-      text: View commands
-      link: /reference/slash-commands
+      text: Recipes
+      link: /guide/recipes
 
 features:
   - title: Vault-native tools

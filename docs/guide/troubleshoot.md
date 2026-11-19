@@ -36,4 +36,4 @@ If something fails, find the symptom below. Run `/doctor` first for configuratio
 | --- | --- |
 | Edited skill files are not picked up | Restart Obsidian to rebuild the vault index. Dot-folders created outside Obsidian can be stale. **Repair built-ins** refreshes only the `builtins` package and restores `my-skills` if it is missing. |
 
-If these steps do not help, run `/status` (provider, model, mode, session, MCP) and include its output in the report.
+Also see the [FAQ](./faq.md). If these steps do not help, run `/status` (provider, model, mode, session, MCP) and include its output in the report.
