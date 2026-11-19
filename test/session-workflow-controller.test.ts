@@ -38,6 +38,7 @@ function renderer(calls: RenderCall[]): WorkflowRenderer {
 }
 
 function makeController(options: {
+  listError?: Error;
   sessions?: SessionInfo[];
   activePath?: string | null;
   clearCount?: number;
@@ -67,7 +68,10 @@ function makeController(options: {
     afterClear,
     clearCalls,
     controller: new SessionWorkflowController({
-      listSessions: async () => options.sessions ?? [],
+      listSessions: async () => {
+        if (options.listError) throw options.listError;
+        return options.sessions ?? [];
+      },
       activeSessionPath: () => options.activePath ?? null,
       clearSessions: async () => {
         clearCalls.push("clear");
@@ -108,6 +112,15 @@ describe("SessionWorkflowController", () => {
     expect(ctx.renamed).toEqual([{ path: active.path, name: "Renamed" }]);
   });
 
+  it("lists an unreadable session file instead of hiding it", async () => {
+    const broken = session({ id: "broken", path: "sessions/broken.jsonl", messageCount: 0, unreadable: true });
+    const ctx = makeController({ sessions: [broken] });
+
+    await ctx.controller.run("");
+
+    expect(ctx.opened[0]?.sessions).toEqual([broken]);
+  });
+
   it("rejects unknown session subcommands without clearing", async () => {
     const ctx = makeController({ clearCount: 2 });
 
@@ -126,6 +139,16 @@ describe("SessionWorkflowController", () => {
     expect(ctx.clearCalls).toEqual(["clear"]);
     expect(ctx.afterClear).toEqual([]);
     expect(ctx.calls.some((call) => call.type === "info")).toBe(false);
+  });
+
+  it("shows an error, and does not reject, when listing conversations fails", async () => {
+    // The history button runs this without awaiting it: a rejection gave no modal and no message.
+    const ctx = makeController({ listError: new Error("disk read failed") });
+
+    await expect(ctx.controller.run("")).resolves.toBeUndefined();
+
+    expect(ctx.opened).toEqual([]);
+    expect(ctx.calls).toContainEqual({ type: "error", message: "Could not list conversations: disk read failed" });
   });
 
   it("requires confirmation before clearing conversations", async () => {

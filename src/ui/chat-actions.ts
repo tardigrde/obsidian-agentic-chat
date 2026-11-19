@@ -116,8 +116,12 @@ export class ChatActions {
 
   showHelp(): void { showHelp(this.deps.slashCtx()); }
 
-  /** Delete from the history list; only the active session swaps under us. */
+  /** Delete from the history list; a tab that has the session open swaps to a fresh one. */
   async deleteSessionFromList(path: string): Promise<void> {
+    // A background tab that has the conversation open lets go of it first, in
+    // its own queue. Otherwise it keeps appending to the deleted file, which
+    // comes back without a session header: gone from history, lost on reload.
+    await this.releaseInBackgroundTabs(new Set([path]));
     if (this.deps.service().getSessionInfo()?.path === path) this.deps.clearQueuedPrompt();
     // Let the history modal restore its optimistically removed row and show
     // the delete failure. Swallowing the rejection would leave the row gone.
@@ -131,11 +135,35 @@ export class ChatActions {
    */
   async clearAllSessions(): Promise<number> {
     this.deps.clearQueuedPrompt();
+    let deleted: string[];
     try {
-      return await this.deps.service().clearSessions();
+      deleted = await this.deps.service().clearSessions();
     } catch (error) {
       this.deps.renderErrorMessage(errorMessage(error));
       return -1;
+    }
+    // The clear deleted files that background tabs may have open, or were
+    // loading while it ran. Each of those tabs starts a fresh session.
+    await this.releaseInBackgroundTabs(new Set(deleted));
+    return deleted.length;
+  }
+
+  /**
+   * Every background tab checks, in its own queue, whether its session is in
+   * `paths`, and starts a fresh one if so. A failure in one tab is reported
+   * and does not stop the others or fail the delete.
+   */
+  private async releaseInBackgroundTabs(paths: ReadonlySet<string>): Promise<void> {
+    const tabs = this.deps.tabs();
+    const background = tabs.allTabs().filter((_tab, index) => index !== tabs.activeIndexValue);
+    for (const tab of background) {
+      const path = tab.service.getSessionInfo()?.path;
+      if (path && paths.has(path)) tab.state.queuedPromptArmed = false;
+      try {
+        await tab.service.releaseDeletedSession(paths);
+      } catch (error) {
+        this.deps.renderErrorMessage(`A background tab could not start a fresh conversation: ${errorMessage(error)}`);
+      }
     }
   }
 

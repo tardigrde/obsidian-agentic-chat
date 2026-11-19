@@ -89,25 +89,17 @@ export class SessionListModal extends Modal {
       const main = row.createDiv({ cls: "agentic-chat-session-main" });
       const titleEl = main.createDiv({ cls: "agentic-chat-session-title", text: rowState.title });
       main.createDiv({ cls: "agentic-chat-session-meta", text: rowState.meta });
-      main.addEventListener("click", () => {
-        this.callbacks.load(session);
-        this.close();
-      });
-
-      const rename = row.createEl("button", {
-        cls: "agentic-chat-session-rename clickable-icon",
-        attr: { type: "button", "aria-label": "Rename" },
-      });
-      setIcon(rename, "pencil");
-      rename.addEventListener("mousedown", (event) => {
-        event.preventDefault();
-        event.stopPropagation();
-      });
-      rename.addEventListener("click", (event) => {
-        event.preventDefault();
-        event.stopPropagation();
-        this.beginRename(session, titleEl);
-      });
+      // An unreadable file can only be deleted: it cannot load, and a rename
+      // appends to a file that has no session header.
+      if (session.unreadable) {
+        row.addClass("is-unreadable");
+      } else {
+        main.addEventListener("click", () => {
+          this.callbacks.load(session);
+          this.close();
+        });
+        this.addRenameButton(row, session, titleEl);
+      }
 
       const remove = row.createEl("button", {
         cls: "agentic-chat-session-delete clickable-icon",
@@ -124,6 +116,23 @@ export class SessionListModal extends Modal {
         void this.deleteSession(session, index);
       });
     }
+  }
+
+  private addRenameButton(row: HTMLElement, session: SessionInfo, titleEl: HTMLElement): void {
+    const rename = row.createEl("button", {
+      cls: "agentic-chat-session-rename clickable-icon",
+      attr: { type: "button", "aria-label": "Rename" },
+    });
+    setIcon(rename, "pencil");
+    rename.addEventListener("mousedown", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+    });
+    rename.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      this.beginRename(session, titleEl);
+    });
   }
 
   private async deleteSession(session: SessionInfo, index: number): Promise<void> {

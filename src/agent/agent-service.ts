@@ -686,8 +686,15 @@ export class AgentService {
     return this.sessionActions.deleteSession(path);
   }
 
-  async clearSessions(): Promise<number> {
+  /** Delete every session file. Resolves with the deleted paths. */
+  async clearSessions(): Promise<string[]> {
     return this.sessionActions.clearSessions();
+  }
+
+  /** Another tab deleted `paths`: if this tab has one of them open, start a fresh session. */
+  async releaseDeletedSession(paths: ReadonlySet<string>): Promise<void> {
+    this.resetTurnGuards();
+    return this.sessionActions.releaseDeletedSession(paths);
   }
 
   async renameSession(path: string, name: string): Promise<void> {

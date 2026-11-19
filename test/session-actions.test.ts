@@ -8,6 +8,7 @@ import {
 } from "../src/agent/session-actions";
 import type { ActivateSessionOptions, ActiveSessionSnapshot } from "../src/agent/conversation";
 import type { SessionInfo } from "../src/session/session-manager";
+import { ChatActions, type ChatActionsDeps } from "../src/ui/chat-actions";
 
 function userMessage(text: string): AgentMessage {
   return { role: "user", content: [{ type: "text", text }], timestamp: 1 } as AgentMessage;
@@ -540,7 +541,7 @@ describe("AgentSessionActions", () => {
     await sessions.load("sessions/active.jsonl");
     const { actions, events } = makeActions({ sessions });
 
-    await expect(actions.clearSessions()).resolves.toBe(2);
+    await expect(actions.clearSessions()).resolves.toEqual(["sessions/active.jsonl", "sessions/old.jsonl"]);
 
     expect(sessions.deleted).toEqual(["sessions/active.jsonl", "sessions/old.jsonl"]);
     expect(sessions.created).toBe(1);
@@ -550,7 +551,7 @@ describe("AgentSessionActions", () => {
   it("notifies without creating a replacement when there are no sessions to clear", async () => {
     const { actions, sessions, events } = makeActions();
 
-    await expect(actions.clearSessions()).resolves.toBe(0);
+    await expect(actions.clearSessions()).resolves.toEqual([]);
 
     expect(sessions.created).toBe(0);
     expect(events).toEqual(["notify"]);
@@ -697,5 +698,111 @@ describe("AgentSessionActions", () => {
       const rewriteAt = events.indexOf("rewrite");
       expect(rewriteAt).toBeGreaterThan(events.indexOf("activate:0:no-reload"));
     });
+  });
+});
+
+/**
+ * One background chat tab: a real session queue over a fake store. It stands
+ * in for the AgentService a ChatActions instance reaches through ChatTabs.
+ */
+class GatedSessionRuntime extends FakeSessionRuntime {
+  gate: Promise<void> | null = null;
+  failCreates = 0;
+
+  override async load(path: string): Promise<ActiveSessionSnapshot> {
+    if (this.gate) await this.gate;
+    return super.load(path);
+  }
+
+  override async create(): Promise<ActiveSessionSnapshot> {
+    if (this.failCreates > 0) {
+      this.failCreates -= 1;
+      throw new Error("create failed");
+    }
+    return super.create();
+  }
+}
+
+function backgroundTab(sessions: GatedSessionRuntime) {
+  const { actions } = makeActions({ sessions });
+  const service = {
+    getSessionInfo: () => (sessions.activePath ? sessionInfo(sessions.activePath) : undefined),
+    deleteSession: (path: string) => actions.deleteSession(path),
+    releaseDeletedSession: (paths: ReadonlySet<string>) => actions.releaseDeletedSession(paths),
+    loadSession: (path: string) => actions.loadSession(path),
+  };
+  return { actions, tab: { service, state: { queuedPromptArmed: false } } };
+}
+
+function chatActionsWith(options: {
+  activeClear: () => Promise<unknown>;
+  background: ReturnType<typeof backgroundTab>["tab"];
+  errors: string[];
+}): ChatActions {
+  const active = {
+    getSessionInfo: () => ({ path: "sessions/active.jsonl" }),
+    clearSessions: options.activeClear,
+    deleteSession: async () => {},
+  };
+  const tabs = { allTabs: () => [{ service: active, state: {} }, options.background], activeIndexValue: 0 };
+  return new ChatActions({
+    service: () => active,
+    tabs: () => tabs,
+    clearQueuedPrompt: () => {},
+    renderErrorMessage: (message: string) => options.errors.push(message),
+  } as unknown as ChatActionsDeps);
+}
+
+describe("clear all sessions with a background tab", () => {
+  it("resets a background tab whose in-flight load landed on a cleared session", async () => {
+    const sessions = new GatedSessionRuntime();
+    sessions.seed("sessions/y.jsonl", [userMessage("y")]);
+    sessions.seed("sessions/x.jsonl", [userMessage("x")]);
+    await sessions.load("sessions/y.jsonl");
+    const { tab } = backgroundTab(sessions);
+    let open!: () => void;
+    sessions.gate = new Promise((resolve) => (open = resolve));
+    // The background tab starts loading x; the clear starts before it lands.
+    const loading = tab.service.loadSession("sessions/x.jsonl");
+    const errors: string[] = [];
+    const actions = chatActionsWith({
+      activeClear: async () => {
+        open();
+        await loading;
+        return ["sessions/active.jsonl", "sessions/y.jsonl", "sessions/x.jsonl"];
+      },
+      background: tab,
+      errors,
+    });
+
+    await actions.clearAllSessions();
+
+    expect(errors).toEqual([]);
+    expect(sessions.activePath).toMatch(/^sessions\/new-/);
+  });
+
+  it("never recovers a background tab onto the recent session, which another tab may have open", async () => {
+    const sessions = new GatedSessionRuntime();
+    sessions.seed("sessions/x.jsonl", [userMessage("x")]);
+    sessions.seed("sessions/other-tab.jsonl", [userMessage("other")]);
+    await sessions.load("sessions/x.jsonl");
+    sessions.recentPath = "sessions/other-tab.jsonl";
+    sessions.failCreates = 1;
+    const { actions: bgActions, tab } = backgroundTab(sessions);
+    const errors: string[] = [];
+    const actions = chatActionsWith({
+      activeClear: async () => ["sessions/active.jsonl", "sessions/x.jsonl"],
+      background: tab,
+      errors,
+    });
+
+    await actions.clearAllSessions();
+
+    expect(errors).toEqual([expect.stringContaining("could not start a fresh conversation")]);
+    expect(sessions.activePath).not.toBe("sessions/other-tab.jsonl");
+    // The next send recovers with a fresh session, not the recent one.
+    await bgActions.ensureSessionAgent();
+    expect(sessions.activePath).toMatch(/^sessions\/new-/);
+    expect(sessions.continued).toBe(0);
   });
 });

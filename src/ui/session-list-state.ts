@@ -25,8 +25,10 @@ export function filterSessions(sessions: SessionInfo[], query: string): SessionI
 export function sessionRows(sessions: SessionInfo[], query: string, activePath: string | null): SessionRowState[] {
   return filterSessions(sessions, query).map((session) => ({
     session,
-    title: sessionTitle(session),
-    meta: `${session.messageCount} ${plural(session.messageCount, "message")} · ${formatWhen(session.updatedAt)}`,
+    title: session.unreadable ? `Unreadable conversation (${fileName(session.path)})` : sessionTitle(session),
+    meta: session.unreadable
+      ? `This file cannot be opened. Delete it, or repair it by hand. · ${formatWhen(session.updatedAt)}`
+      : `${session.messageCount} ${plural(session.messageCount, "message")} · ${formatWhen(session.updatedAt)}`,
     active: session.path === activePath,
   }));
 }
@@ -91,6 +93,10 @@ export function formatWhen(iso: string): string {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return "";
   return date.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+}
+
+function fileName(path: string): string {
+  return path.slice(path.lastIndexOf("/") + 1);
 }
 
 function plural(count: number, singular: string): string {

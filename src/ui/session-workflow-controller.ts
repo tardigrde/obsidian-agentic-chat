@@ -1,6 +1,7 @@
 import type { SessionInfo } from "../session/session-manager";
 import type { SessionListCallbacks } from "./session-list-modal";
 import type { WorkflowRenderer } from "./workflow-renderer";
+import { errorMessage } from "../utils/errors";
 
 export interface SessionWorkflowControllerOptions {
   listSessions: () => Promise<SessionInfo[]>;
@@ -41,7 +42,18 @@ export class SessionWorkflowController {
   }
 
   private async openList(): Promise<void> {
-    const sessions = (await this.options.listSessions()).filter((session) => session.messageCount > 0);
+    let listed: SessionInfo[];
+    try {
+      listed = await this.options.listSessions();
+    } catch (error) {
+      // The history button calls run() without awaiting it, so a rejection
+      // here would leave the user with no modal and no message.
+      this.options.renderer.error(`Could not list conversations: ${errorMessage(error)}`);
+      return;
+    }
+    // Empty sessions stay hidden; an unreadable file is shown so it is not lost
+    // without a notice.
+    const sessions = listed.filter((session) => session.messageCount > 0 || session.unreadable);
     this.options.openList(sessions, this.options.activeSessionPath(), {
       load: (session) => this.options.loadSession(session.path),
       delete: (session) => this.options.deleteSession(session.path),

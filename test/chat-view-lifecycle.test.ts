@@ -117,7 +117,7 @@ describe("ChatView async lifecycle", () => {
   });
 
   it("clears a queued prompt before clearing all sessions", async () => {
-    const clearSessions = vi.fn(async () => 1);
+    const clearSessions = vi.fn(async () => ["sessions/active.jsonl"]);
     const view = chatViewHarness({
       state: { queuedPromptArmed: true },
       statusEl: { setText: vi.fn() },

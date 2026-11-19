@@ -19,7 +19,9 @@ import {
   inspectAdapterTarget,
   trashAdapterFile,
   trashAdapterFolder,
+  recursiveDeletionMessage,
   trashTreeFolderRecursive,
+  trashVaultEntry,
 } from "../vault/adapter-trash";
 import { buildEditDiffSummary, formatEditFailures } from "../vault/edit-diff";
 import {
@@ -167,9 +169,9 @@ async function deleteIndexedEntry(
   memo: ReadMemo | undefined,
 ): Promise<AgentToolResult<Record<string, unknown>> | null> {
   if (entry instanceof TFile) {
-    await app.fileManager.trashFile(entry);
+    const disposition = await trashVaultEntry(app, entry);
     memo?.invalidate(path);
-    return textResult(`Moved ${path} to trash.`, { path, kind: "file" });
+    return textResult(adapterDeletionMessage(path, disposition), { path, kind: "file", ...bypassed(disposition) });
   }
   if (!(entry instanceof TFolder)) return null;
   if (entry.children.length > 0 && !recursive) {
@@ -178,17 +180,27 @@ async function deleteIndexedEntry(
     );
   }
   if (entry.children.length === 0) {
-    await app.fileManager.trashFile(entry);
+    const disposition = await trashVaultEntry(app, entry);
     memo?.invalidate(path);
-    return textResult(`Moved ${path} to trash.`, { path, kind: "folder" });
+    return textResult(adapterDeletionMessage(path, disposition), { path, kind: "folder", ...bypassed(disposition) });
   }
   // Indexed recursive delete stays on the vault API so the tree and
   // trash semantics match single-file deletes (no adapter needed —
   // works in tests and offline). No per-file undo is captured, so a
   // recursive delete is OS-trash-only: /undo covers single files.
-  await trashTreeFolderRecursive(app, entry);
+  const bypassedPaths = await trashTreeFolderRecursive(app, entry);
   memo?.invalidate(path);
-  return textResult(`Moved ${path} to trash.`, { path, kind: "folder", recursive: true });
+  return textResult(recursiveDeletionMessage(path, bypassedPaths), {
+    path,
+    kind: "folder",
+    recursive: true,
+    ...(bypassedPaths.length > 0 ? { bypassedTrash: true, bypassedPaths } : {}),
+  });
+}
+
+/** Mark a delete that skipped the trash, so the audit row and the model know. */
+function bypassed(disposition: "trash" | "removed"): { bypassedTrash?: true } {
+  return disposition === "removed" ? { bypassedTrash: true } : {};
 }
 
 /**
