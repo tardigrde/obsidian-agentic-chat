@@ -9,7 +9,7 @@ Provider, API key, model id, and request behavior.
 | Setting | Default | Notes |
 | --- | --- | --- |
 | Provider | `openrouter` | `openrouter`, `ollama`, or `openai-compatible`. |
-| OpenRouter model | `moonshotai/kimi-k2.6` | Must support tools. The **Browse** list hides models without tool support and, with strict routing on, models without a zero-retention endpoint. |
+| OpenRouter model | `deepseek/deepseek-v4.1-flash` | Must support tools. The **Browse** list hides models without tool support and, with strict routing on, models without a zero-retention endpoint. |
 | Ollama server URL | `http://localhost:11434` | No API key needed. |
 | Ollama model | `llama3.1` | The tag must support tools. |
 | OpenAI-compatible base URL | `http://localhost:3000/api` | Must serve `/chat/completions`. A bare gateway root resolves to `/api`. |
@@ -63,7 +63,7 @@ No endpoint is bundled or enabled by default. Backends are Langfuse and generic 
 
 ### Notifications
 
-The master switch controls background toasts. Errors always show. **Cost alert** sends one notice when the conversation cost passes a USD amount. **Cost cap** stops the running turn and blocks new turns at a USD amount. Both default to `0` (disabled).
+The master switch controls background toasts. Errors always show. **Cost alert (USD)** sends one notice when the conversation cost passes a USD amount. **Hard spend cap (USD)** stops the running turn and blocks new turns at a USD amount. Both default to `0` (disabled).
 
 ### Agent plugins
 

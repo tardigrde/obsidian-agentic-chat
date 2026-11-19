@@ -16,6 +16,7 @@ export default defineConfig({
   themeConfig: {
     nav: [
       { text: "Guide", link: "/guide/install" },
+      { text: "Recipes", link: "/guide/recipes" },
       { text: "Features", link: "/features/" },
       { text: "Reference", link: "/reference/vault-tools" },
       { text: "Development", link: "/development/" },
@@ -28,8 +29,11 @@ export default defineConfig({
           { text: "Install", link: "/guide/install" },
           { text: "Setup", link: "/guide/setup" },
           { text: "Daily usage", link: "/guide/usage" },
+          { text: "Recipes", link: "/guide/recipes" },
+          { text: "Choosing a model", link: "/guide/models" },
           { text: "Privacy model", link: "/guide/privacy" },
           { text: "Troubleshoot", link: "/guide/troubleshoot" },
+          { text: "FAQ and glossary", link: "/guide/faq" },
         ],
       },
       {
@@ -37,6 +41,7 @@ export default defineConfig({
         items: [
           { text: "Feature map", link: "/features/" },
           { text: "Context and control", link: "/features/context-and-control" },
+          { text: "Agent workflows", link: "/features/agent-workflows" },
           { text: "Agent plugins", link: "/features/agent-plugins" },
           { text: "Web, MCP, and observability", link: "/features/web-mcp-observability" },
         ],

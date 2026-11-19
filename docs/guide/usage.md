@@ -27,7 +27,15 @@ Mutating calls follow the approval policy. When a call is set to **ask**, the pl
 
 **YOLO** auto-approves most mutating tools until you switch back. Recursive folder deletes still ask, and a per-tool deny still wins.
 
-Run `/compact [instructions]` to summarize older turns on demand. The optional instructions are passed to the compaction request, so important details survive the summary.
+## Switch models
+
+Click the model pill in the composer or run `/model`. Shift-click (or Shift+Enter) in the picker applies a model to the next prompt only, shown with a "next only" badge. See [Choosing a model](./models.md).
+
+## Sessions and long chats
+
+Each chat is a session, saved as JSONL in the plugin folder and resumed on reload. Session tabs sit above the composer. `/new` starts one; `/sessions` browses, searches, reopens, renames, and deletes them.
+
+Long sessions compact older turns automatically before the context window fills. Run `/compact [instructions]` to summarize now; the optional text tells the summary what to keep. `/usage` shows tokens and cost.
 
 
 ## Real-time controls

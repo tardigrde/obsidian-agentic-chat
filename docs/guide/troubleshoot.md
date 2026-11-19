@@ -25,7 +25,7 @@ If something fails, find the symptom below. Run `/doctor` first for configuratio
 
 | Symptom | Fix |
 | --- | --- |
-| `Spend cap of $X reached`, new turns blocked | Raise or disable **Cost cap** under **Notifications** (`0` disables it), then continue, or start a new conversation. Check spend with `/usage`. The cap also stops the running turn when the conversation cost reaches the limit. |
+| `Spend cap of $X reached`, new turns blocked | Raise or disable **Hard spend cap (USD)** under **Notifications** (`0` disables it), then continue, or start a new conversation. Check spend with `/usage`. The cap also stops the running turn when the conversation cost reaches the limit. |
 | Cost alert toast | One notice when the conversation cost passes your **Cost alert** threshold (`0` disables it). The notice is informational. |
 | Old turns disappear | Auto-compaction summarizes them at 80% context fill by default. Reopen large outputs through artifact references, or run `/compact [instructions]` to control what the summary keeps. |
 | Unknown context window disables compaction | The plugin could not match the model slug in the OpenRouter catalog. Set **Context window (tokens)** explicitly (`0` means auto-detect). |
@@ -36,4 +36,4 @@ If something fails, find the symptom below. Run `/doctor` first for configuratio
 | --- | --- |
 | Edited skill files are not picked up | Restart Obsidian to rebuild the vault index. Dot-folders created outside Obsidian can be stale. **Repair built-ins** refreshes only the `builtins` package and restores `my-skills` if it is missing. |
 
-If these steps do not help, run `/status` (provider, model, mode, session, MCP) and include its output in the report.
+Also see the [FAQ](./faq.md). If these steps do not help, run `/status` (provider, model, mode, session, MCP) and include its output in the report.

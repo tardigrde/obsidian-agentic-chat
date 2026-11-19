@@ -21,7 +21,7 @@ Read-only tools run without approval. An explicit per-tool ask or deny still app
 | `edit` | Replace exact strings within a note. |
 | `set_properties` | Write YAML frontmatter through Obsidian APIs. |
 | `rename` | Rename or move a note and preserve inbound wikilinks and backlinks. |
-| `delete` | Move a note or folder to trash. A non-empty folder needs `recursive:true`, which asks even in YOLO unless deletes are explicitly allowed per tool. Stale dot-folder paths use the adapter. If system and local trash are both unavailable, the plugin removes the file permanently. |
+| `delete` | Move a note or folder to trash. A non-empty folder needs `recursive:true`, which asks even in YOLO unless deletes are explicitly allowed per tool. Stale dot-folder paths use the adapter. If the system trash does nothing, it uses the vault `.trash`; if that fails too, the plugin removes the file permanently and the result says "bypassed trash". |
 
 Mutating tools follow the approval policy. `/undo` reverts the latest undoable vault change, such as an edit, write, rename, single-file delete, or empty-folder delete. A recursive delete of a non-empty folder cannot be reverted.
 
