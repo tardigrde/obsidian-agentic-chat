@@ -33,14 +33,18 @@ Ollama keeps prompts, note content, and tool results on your device, assuming yo
 
 Globs in **Settings > Advanced > Ignored files** (for example `Private/`,
 `*.secret.md`, `**/diary/**`) hide notes from the agent. Matching files report
-as not found to every tool and are never auto-attached, so their content never
-reaches the model.
+as not found to every tool and are never auto-attached. Two exceptions still
+reach the model: the standing-instructions file (`AGENTS.md`, `CLAUDE.md`, or
+`GEMINI.md`) is sent every turn even if it matches a glob, and an image you
+attach yourself is sent as you chose. Do not keep secrets in the instructions
+file.
 
 ## Tool visibility
 
 The conversation shows every read, search, write, edit, rename, delete, frontmatter change, web request, and MCP call as a step.
 
-Mutating vault tools are approval-gated, and deletes go to trash.
+Mutating vault tools are approval-gated. Deletes go to trash when possible (see
+below).
 
 ## Opt-in egress
 

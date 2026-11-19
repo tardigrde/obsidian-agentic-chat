@@ -91,6 +91,14 @@ export class FakeAdapter {
     this.folders.delete(path);
   }
 
+  /** Obsidian's vault trash: moves a file to `.trash/<file name>`. */
+  async trashLocal(path: string): Promise<void> {
+    const content = this.files.get(path);
+    if (content === undefined) throw new Error(`ENOENT: ${path}`);
+    this.files.set(`.trash/${path.slice(path.lastIndexOf("/") + 1)}`, content);
+    this.files.delete(path);
+  }
+
   async rename(oldPath: string, newPath: string): Promise<void> {
     const content = this.files.get(oldPath);
     if (content !== undefined) {

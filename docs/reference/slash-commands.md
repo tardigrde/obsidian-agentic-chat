@@ -5,13 +5,13 @@ Slash commands run locally and are not sent to the model.
 | Command | What it does |
 | --- | --- |
 | `/new` | Start a new conversation. |
-| `/sessions [clear --confirm]` | Browse, search, reopen, rename, or delete past conversations. Clear with confirmation deletes all conversations in the current scope. |
+| `/sessions [clear --confirm]` | Browse, search, reopen, rename, or delete past conversations. A deleted conversation goes to the vault `.trash`. `clear --confirm` moves all conversations in the current scope there. |
 | `/model` | Switch model. Shift actions apply a next-prompt-only override where supported. |
 | `/effort [level]` | Set reasoning effort (`off`, `minimal`, `low`, `medium`, `high`, `xhigh`). The level persists across messages. |
 | `/compact [instructions]` | Summarize older turns now. Optional instructions are passed to the compaction request. |
 | `/init [instructions]` | Create or update the vault standing-instructions file (`AGENTS.md`, falling back to `CLAUDE.md` or `GEMINI.md` at the vault root). Optional text guides the update. |
 | `/skill [name] [args]` | Run a vault skill. |
-| `/<skill-name>` | Run a skill directly when no built-in command has that name. |
+| `/<skill-name>` | Run a skill directly when no built-in command has that name. Any other `/word` shows "Unknown command" and is not sent to the model. |
 | `/agent [name] [task]` | Delegate a task to a subagent. Without arguments, opens a picker. |
 | `/undo` | Undo the last vault change made by the agent. |
 | `/status` | Show provider, model, mode, session, MCP servers, and tools. |

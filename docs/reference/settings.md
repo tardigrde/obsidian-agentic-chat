@@ -63,7 +63,7 @@ No endpoint is bundled or enabled by default. Backends are Langfuse and generic 
 
 ### Notifications
 
-The master switch controls background toasts. Errors always show. **Cost alert** sends one notice when the conversation cost passes a USD amount. **Cost cap** stops the running turn and blocks new turns at a USD amount. Both default to `0` (disabled).
+The master switch controls background toasts. Errors always show. **Cost alert (USD)** sends one notice when the conversation cost passes a USD amount. **Hard spend cap (USD)** stops the running turn and blocks new turns at a USD amount. Both default to `0` (disabled).
 
 ### Agent plugins
 

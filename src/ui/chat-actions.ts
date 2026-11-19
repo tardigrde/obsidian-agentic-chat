@@ -49,7 +49,7 @@ export class ChatActions {
         await this.runSkill(skill.name, argString, `/${word}${argPart}`);
         return true;
       }
-      return this.showRetiredCommandHint(word);
+      return this.showRetiredCommandHint(word) || this.showUnknownCommandHint(word);
     }
     await this.slashHandlers(input)[command.name]();
     return true;
@@ -196,4 +196,23 @@ export class ChatActions {
     this.deps.renderInfoMessage("Removed command", [[`/${word.toLowerCase()}`, hint]]);
     return true;
   }
+
+  /**
+   * A word that looks like a command but is none (a typo such as `/sesions`)
+   * shows a hint instead of costing a model call. Text that only starts with a
+   * slash, such as a path (`/home/me/notes`), still goes to the model.
+   */
+  showUnknownCommandHint(word: string): boolean {
+    if (!looksLikeCommand(word)) return false;
+    this.deps.clearEmptyState();
+    this.deps.renderInfoMessage("Unknown command", [
+      [`/${word}`, "is not a command or a skill. Type /help for the list, or remove the slash to send it as a message."],
+    ]);
+    return true;
+  }
+}
+
+/** A command or skill name: a letter, then letters, digits, `-`, `_`, or `.`. No `/` (a path). */
+function looksLikeCommand(word: string): boolean {
+  return /^[A-Za-z][\w.-]*$/.test(word);
 }

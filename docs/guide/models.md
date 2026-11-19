@@ -82,7 +82,7 @@ You pay your provider per token. The plugin shows:
 
 - per-message and per-session tokens and USD (`/usage`, `/status`)
 - a next-request estimate and a context-fill bar in the composer
-- a one-time **Cost alert** and a hard **Cost cap**
+- a one-time **Cost alert (USD)** and a **Hard spend cap (USD)**
   (*Advanced → Notifications*, both off at `0`)
 
 What drives cost: the size of notes the agent reads, the number of turns, and

@@ -132,6 +132,6 @@ Write the rules once, in `AGENTS.md` at the vault root. They apply to every turn
 - `/compact keep the decisions and the file list` summarizes older turns now.
 - Delegate recon: `/agent explorer Map every note about pricing and list their paths`.
   The Explorer works in its own context window, so the main chat stays short.
-- Set a spend cap in *Advanced → Notifications → Cost cap*.
+- Set a spend cap in *Advanced → Notifications → Hard spend cap (USD)*.
 
 See [Choosing a model](./models.md) for what a turn typically costs.

@@ -17,6 +17,7 @@ import {
   ALLOWED_NOTE,
   DENIED_NOTE,
   MODEL_RETIRED_COMMANDS,
+  retiredCommandLocalText,
   RETIRED_COMMANDS,
   focusedSequence,
   genericSequence,
@@ -455,7 +456,7 @@ async function runRetiredCommands(action: ChaosAction): Promise<void> {
   if (sessions.files === 0) result.runnerNotes.push("retired-commands: no session JSONL was written yet");
 }
 
-/** A hinted retired command answers locally with an info panel and makes no model call. */
+/** A retired command answers locally with an info panel and makes no model call. */
 async function expectRetiredCommandHint(command: string): Promise<void> {
   const latestHint = async (): Promise<string> =>
     await browser.execute(() => {
@@ -463,7 +464,8 @@ async function expectRetiredCommandHint(command: string): Promise<void> {
       return panels.length > 0 ? (panels[panels.length - 1].textContent ?? "") : "";
     });
   await sendPrompt(`${command} explain what you do`);
-  await browser.waitUntil(async () => (await latestHint()).includes(`${command} was removed`), {
+  const expected = retiredCommandLocalText(command);
+  await browser.waitUntil(async () => (await latestHint()).includes(expected), {
     timeout: 15_000,
     timeoutMsg: `${command} rendered no replacement hint`,
   });

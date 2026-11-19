@@ -18,11 +18,12 @@ through typed, visible, approval-gated tool calls. Desktop and mobile.
 - **You see every step.** Each tool call (read, search, edit, rename, …) renders
   inline with its arguments, result, and timing.
 - **Nothing changes without you.** Writes, edits, renames, and deletes ask first
-  and show a diff. `/undo` reverts the last change. Deletes go to trash.
+  and show a diff. `/undo` reverts the last change. Deletes go to trash; if no
+  trash works, the file is removed permanently and the result says so.
 - **Private by default.** OpenRouter requests go only to zero-data-retention,
   no-training endpoints. Or run fully local with Ollama. No telemetry.
 - **Vault-native.** Renames update backlinks, frontmatter goes through
-  Obsidian's API, and an ignore list hides folders from the agent completely.
+  Obsidian's API, and an ignore list hides folders from the agent's tools.
 - **Extensible without code.** `SKILL.md` skills, remote MCP servers, a
   read-only Explorer subagent, and opt-in web search, all as plain vault files.
 

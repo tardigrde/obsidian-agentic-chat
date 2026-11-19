@@ -49,6 +49,18 @@ export interface BubbleActions {
   onStopSubagentChild?: (stopId: string) => void;
 }
 
+/**
+ * Lifecycle of a turn's reasoning pill ("Thinking" -> "Thought").
+ *
+ *   none ──beginThinking / first reasoning delta──▶ thinking
+ *   thinking ──first answer text / finalize──▶ thought
+ *   thinking | thought ──error with an empty trace──▶ dropped
+ *
+ * `dropped` is terminal: a late delta must not mount a pill that can never
+ * settle. The pill's DOM exists exactly in `thinking` and `thought`.
+ */
+export type ReasoningPillPhase = "none" | "thinking" | "thought" | "dropped";
+
 /** Owns the DOM of a single assistant turn: reasoning, tool steps, text, actions. */
 export class AssistantBubble {
   private readonly el: HTMLElement;
@@ -56,7 +68,7 @@ export class AssistantBubble {
   private readonly textEl: HTMLElement;
   private readonly actionsEl: HTMLElement;
   private reasoningBody: HTMLElement | null = null;
-  private reasoningDropped = false;
+  private reasoningPhaseValue: ReasoningPillPhase = "none";
   private markdown = "";
   private readonly steps = new Map<string, StepEntry>();
   // Streaming deltas are buffered and flushed once per animation frame, so a fast
@@ -72,7 +84,6 @@ export class AssistantBubble {
   private reasoningTimeEl: HTMLElement | null = null;
   private reasoningTimerHandle: number | null = null;
   private reasoningStart = 0;
-  private reasoningSettled = false;
   // Distinct vault paths touched by tool calls this turn, rendered as source chips.
   private readonly sourcePaths = new Set<string>();
   // Per-step source path (for SOURCE_TOOLS) so an errored call can retract its chip.
@@ -96,6 +107,11 @@ export class AssistantBubble {
     this.actionsEl = this.el.createDiv({ cls: "agentic-chat-actions" });
   }
 
+  /** Where this turn's reasoning pill is in its lifecycle. */
+  get reasoningPhase(): ReasoningPillPhase {
+    return this.reasoningPhaseValue;
+  }
+
   /** Hide the transcript node when it holds no meaningful text (incl. whitespace-only). */
   private syncTextEmpty(): void {
     const empty = (this.textEl.textContent ?? "").trim().length === 0 && this.textEl.childElementCount === 0;
@@ -110,15 +126,15 @@ export class AssistantBubble {
     // The answer has STARTED streaming → the reasoning trace is done. Settle the
     // pill now (green check "Thought") instead of waiting for agent_end, so a
     // turn with finished tools + streaming text never shows a purple "Thinking".
-    if (this.reasoningBody && !this.reasoningSettled) this.settleReasoning();
+    if (this.reasoningPhaseValue === "thinking") this.settleReasoning();
     this.scheduleFlush();
   }
 
   appendReasoning(delta: string): void {
     // After an error dropped the empty pill, a late delta must not mount a
     // new "Thinking" pill that can never settle.
-    if (this.markdown || this.reasoningDropped) return;
-    if (!this.reasoningBody) this.ensureReasoningShell();
+    if (this.markdown || this.reasoningPhaseValue === "dropped") return;
+    if (this.reasoningPhaseValue === "none") this.ensureReasoningShell();
     this.pendingReasoning += delta;
     this.scheduleFlush();
   }
@@ -130,12 +146,13 @@ export class AssistantBubble {
    * the pill settles to a green-check "Thought" (see settleReasoning).
    */
   beginThinking(): void {
-    if (this.markdown || this.reasoningBody || this.reasoningDropped) return;
+    if (this.markdown || this.reasoningPhaseValue !== "none") return;
     this.ensureReasoningShell();
   }
 
   private ensureReasoningShell(): void {
-    if (this.reasoningBody) return;
+    if (this.reasoningPhaseValue !== "none") return;
+    this.reasoningPhaseValue = "thinking";
     const details = this.el.createEl("details", { cls: "agentic-chat-reasoning" });
     const summary = details.createEl("summary", { cls: "agentic-chat-reasoning-summary" });
     const chevron = summary.createSpan({ cls: "agentic-chat-reasoning-chevron" });
@@ -247,11 +264,11 @@ export class AssistantBubble {
    * pill: it reads as success right above the error. Remove the empty shell.
    */
   private dropEmptyReasoning(): void {
-    if (!this.reasoningBody) return;
+    if (!this.reasoningBody || (this.reasoningPhaseValue !== "thinking" && this.reasoningPhaseValue !== "thought")) return;
     // Deltas wait for the next frame; history replay and a same-frame error
     // reach here before the flush, so count the buffer as content too.
     if (this.pendingReasoning.trim() || this.reasoningBody.textContent?.trim()) return;
-    this.reasoningDropped = true;
+    this.reasoningPhaseValue = "dropped";
     this.stopReasoningTimer();
     this.reasoningBody.closest("details")?.remove();
     this.reasoningBody = null;
@@ -268,8 +285,8 @@ export class AssistantBubble {
    */
   private settleReasoning(): void {
     this.stopReasoningTimer();
-    if (this.reasoningSettled || !this.reasoningBody) return;
-    this.reasoningSettled = true;
+    if (this.reasoningPhaseValue !== "thinking" || !this.reasoningBody) return;
+    this.reasoningPhaseValue = "thought";
     const elapsed = performance.now() - this.reasoningStart;
     this.reasoningLabelEl?.setText("Thought");
     // A live stream keeps the final elapsed time; a near-instant/static trace

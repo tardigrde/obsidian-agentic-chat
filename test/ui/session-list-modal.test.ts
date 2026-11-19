@@ -136,6 +136,26 @@ describe("SessionListModal", () => {
     expect(document.querySelector(".modal-container")).not.toBeNull();
   });
 
+  it("ignores a blur while the rename input arms, then commits once on a later blur", async () => {
+    vi.useFakeTimers();
+    const cb = open([session("a", { name: "Old name" }), session("b")]);
+    rows()[0].querySelector<HTMLButtonElement>(".agentic-chat-session-rename")?.click();
+    const input = document.querySelector<HTMLInputElement>(".agentic-chat-session-rename-input")!;
+    input.value = "Blurred name";
+
+    input.dispatchEvent(new FocusEvent("blur"));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(cb.rename).not.toHaveBeenCalled();
+    expect(input.isConnected).toBe(true);
+
+    await vi.advanceTimersByTimeAsync(100);
+    input.dispatchEvent(new FocusEvent("blur"));
+    input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter" }));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(cb.rename).toHaveBeenCalledTimes(1);
+    expect(cb.rename).toHaveBeenCalledWith(expect.objectContaining({ path: "sessions/a.jsonl" }), "Blurred name");
+  });
+
   it("Escape cancels a rename and a failed rename keeps the old title with a notice", async () => {
     const failing = callbacks({ rename: vi.fn(async () => { throw new Error("disk"); }) });
     open([session("a", { name: "Keep me" }), session("b")], failing);

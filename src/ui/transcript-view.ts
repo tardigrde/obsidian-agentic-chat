@@ -325,8 +325,12 @@ export class TranscriptView {
     return this.bubble;
   }
 
-  private scrollPending = false;
-  private scrollForcePending = false;
+  /**
+   * The scroll queued for the next frame: `none`, `follow` (only if still
+   * pinned to the bottom when the frame runs), or `force` (always). Calls in
+   * the same frame coalesce, and `force` wins over `follow`.
+   */
+  private scheduledScroll: ScheduledScroll = "none";
 
   markUserScrollIntent(): void {
     this.userScrollIntent = true;
@@ -347,19 +351,21 @@ export class TranscriptView {
 
   scrollToBottom(options: { force?: boolean } = {}): void {
     if (!options.force && !this.autoScrollPinned) return;
-    this.scrollForcePending ||= !!options.force;
-    if (this.scrollPending) return;
-    this.scrollPending = true;
+    const alreadyScheduled = this.scheduledScroll !== "none";
+    if (options.force) this.scheduledScroll = "force";
+    else if (!alreadyScheduled) this.scheduledScroll = "follow";
+    if (alreadyScheduled) return;
     window.requestAnimationFrame(() => {
-      const force = this.scrollForcePending;
-      this.scrollPending = false;
-      this.scrollForcePending = false;
+      const force = this.scheduledScroll === "force";
+      this.scheduledScroll = "none";
       if (!force && !this.autoScrollPinned) return;
       this.messagesEl.scrollTop = this.messagesEl.scrollHeight;
       this.autoScrollPinned = isPinnedToBottom(this.messagesEl);
     });
   }
 }
+
+type ScheduledScroll = "none" | "follow" | "force";
 
 /** Index of the last element matching `predicate`, or -1. */
 function lastIndex<T>(items: T[], predicate: (item: T) => boolean): number {

@@ -12,7 +12,8 @@ only after you enable them. See [Privacy model](./privacy.md).
 ### Can the agent delete or wreck my notes?
 
 Not silently. Every mutating tool asks by default and shows a diff. Deletes go to
-the trash, and `/undo` reverts the last write, edit, rename, frontmatter change,
+the trash. If no trash works, the file is removed permanently and the result
+says "bypassed trash". `/undo` reverts the last write, edit, rename, frontmatter change,
 or single delete. Even in YOLO mode, recursive folder deletes still ask. A
 recursive delete of a non-empty folder cannot be undone, so keep backups or
 version control anyway.
@@ -22,7 +23,9 @@ version control anyway.
 Add globs to *Settings → Advanced → Ignored files*, for example `Private/`,
 `*.secret.md`, or `**/diary/**`. Matching files report as "not found" to every
 tool, so the agent cannot read, list, search, or edit them. They are never
-auto-attached.
+auto-attached. Two exceptions: the standing-instructions file (`AGENTS.md`,
+`CLAUDE.md`, or `GEMINI.md`) is sent every turn even if it matches, and an
+image you attach yourself is sent.
 
 ### Can I use Claude, GPT, Gemini, or another model?
 
@@ -35,7 +38,7 @@ can hide models without a zero-retention endpoint; see
 
 The plugin is free. You pay your model provider per token. With the default
 model, a typical vault task in the eval suite costs about $0.002. `/usage` shows
-the running total; set a **Cost cap** to stop at a limit. See
+the running total; set a **Hard spend cap (USD)** to stop at a limit. See
 [What a session costs](./models.md#what-a-session-costs).
 
 ### Does it work on mobile?
@@ -66,7 +69,7 @@ local server that speaks HTTP on `localhost` instead.
 ### The agent is going in circles. How do I stop it?
 
 Press **Stop**. A turn also stops on its own after **Max turns per prompt**
-(default 25), on the loop guard, or at the cost cap. To redirect without
+(default 25), on the loop guard, or at the spend cap. To redirect without
 stopping, type and press Enter while it works. That steers the run.
 
 ### Where do I report a bug?

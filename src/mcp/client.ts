@@ -95,6 +95,18 @@ class McpJsonRpcError extends Error {
   }
 }
 
+/**
+ * Lifecycle of the client's MCP session with its server.
+ *
+ *   uninitialized ──initialize()──▶ handshaking ──initialize + notify ok──▶ ready
+ *   handshaking ──any failure──▶ uninitialized   (retry with the next version)
+ *   ready ──session terminated / OAuth token refreshed──▶ uninitialized
+ *
+ * Leaving `ready` always drops the server-issued session id with it, so a new
+ * handshake never replays a dead session.
+ */
+export type McpSessionPhase = "uninitialized" | "handshaking" | "ready";
+
 export class McpHttpClient {
   private readonly server: McpServerSettings;
   private readonly fetcher: WebFetcher;
@@ -103,7 +115,7 @@ export class McpHttpClient {
   private nextId = 1;
   private protocolVersion = MCP_PROTOCOL_VERSION;
   private sessionId: string | undefined;
-  private initialized = false;
+  private phaseValue: McpSessionPhase = "uninitialized";
   /** The handshake in flight, shared by concurrent calls on one client. */
   private initializing: Promise<void> | null = null;
 
@@ -114,10 +126,16 @@ export class McpHttpClient {
     this.requestTimeoutMs = options.requestTimeoutMs ?? DEFAULT_MCP_HTTP_TIMEOUT_MS;
   }
 
+  /** Where the MCP session handshake stands. */
+  get phase(): McpSessionPhase {
+    return this.phaseValue;
+  }
+
   async initialize(signal?: AbortSignal): Promise<McpInitializeResult> {
     let lastProtocolError: unknown;
     for (const protocolVersion of [MCP_PROTOCOL_VERSION, ...MCP_PROTOCOL_VERSION_FALLBACKS]) {
       this.protocolVersion = protocolVersion;
+      this.phaseValue = "handshaking";
       try {
         const result = await this.request<McpInitializeResult>(
           "initialize",
@@ -138,14 +156,13 @@ export class McpHttpClient {
         await this.notify("notifications/initialized", undefined, signal);
         // Only a completed handshake makes the client ready. A failed notify
         // leaves it uninitialized so the next request retries the handshake.
-        this.initialized = true;
+        this.phaseValue = "ready";
         return result;
       } catch (error) {
         // Any failed handshake leaves the client unready. Clear the
         // server-issued session too: the next attempt must not replay a dead
         // session id after the notification failed.
-        this.sessionId = undefined;
-        this.initialized = false;
+        this.resetSession();
         if (!isProtocolVersionRejection(error)) throw error;
         lastProtocolError = error;
       }
@@ -176,7 +193,7 @@ export class McpHttpClient {
   }
 
   private async ensureInitialized(signal?: AbortSignal): Promise<void> {
-    if (this.initialized) return;
+    if (this.phaseValue === "ready") return;
     // One client now serves every call to a server, so parallel tool calls
     // must share one handshake instead of racing on the session id.
     this.initializing ??= this.initialize(signal)
@@ -185,6 +202,12 @@ export class McpHttpClient {
         this.initializing = null;
       });
     await this.initializing;
+  }
+
+  /** Leave the session: the next call must handshake again, without the old session id. */
+  private resetSession(): void {
+    this.sessionId = undefined;
+    this.phaseValue = "uninitialized";
   }
 
   private async request<T>(
@@ -234,8 +257,7 @@ export class McpHttpClient {
       return this.reinitializeAndRetry<T>(method, params, signal);
     }
     if (method !== "initialize" && error instanceof McpSessionTerminatedError) {
-      this.sessionId = undefined;
-      this.initialized = false;
+      this.resetSession();
       await this.initialize(signal);
       return this.requestOnce<T>(method, params, signal, false);
     }
@@ -537,8 +559,7 @@ export class McpHttpClient {
       this.requestTimeoutMs,
     );
     if (!refreshed) return false;
-    this.sessionId = undefined;
-    this.initialized = false;
+    this.resetSession();
     await this.onServerChanged?.(this.server);
     return true;
   }
@@ -557,8 +578,7 @@ export class McpHttpClient {
       requiredScope,
     );
     if (!refreshed) return false;
-    this.sessionId = undefined;
-    this.initialized = false;
+    this.resetSession();
     await this.onServerChanged?.(this.server);
     return true;
   }
