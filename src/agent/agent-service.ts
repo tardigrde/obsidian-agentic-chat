@@ -697,6 +697,11 @@ export class AgentService {
     return this.sessionActions.releaseDeletedSession(paths);
   }
 
+  /** Set or clear the active session's tab label; the session name stays. */
+  async setTabLabel(label: string | undefined): Promise<void> {
+    return this.sessionActions.setTabLabel(label);
+  }
+
   async renameSession(path: string, name: string): Promise<void> {
     return this.sessionActions.renameSession(path, name);
   }

@@ -8,11 +8,15 @@
  */
 export const AC_HOOKS = [
   "view",
+  "header",
   "tab-strip",
   "tab",
+  "tab-label",
+  "tab-input",
   "tab-close",
   "tab-add",
-  "new-chat",
+  "tab-overflow",
+  "tab-menu",
   "history",
   "messages",
   "empty",

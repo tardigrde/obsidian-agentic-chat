@@ -25,6 +25,7 @@ import {
   type ChatTabWorkingState,
 } from "./chat-tab-state";
 import { ChatTabs, type ChatTab } from "./chat-tabs";
+import type { TabHeaderElements } from "./tab-strip";
 import { ChatComposer } from "./composer-controller";
 import { ChatChrome } from "./chat-chrome";
 import { ChatTurn } from "./chat-turn";
@@ -60,6 +61,7 @@ export class ChatView extends ItemView {
   private turnOwner?: ChatTurn;
   private actionsOwner?: ChatActions;
   private tabsEl!: HTMLElement;
+  private tabHeader?: TabHeaderElements;
   // The current active note's path. View-level: it follows the focused leaf,
   // not the conversation; each tab decides whether it is suppressed.
   private activeNotePath: string | null = null;
@@ -113,7 +115,8 @@ export class ChatView extends ItemView {
         this.notifier.notify("agentFinished", `Tab ${tabNumber} finished responding.`);
       },
       isViewClosed: () => this.closed,
-      container: () => this.tabsEl,
+      header: () => this.tabHeader,
+      openHistory: () => void this.actions.createSessionWorkflow().run(""),
       composerValue: () => this.inputEl.value,
       setComposerValueQuiet: (value) => this.setComposerValueQuiet(value),
       setStatus: (text) => this.statusEl.setText(text),
@@ -383,6 +386,12 @@ export class ChatView extends ItemView {
       tab.service.dispose();
     }
     this.tabs = [];
+    this.chatTabs.clear();
+  }
+
+  /** Rename the active chat tab inline (palette command and tests). */
+  renameActiveTab(): void {
+    this.chatTabs.beginRenameActiveTab();
   }
 
   /** Add a vault file/folder from an Obsidian context menu to the next prompt. */
@@ -556,7 +565,7 @@ export class ChatView extends ItemView {
         attach: () => this.composer.openMentionPicker(),
         toggleMode: () => this.toggleMode(),
         switchModel: () => void this.switchModel(),
-        newSession: () => void this.newSession(),
+        addTab: () => void this.chatTabs.addTab(),
         openHistory: () => void this.actions.createSessionWorkflow().run(""),
         isEditing: () => this.composer.isEditing,
         reconcileQueuedInput: (value, event) => this.reconcileQueuedInput(value, event),
@@ -567,6 +576,7 @@ export class ChatView extends ItemView {
     this.renderEmptyState();
     this.transcript = layout.transcript;
     this.tabsEl = layout.tabsEl;
+    this.tabHeader = layout.tabHeader;
     this.chipsEl = layout.chipsEl;
     this.fieldEl = layout.fieldEl;
     this.inputEl = layout.inputEl;

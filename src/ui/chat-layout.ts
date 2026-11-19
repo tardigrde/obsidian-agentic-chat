@@ -2,6 +2,7 @@ import { setIcon, type App, type Component } from "obsidian";
 import type { AcItem } from "./autocomplete";
 import { AutocompleteMenu } from "./autocomplete-menu";
 import type { ComposerSubmitSource } from "./composer-input";
+import type { TabHeaderElements } from "./tab-strip";
 import { acHook } from "./test-hooks";
 import { TranscriptView } from "./transcript-view";
 
@@ -24,7 +25,7 @@ export interface ChatLayoutCallbacks {
   attach(): void;
   toggleMode(): void;
   switchModel(): void;
-  newSession(): void;
+  addTab(): void;
   openHistory(): void;
   isEditing(): boolean;
   reconcileQueuedInput(value: string, event: UIEvent): void;
@@ -42,6 +43,7 @@ export interface ChatLayoutElements {
   messagesEl: HTMLElement;
   transcript: TranscriptView;
   tabsEl: HTMLElement;
+  tabHeader: TabHeaderElements;
   chipsEl: HTMLElement;
   fieldEl: HTMLElement;
   inputEl: HTMLTextAreaElement;
@@ -89,6 +91,36 @@ export function buildLayout(deps: ChatLayoutDeps): ChatLayoutElements {
   root.addClass("agentic-chat-view");
   acHook(root, "view");
 
+  // Header row: tabs (number or label), the overflow menu, new tab, history.
+  const header = acHook(root.createDiv({ cls: "agentic-chat-header" }), "header");
+  const tabsEl = acHook(
+    header.createDiv({ cls: "agentic-chat-tabs", attr: { role: "tablist", "aria-label": "Chat tabs" } }),
+    "tab-strip",
+  );
+  const overflowButton = acHook(
+    header.createEl("button", {
+      cls: ["clickable-icon", "agentic-chat-tab-overflow"],
+      attr: { type: "button", "aria-haspopup": "menu", "aria-expanded": "false" },
+    }),
+    "tab-overflow",
+  );
+  const headerActions = header.createDiv({ cls: "agentic-chat-header-actions" });
+  const addTabButton = acHook(
+    headerActions.createEl("button", { cls: "clickable-icon", attr: { type: "button", "aria-label": "New tab" } }),
+    "tab-add",
+  );
+  setIcon(addTabButton, "plus");
+  addTabButton.addEventListener("click", () => callbacks.addTab());
+  const historyButton = acHook(
+    headerActions.createEl("button", { cls: "clickable-icon", attr: { type: "button", "aria-label": "Conversation history" } }),
+    "history",
+  );
+  setIcon(historyButton, "history");
+  historyButton.addEventListener("click", () => callbacks.openHistory());
+  const tabMenu = acHook(header.createDiv({ cls: "agentic-chat-tab-menu", attr: { role: "menu" } }), "tab-menu");
+  tabMenu.hide();
+  const tabHeader: TabHeaderElements = { header, strip: tabsEl, overflow: overflowButton, menu: tabMenu, add: addTabButton };
+
   const messagesEl = acHook(root.createDiv({ cls: "agentic-chat-messages" }), "messages");
   const transcript = new TranscriptView(messagesEl, {
     app: deps.app,
@@ -105,26 +137,6 @@ export function buildLayout(deps: ChatLayoutDeps): ChatLayoutElements {
   deps.registerDomEvent(messagesEl, "scroll", () => transcript.updateScrollPinning());
 
   const composer = acHook(root.createDiv({ cls: "agentic-chat-composer" }), "composer");
-
-  // Nav row above the input card: tab pills on the left (switch between up to
-  // MAX_TABS independent sessions), header actions on the right (C4 / design ref).
-  const tabsRow = composer.createDiv({ cls: "agentic-chat-tabs-row" });
-  const tabsEl = acHook(tabsRow.createDiv({ cls: "agentic-chat-tabs", attr: { role: "tablist" } }), "tab-strip");
-  const headerActions = tabsRow.createDiv({ cls: "agentic-chat-tab-actions" });
-  const newChatButton = headerActions.createEl("button", {
-    cls: "clickable-icon",
-    attr: { "aria-label": "New chat" },
-  });
-  acHook(newChatButton, "new-chat");
-  setIcon(newChatButton, "square-pen");
-  newChatButton.addEventListener("click", () => callbacks.newSession());
-  const historyButton = headerActions.createEl("button", {
-    cls: "clickable-icon",
-    attr: { "aria-label": "Conversation history" },
-  });
-  acHook(historyButton, "history");
-  setIcon(historyButton, "history");
-  historyButton.addEventListener("click", () => callbacks.openHistory());
 
   // Status line above the card: shows only while it has news (a spinner while
   // the agent works, or a one-line message such as "Restored your draft").
@@ -307,6 +319,7 @@ export function buildLayout(deps: ChatLayoutDeps): ChatLayoutElements {
     messagesEl,
     transcript,
     tabsEl,
+    tabHeader,
     chipsEl,
     fieldEl,
     inputEl,

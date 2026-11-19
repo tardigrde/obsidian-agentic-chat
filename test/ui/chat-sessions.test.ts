@@ -61,7 +61,7 @@ describe("chat sessions", () => {
     await ui.send("first conversation");
     await ui.idle();
 
-    ui.$<HTMLButtonElement>('[aria-label="New chat"]')?.click();
+    await ui.view.startNewConversation();
     await settle();
     expect(ui.$$(".agentic-chat-user")).toHaveLength(0);
     expect(ui.$(".agentic-chat-empty")).not.toBeNull();

@@ -102,6 +102,12 @@ class FakeSessionRuntime implements AgentSessionActionsRuntime {
     }
   }
 
+  tabLabels: Array<string | undefined> = [];
+
+  async setTabLabel(label: string | undefined): Promise<void> {
+    this.tabLabels.push(label);
+  }
+
   async rename(path: string, name: string): Promise<void> {
     this.renamed.push({ path, name });
   }

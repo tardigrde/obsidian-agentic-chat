@@ -24,6 +24,7 @@ import {
   type SessionEntry,
   type SessionHeaderEntry,
   type SessionInfoEntry,
+  type TabLabelSessionEntry,
   type ThinkingLevelChangeSessionEntry,
 } from "./jsonl";
 
@@ -66,6 +67,8 @@ export interface SessionInfo {
   createdAt: string;
   updatedAt: string;
   name?: string;
+  /** The user's short tab label, if any. Separate from `name`. */
+  tabLabel?: string;
   messageCount: number;
   firstMessage: string;
   /**
@@ -306,6 +309,17 @@ export class ObsidianSessionManager {
     });
   }
 
+  /** Set or clear (empty) the active session's tab label. */
+  async appendTabLabel(label: string | undefined): Promise<string> {
+    return this.appendEntry<TabLabelSessionEntry>({
+      type: "tab_label",
+      id: createEntryId(this.entries),
+      parentId: this.leafId,
+      timestamp: new Date().toISOString(),
+      label: normalizeTabLabel(label),
+    });
+  }
+
   async appendActionAuditEvent(event: ActionAuditEvent): Promise<string> {
     return this.appendEntry<ActionAuditSessionEntry>({
       type: "action_audit",
@@ -372,6 +386,7 @@ export class ObsidianSessionManager {
     const header = this.entries[0];
     if (!header || header.type !== "session") throw new Error("Session file is missing a session header.");
     const sessionName = getSessionName(this.entries);
+    const tabLabel = getTabLabel(this.entries);
     const context = this.buildSessionContext();
     const rebuilt: SessionEntry[] = [header];
     let parentId: string | null = null;
@@ -423,6 +438,16 @@ export class ObsidianSessionManager {
         parentId,
         timestamp: new Date().toISOString(),
         name: sessionName,
+      });
+    }
+    // The tab label survives a rewind or compaction the same way.
+    if (tabLabel) {
+      push({
+        type: "tab_label",
+        id: createEntryId(rebuilt),
+        parentId,
+        timestamp: new Date().toISOString(),
+        label: tabLabel,
       });
     }
     await this.writeSessionFile(sessionFile, serializeSessionEntries(rebuilt));
@@ -721,6 +746,7 @@ function summarizeSession(path: string, entries: SessionEntry[], modifiedTime: n
     createdAt: header.timestamp,
     updatedAt: new Date(getSessionModifiedTime(entries, modifiedTime)).toISOString(),
     name: getSessionName(entries),
+    tabLabel: getTabLabel(entries),
     messageCount: messageEntries.length,
     firstMessage: getFirstUserMessage(messageEntries) || "(no messages)",
   };
@@ -732,6 +758,23 @@ function getSessionName(entries: SessionEntry[]): string | undefined {
     if (entry.type === "session_info") name = entry.name?.trim() || undefined;
   }
   return name;
+}
+
+function getTabLabel(entries: SessionEntry[]): string | undefined {
+  let label: string | undefined;
+  for (const entry of entries) {
+    if (entry.type === "tab_label") label = normalizeTabLabel(entry.label);
+  }
+  return label;
+}
+
+/** Longest tab label kept; the tab itself ellipsises long labels. */
+export const MAX_TAB_LABEL_LENGTH = 32;
+
+/** Trim and cap a tab label; an empty label is no label. */
+export function normalizeTabLabel(label: string | undefined): string | undefined {
+  const trimmed = label?.replace(/\s+/g, " ").trim() ?? "";
+  return trimmed ? trimmed.slice(0, MAX_TAB_LABEL_LENGTH) : undefined;
 }
 
 function getFirstUserMessage(entries: MessageSessionEntry[]): string | undefined {
