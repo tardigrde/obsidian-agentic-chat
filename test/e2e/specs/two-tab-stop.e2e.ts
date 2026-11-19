@@ -55,7 +55,7 @@ async function selectTab(index: number): Promise<void> {
 }
 
 async function waitForComposerIdle(): Promise<void> {
-  await browser.waitUntil(async () => (await $('[data-ac="send"]').getText()).trim() === "Send", {
+  await browser.waitUntil(async () => (await $('[data-ac="send"]').getAttribute("data-ac-state")) === "send", {
     timeout: 10_000,
     timeoutMsg: "the composer did not become idle",
   });

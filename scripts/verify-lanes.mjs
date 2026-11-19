@@ -80,6 +80,7 @@ export function staticSteps() {
     step("test manifest", NODE, ["scripts/check-test-manifest.mjs"]),
     step("doc commands", NODE, ["scripts/check-doc-commands.mjs"]),
     step("skip rule", NODE, ["scripts/check-skips.mjs"]),
+    step("css tokens", NODE, ["scripts/check-css-tokens.mjs"]),
   ];
 }
 

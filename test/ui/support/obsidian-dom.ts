@@ -93,6 +93,15 @@ export function installObsidianDom(): void {
   define(nodeProto, "createSpan", function (this: Node, info?: DomElementInfo | string, cb?: (el: HTMLElement) => void) {
     return createElIn(this, "span", info, cb);
   });
+  define(nodeProto, "createSvg", function (this: Node, tag: string, info?: DomElementInfo | string, cb?: (el: SVGElement) => void) {
+    const el = document.createElementNS("http://www.w3.org/2000/svg", tag) as unknown as HTMLElement;
+    applyInfo(el, info);
+    const options = typeof info === "object" ? info : undefined;
+    const target = options?.parent ?? (this.nodeType === 9 ? null : this);
+    target?.appendChild(el);
+    cb?.(el as unknown as SVGElement);
+    return el;
+  });
   define(nodeProto, "empty", function (this: Node) {
     while (this.firstChild) this.removeChild(this.firstChild);
   });

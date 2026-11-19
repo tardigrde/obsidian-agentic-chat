@@ -20,6 +20,8 @@ export interface ChatLayoutCallbacks {
   cancelAutocomplete(): void;
   handleDrop(event: DragEvent): void;
   cycleEffort(): void;
+  /** Open the @ note picker in the composer. */
+  attach(): void;
   toggleMode(): void;
   switchModel(): void;
   newSession(): void;
@@ -44,16 +46,39 @@ export interface ChatLayoutElements {
   fieldEl: HTMLElement;
   inputEl: HTMLTextAreaElement;
   modeToggleEl: HTMLElement;
+  modeLabelEl: HTMLElement;
   menu: AutocompleteMenu;
   sendButton: HTMLButtonElement;
   stopButton: HTMLButtonElement;
   statusEl: HTMLElement;
   modelPillEl: HTMLElement;
   effortKnobEl: HTMLElement;
-  usageEl: HTMLElement;
-  contextBarEl: HTMLProgressElement;
+  contextEl: HTMLElement;
+  contextRingEl: SVGCircleElement;
   contextPercentEl: HTMLElement;
   workingEl: HTMLElement;
+}
+
+export const COMPOSER_PLACEHOLDER = "Ask about your vault…";
+/** Radius and circumference of the context ring's value arc (viewBox 20). */
+export const CONTEXT_RING_RADIUS = 7;
+export const CONTEXT_RING_LENGTH = 2 * Math.PI * CONTEXT_RING_RADIUS;
+/** The textarea grows with its text up to this many lines, then scrolls. */
+const COMPOSER_MAX_LINES = 8;
+
+/** Grow the textarea to fit its text, from one line up to COMPOSER_MAX_LINES. */
+export function autoGrow(inputEl: HTMLTextAreaElement): void {
+  const view = inputEl.ownerDocument?.defaultView;
+  if (!view) return;
+  const style = view.getComputedStyle(inputEl);
+  const line = Number.parseFloat(style.lineHeight) || 20;
+  const padding = (Number.parseFloat(style.paddingTop) || 0) + (Number.parseFloat(style.paddingBottom) || 0);
+  inputEl.setCssProps({ "--ac-input-h": "auto" });
+  const max = line * COMPOSER_MAX_LINES + padding;
+  inputEl.setCssProps({
+    "--ac-input-h": `${Math.min(inputEl.scrollHeight, max)}px`,
+    "--ac-input-overflow": inputEl.scrollHeight > max ? "auto" : "hidden",
+  });
 }
 
 /** Build the chat DOM once and wire the composer, tabs, and toolbar to callbacks. */
@@ -101,15 +126,21 @@ export function buildLayout(deps: ChatLayoutDeps): ChatLayoutElements {
   setIcon(historyButton, "history");
   historyButton.addEventListener("click", () => callbacks.openHistory());
 
-  // The single bordered input card: context row (chips) + textarea + bottom toolbar
-  // all live *inside* one rectangle, instead of stacked around a bordered textarea.
+  // Status line above the card: shows only while it has news (a spinner while
+  // the agent works, or a one-line message such as "Restored your draft").
+  const statusLineEl = composer.createDiv({ cls: "agentic-chat-status-line", attr: { "aria-live": "polite" } });
+  const workingEl = statusLineEl.createSpan({ cls: "agentic-chat-working", attr: { "aria-hidden": "true" } });
+  workingEl.hide();
+  const statusEl = acHook(statusLineEl.createSpan({ cls: "agentic-chat-status" }), "status");
+
+  // The composer card: chips row, an auto-growing textarea, and the toolbar.
   const fieldEl = acHook(composer.createDiv({ cls: "agentic-chat-field" }), "composer-card");
   const chipsEl = acHook(fieldEl.createDiv({ cls: "agentic-chat-chips" }), "chips");
 
   const inputWrap = fieldEl.createDiv({ cls: "agentic-chat-input-wrap" });
   const inputEl = inputWrap.createEl("textarea", {
     cls: "agentic-chat-input",
-    attr: { rows: "3", placeholder: "Ask about your vault — / for commands, @ to attach a note… (Enter to send)" },
+    attr: { rows: "1", placeholder: COMPOSER_PLACEHOLDER, "aria-label": "Message" },
   });
   acHook(inputEl, "composer-input");
   const menu = new AutocompleteMenu(
@@ -148,6 +179,7 @@ export function buildLayout(deps: ChatLayoutDeps): ChatLayoutElements {
     const inputEvent = event as UIEvent;
     callbacks.reconcileQueuedInput(inputEl.value, inputEvent);
     callbacks.scheduleAutocomplete();
+    autoGrow(inputEl);
   });
   inputEl.addEventListener("click", () => callbacks.scheduleAutocomplete());
   inputEl.addEventListener("keyup", (event) => {
@@ -158,23 +190,37 @@ export function buildLayout(deps: ChatLayoutDeps): ChatLayoutElements {
     menu.hide();
   });
 
-  // Bottom toolbar (in-card): model+effort pill · context on the left; the
-  // Safe ↔ YOLO segmented toggle on the right — design ref.
+  // Toolbar, left to right: attach, model · effort, spacer, context ring,
+  // Safe/YOLO, send/stop.
   const toolbar = fieldEl.createDiv({ cls: "agentic-chat-toolbar" });
-  const toolbarLeft = toolbar.createDiv({ cls: "agentic-chat-toolbar-left" });
 
-  // Model + reasoning effort share ONE two-sided pill: model on the left, the
-  // effort level value on the right (no "Effort" label — the value is enough).
-  const modelGroup = toolbarLeft.createDiv({ cls: "agentic-chat-model" });
+  const attachButton = toolbar.createEl("button", {
+    cls: ["clickable-icon", "agentic-chat-attach"],
+    attr: { type: "button", "aria-label": "Attach a note (@)" },
+  });
+  setIcon(attachButton, "paperclip");
+  attachButton.addEventListener("click", () => callbacks.attach());
+
+  // Model and reasoning effort share one pill: the model name opens the model
+  // picker; the muted effort value cycles the level (Alt+click on the pill too).
+  const modelGroup = toolbar.createDiv({ cls: "agentic-chat-model" });
   const modelPillEl = modelGroup.createDiv({
     cls: "agentic-chat-model-pill",
-    attr: { "aria-label": "Switch model" },
+    attr: { role: "button", tabindex: "0", "aria-label": "Switch model" },
   });
   acHook(modelPillEl, "model-pill");
-  modelPillEl.addEventListener("click", () => callbacks.switchModel());
-  modelGroup.createSpan({ cls: "agentic-chat-model-divider", attr: { "aria-hidden": "true" } });
+  modelPillEl.addEventListener("click", (event) => {
+    if (event.altKey) callbacks.cycleEffort();
+    else callbacks.switchModel();
+  });
+  modelPillEl.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      callbacks.switchModel();
+    }
+  });
+  modelGroup.createSpan({ cls: "agentic-chat-model-divider", text: "·", attr: { "aria-hidden": "true" } });
 
-  // Effort knob: click cycles the persisted reasoning level.
   const effortKnobEl = modelGroup.createDiv({
     cls: "agentic-chat-effort",
     attr: { role: "button", tabindex: "0" },
@@ -188,26 +234,38 @@ export function buildLayout(deps: ChatLayoutDeps): ChatLayoutElements {
     }
   });
 
-  const contextBarEl = toolbarLeft.createEl("progress", {
-    cls: "agentic-chat-ctx-bar",
-    attr: { "aria-label": "Context window used", max: "100", value: "0" },
+  toolbar.createSpan({ cls: "agentic-chat-toolbar-spacer" });
+
+  // Context ring: % of the model's window the next request uses. Shown once
+  // usage is known; the tooltip carries the breakdown. No click action.
+  const contextEl = acHook(
+    toolbar.createDiv({ cls: "agentic-chat-ctx", attr: { role: "img", "aria-label": "Context window used" } }),
+    "context",
+  );
+  const ring = contextEl.createSvg("svg", { cls: "agentic-chat-ctx-ring", attr: { viewBox: "0 0 20 20", "aria-hidden": "true" } });
+  ring.createSvg("circle", { cls: "agentic-chat-ctx-track", attr: { cx: "10", cy: "10", r: String(CONTEXT_RING_RADIUS) } });
+  const contextRingEl = ring.createSvg("circle", {
+    cls: "agentic-chat-ctx-value",
+    attr: {
+      cx: "10",
+      cy: "10",
+      r: String(CONTEXT_RING_RADIUS),
+      "stroke-dasharray": String(CONTEXT_RING_LENGTH),
+      "stroke-dashoffset": String(CONTEXT_RING_LENGTH),
+    },
   });
-  const contextPercentEl = toolbarLeft.createSpan({ cls: "agentic-chat-ctx-percent" });
-  acHook(contextBarEl, "context");
-  contextBarEl.hide();
-  contextPercentEl.hide();
+  const contextPercentEl = contextEl.createSpan({ cls: "agentic-chat-ctx-percent" });
+  contextEl.hide();
 
-  const toolbarRight = toolbar.createDiv({ cls: "agentic-chat-toolbar-right" });
-
-  // Single Safe ↔ YOLO permission toggle as a segmented pill (beautifului
-  // Prompt Bar pattern); the ask/plan/agent dropdown is retired.
-  const modeToggleEl = toolbarRight.createDiv({
+  // Safe / YOLO: one shield button. Orange while YOLO; icon only on phones.
+  const modeToggleEl = toolbar.createDiv({
     cls: "agentic-chat-mode-toggle",
     attr: { role: "switch", tabindex: "0", "aria-label": "Permission mode: Safe", "aria-checked": "false" },
   });
   acHook(modeToggleEl, "mode-toggle");
-  modeToggleEl.createSpan({ cls: "agentic-chat-mode-seg", text: "Safe" });
-  modeToggleEl.createSpan({ cls: "agentic-chat-mode-seg", text: "YOLO" });
+  const modeIcon = modeToggleEl.createSpan({ cls: "agentic-chat-mode-icon", attr: { "aria-hidden": "true" } });
+  setIcon(modeIcon, "shield");
+  const modeLabelEl = modeToggleEl.createSpan({ cls: "agentic-chat-mode-label", text: "Safe" });
   modeToggleEl.setAttr(
     "title",
     "Safe: ask before every edit and action. YOLO: run without asking (for trusted vaults).",
@@ -221,19 +279,21 @@ export function buildLayout(deps: ChatLayoutDeps): ChatLayoutElements {
     }
   });
 
-  const workingEl = toolbarRight.createDiv({ cls: "agentic-chat-working", attr: { "aria-hidden": "true" } });
-  workingEl.hide();
-  const statusEl = acHook(toolbarRight.createDiv({ cls: "agentic-chat-status" }), "status");
-  const stopButton = toolbarRight.createEl("button", { cls: ["agentic-chat-stop", "mod-warning"], text: "Stop" });
+  // Send / stop: round buttons. Stop shows while a turn runs; send then queues.
+  const stopButton = toolbar.createEl("button", {
+    cls: ["agentic-chat-stop", "agentic-chat-round"],
+    attr: { type: "button", "aria-label": "Stop" },
+  });
   acHook(stopButton, "stop");
+  setIcon(stopButton, "square");
   stopButton.hide();
   stopButton.addEventListener("click", () => callbacks.stopActiveTurn());
-  const sendButton = toolbarRight.createEl("button", { cls: ["agentic-chat-send", "mod-cta"], text: "Send" });
+  const sendButton = toolbar.createEl("button", {
+    cls: ["agentic-chat-send", "agentic-chat-round", "mod-cta"],
+    attr: { type: "button", "aria-label": "Send" },
+  });
   acHook(sendButton, "send");
   sendButton.addEventListener("click", () => callbacks.submit("button"));
-
-  // Token/cost readout on its own muted line; hidden until there's usage.
-  const usageEl = composer.createDiv({ cls: "agentic-chat-usage" });
 
   // Dragging a note onto the composer should attach it as context, not open it.
   deps.registerDomEvent(composer, "dragover", (event) => {
@@ -251,14 +311,15 @@ export function buildLayout(deps: ChatLayoutDeps): ChatLayoutElements {
     fieldEl,
     inputEl,
     modeToggleEl,
+    modeLabelEl,
     menu,
     sendButton,
     stopButton,
     statusEl,
     modelPillEl,
     effortKnobEl,
-    usageEl,
-    contextBarEl,
+    contextEl,
+    contextRingEl,
     contextPercentEl,
     workingEl,
   };

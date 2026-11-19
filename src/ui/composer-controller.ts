@@ -28,6 +28,7 @@ import { parseDroppedVaultPath } from "./drag-drop";
 import { isImagePath } from "./image-attachments";
 import { PromptEditState } from "./prompt-edit-state";
 import { visibleCommands } from "./commands";
+import { autoGrow } from "./chat-layout";
 
 /** Minimal shape of Obsidian's internal (undocumented) drag manager. */
 interface ObsidianDragManager {
@@ -204,6 +205,21 @@ export class ChatComposer {
     input.value = value;
     input.setSelectionRange(value.length, value.length);
     this.deps.menu().hide();
+    autoGrow(input);
+  }
+
+  /** The toolbar's attach button: put `@` at the caret and open the note picker. */
+  openMentionPicker(): void {
+    const input = this.deps.inputEl();
+    const start = input.selectionStart ?? input.value.length;
+    const end = input.selectionEnd ?? start;
+    const before = input.value.slice(0, start);
+    const spacer = before && !/\s$/.test(before) ? " " : "";
+    input.value = `${before}${spacer}@${input.value.slice(end)}`;
+    const caret = before.length + spacer.length + 1;
+    input.focus();
+    input.setSelectionRange(caret, caret);
+    input.dispatchEvent(new Event("input"));
   }
 
   private clearEditingHighlight(): void {

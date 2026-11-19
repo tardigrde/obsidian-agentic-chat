@@ -57,26 +57,33 @@ describe("multi-tab background approval (effort + notify+label)", function () {
     await openChat();
   });
 
-  it("renders effort pill subordinate to model pill", async function () {
+  it("renders effort muted inside the model pill", async function () {
     const effort = await $('[data-ac="effort"]');
     await effort.waitForExist();
     const styles = await browser.execute(() => {
       const knob = document.querySelector<HTMLElement>('[data-ac="effort"]');
-      const el = knob?.querySelector<HTMLElement>(".agentic-chat-effort-value");
-      if (!el || !knob) throw new Error("effort pill missing");
-      const cs = getComputedStyle(el);
-      const knobCs = getComputedStyle(knob);
+      const value = knob?.querySelector<HTMLElement>(".agentic-chat-effort-value");
+      const name = document.querySelector<HTMLElement>('[data-ac="model-pill"] .agentic-chat-model-name');
+      if (!knob || !value || !name) throw new Error("model or effort pill missing");
+      const probe = document.createElement("span");
+      probe.style.color = "var(--ac-text-faint)";
+      knob.appendChild(probe);
+      const faint = getComputedStyle(probe).color;
+      probe.remove();
       return {
-        fontSize: cs.fontSize,
-        padding: knobCs.padding,
-        lineHeight: cs.lineHeight,
+        samePill: knob.parentElement === name.closest('[data-ac="model-pill"]')?.parentElement,
+        valueColour: getComputedStyle(value).color,
+        nameColour: getComputedStyle(name).color,
+        faint,
+        valueFont: Number.parseFloat(getComputedStyle(value).fontSize),
+        nameFont: Number.parseFloat(getComputedStyle(name).fontSize),
       };
     });
-    // Effort should be ~0.92*font-smallest (~10-11px) not font-ui-smaller (~13px), and knob padding 1px 5px
-    const px = parseFloat(styles.fontSize);
-    expect(px).toBeLessThan(12);
-    expect(styles.padding).toContain("1px");
-    expect(styles.padding).toContain("5px");
+    // One pill: "Model · effort", with effort in the faint text colour.
+    expect(styles.samePill).toBe(true);
+    expect(styles.valueColour).toBe(styles.faint);
+    expect(styles.valueColour).not.toBe(styles.nameColour);
+    expect(styles.valueFont).toBeLessThanOrEqual(styles.nameFont);
   });
 
   it("surfaces background tab approval with tab badge and session label (no auto-switch)", async function () {
@@ -151,7 +158,7 @@ describe("multi-tab background approval (effort + notify+label)", function () {
 
   it("clears pending modal and badge when background tab is closed", async function () {
     // Wait for previous turn to settle before starting next scenario
-    await browser.waitUntil(async () => (await $('[data-ac="send"]').getText()).trim() === "Send", { timeout: 8_000 });
+    await browser.waitUntil(async () => (await $('[data-ac="send"]').getAttribute("data-ac-state")) === "send", { timeout: 8_000 });
     await browser.execute(() => document.querySelectorAll<HTMLElement>('[data-ac="tab"]')[0]?.click());
     await browser.waitUntil(async () => await browser.execute(() => document.querySelectorAll<HTMLElement>('[data-ac="tab"]')[0]?.classList.contains("is-active")), { timeout: 2_000 });
     await browser.execute((msg) => {

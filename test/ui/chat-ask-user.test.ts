@@ -56,6 +56,6 @@ describe("ask_user card", () => {
     expect(ui.$<HTMLTextAreaElement>(".agentic-chat-ask-input")?.disabled).toBe(true);
     // pi may open one more stream with the aborted signal; it ends at once with no text.
     expect(ui.root.textContent).not.toContain("Using the folder you chose.");
-    expect(ui.$<HTMLButtonElement>(".agentic-chat-send")?.textContent).toBe("Send");
+    expect(ui.$<HTMLButtonElement>('[data-ac="send"]')?.getAttribute("data-ac-state")).toBe("send");
   });
 });

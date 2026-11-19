@@ -4,14 +4,27 @@ import type { ContextReadout } from "../agent/readouts";
 import type AgenticChatPlugin from "../main";
 import { activeModelId } from "../settings-schema";
 import type { ChatTabWorkingState } from "./chat-tab-state";
-import {
-  buildModelPillState,
-  buildTurnUsageChromeParts,
-} from "./chrome-state";
+import { setIcon } from "obsidian";
+import { buildModelPillState } from "./chrome-state";
+import { CONTEXT_RING_LENGTH } from "./chat-layout";
 import { contextLevel, contextPercent, formatContextReadoutTitle } from "./context-bar";
-import { formatUsage } from "./format";
 import { highestUnnotifiedThreshold, type Notifier } from "./notifications";
 import type { TranscriptView } from "./transcript-view";
+
+/** What the send button does now; also its `data-ac-state` test hook. */
+export type SendAction = "send" | "queue" | "update";
+
+export const SEND_LABELS: Record<SendAction, string> = {
+  send: "Send",
+  queue: "Queue",
+  update: "Update",
+};
+
+/** Send while idle; while a turn runs, queue the draft (or update the queued one). */
+export function sendAction(running: boolean, queuedPromptArmed: boolean): SendAction {
+  if (!running) return "send";
+  return queuedPromptArmed ? "update" : "queue";
+}
 
 /** Context-window fill fractions that trigger a background notification, once each. */
 export const CONTEXT_THRESHOLDS = [0.75, 0.9] as const;
@@ -19,8 +32,8 @@ export const CONTEXT_THRESHOLDS = [0.75, 0.9] as const;
 export interface ChatChromeElements {
   effortKnobEl: () => HTMLElement | undefined;
   modelPillEl: () => HTMLElement;
-  usageEl: () => HTMLElement;
-  contextBarEl: () => HTMLProgressElement;
+  contextEl: () => HTMLElement;
+  contextRingEl: () => SVGCircleElement;
   contextPercentEl: () => HTMLElement;
   sendButton: () => HTMLButtonElement;
   stopButton: () => HTMLButtonElement;
@@ -68,8 +81,7 @@ export class ChatChrome {
     this.syncEffortKnob();
 
     const readout = this.deps.service().getContextReadout();
-    this.renderUsageChrome();
-    this.syncContextBar(readout);
+    this.syncContextRing(readout);
 
     this.renderRunning();
     this.checkUsageNotifications();
@@ -100,57 +112,23 @@ export class ChatChrome {
     if (error && !service.isStreaming()) this.deps.elements.statusEl().setText("");
   }
 
-  /**
-   * Render the bottom usage line for the CURRENT turn only (Claude Code style):
-   * collapsed `5.7k tokens · 86% cache · $0.17`, with the full per-turn detail in
-   * the hover tooltip. Session-wide cumulative totals are dropped from the chrome
-   * line (they still drive the cost/context notifications).
-   */
-  private renderUsageChrome(): void {
-    const el = this.deps.elements.usageEl();
-    el.empty();
-    const turn = this.deps.transcript().lastTurnUsage;
-    const session = this.deps.service().getSessionUsage();
-    if (!turn || session.totalTokens === 0) {
+  /** Context ring + percent in the toolbar; hidden until usage is known. */
+  private syncContextRing(readout: ContextReadout | undefined): void {
+    const el = this.deps.elements.contextEl();
+    if (readout === undefined) {
       el.hide();
       return;
     }
+    const percent = contextPercent(readout.fraction);
+    const level = contextLevel(readout.fraction);
     el.show();
-    el.setAttr("title", `${formatUsage(turn)} · current turn`);
-    const parts = buildTurnUsageChromeParts(turn);
-    parts.forEach((part, index) => {
-      if (index > 0) el.createSpan({ text: " · " });
-      const span = el.createSpan({ text: part.text });
-      if (part.cls) for (const cls of part.cls.split(" ")) if (cls) span.addClass(cls);
-    });
-  }
-
-  /** Glanceable color-coded context-window fill bar; hidden until usage is known. */
-  private syncContextBar(readout: ContextReadout | undefined): void {
-    const barEl = this.deps.elements.contextBarEl();
-    const percentEl = this.deps.elements.contextPercentEl();
-    if (readout === undefined) {
-      barEl.hide();
-      percentEl.hide();
-      return;
-    }
-    const fraction = readout.fraction;
-    const percent = contextPercent(fraction);
-    const title = formatContextReadoutTitle(readout);
-    barEl.show();
-    percentEl.show();
-    barEl.setAttr("aria-label", `Context window ${percent}% used`);
-    barEl.setAttr("title", title);
-    barEl.value = percent;
-    // Drive the CSS arc/gauge fill (conic-gradient ring) off the same percent
-    // the helpers already compute — no new logic, just expose it to the style.
-    barEl.style.setProperty("--ctx-pct", String(percent));
-    barEl.removeClasses(["is-ok", "is-warn", "is-high"]);
-    barEl.addClass(`is-${contextLevel(fraction)}`);
-    percentEl.setText(`${percent}%`);
-    percentEl.setAttr("title", title);
-    percentEl.removeClasses(["is-ok", "is-warn", "is-high"]);
-    percentEl.addClass(`is-${contextLevel(fraction)}`);
+    el.setAttr("aria-label", `Context window ${percent}% used`);
+    el.setAttr("title", formatContextReadoutTitle(readout));
+    el.removeClasses(["is-ok", "is-warn", "is-high"]);
+    el.addClass(`is-${level}`);
+    const offset = CONTEXT_RING_LENGTH * (1 - Math.min(100, Math.max(0, percent)) / 100);
+    this.deps.elements.contextRingEl().setAttribute("stroke-dashoffset", offset.toFixed(2));
+    this.deps.elements.contextPercentEl().setText(`${percent}%`);
   }
 
   /** Fire one-shot background toasts as the context window fills or cost crosses the cap. */
@@ -192,19 +170,22 @@ export class ChatChrome {
   setRunning(running: boolean): void {
     const sendButton = this.deps.elements.sendButton();
     sendButton.disabled = false;
-    let sendLabel: string;
-    if (running) {
-      sendLabel = this.deps.state().queuedPromptArmed ? "Update" : "Queue";
-    } else {
-      sendLabel = "Send";
+    const action = sendAction(running, this.deps.state().queuedPromptArmed);
+    if (sendButton.getAttribute("data-ac-state") !== action) {
+      sendButton.setAttribute("data-ac-state", action);
+      sendButton.setAttr("aria-label", SEND_LABELS[action]);
+      sendButton.setAttr("title", SEND_LABELS[action]);
+      sendButton.empty();
+      setIcon(sendButton, action === "send" ? "arrow-up" : "list-plus");
     }
-    sendButton.setText(sendLabel);
+    const working = this.deps.elements.workingEl();
+    working.parentElement?.toggleClass("is-running", running);
     if (running) {
       this.deps.elements.stopButton().show();
-      this.deps.elements.workingEl().show();
+      working.show();
     } else {
       this.deps.elements.stopButton().hide();
-      this.deps.elements.workingEl().hide();
+      working.hide();
       this.deps.elements.statusEl().setText("");
     }
   }

@@ -49,15 +49,15 @@ const shown = (el: HTMLElement | null) => !!el && el.style.display !== "none";
 
 function chrome() {
   return {
-    send: ui.$<HTMLButtonElement>(".agentic-chat-send")?.textContent ?? "",
+    send: ui.$<HTMLButtonElement>('[data-ac="send"]')?.getAttribute("data-ac-state") ?? "",
     stop: shown(ui.$(".agentic-chat-stop")),
     working: shown(ui.$(".agentic-chat-working")),
     modeDisabled: ui.$(".agentic-chat-mode-toggle")?.classList.contains("is-disabled") ?? false,
   };
 }
 
-const IDLE = { send: "Send", stop: false, working: false, modeDisabled: false };
-const STREAMING = { send: "Queue", stop: true, working: true, modeDisabled: true };
+const IDLE = { send: "send", stop: false, working: false, modeDisabled: false };
+const STREAMING = { send: "queue", stop: true, working: true, modeDisabled: true };
 
 async function mount(turns: ReplayTurn[], held?: Gate, settings = {}): Promise<void> {
   ui = await mountChatView({ turns, waitForRelease: held?.wait, settings });
@@ -67,8 +67,8 @@ describe("chat view state machine", () => {
   it("idle: empty state, Send, no Stop, no working indicator", async () => {
     await mount([]);
     expect(chrome()).toEqual(IDLE);
-    expect(ui.$(".agentic-chat-empty")).not.toBeNull();
-    expect(ui.$$(".agentic-chat-empty-suggestion")).toHaveLength(3);
+    expect(ui.$('[data-ac="empty"]')?.textContent).toContain("What should we work on?");
+    expect(ui.$$('[data-ac="empty"] button')).toHaveLength(0);
   });
 
   it("idle -> streaming -> idle: one send renders the user turn, streams, and settles", async () => {
@@ -88,14 +88,6 @@ describe("chat view state machine", () => {
     expect(ui.calls()).toBe(1);
   });
 
-  it("a suggestion chip sends its prompt", async () => {
-    await mount([replayTextTurn("summary")]);
-    ui.$<HTMLButtonElement>(".agentic-chat-empty-suggestion")?.click();
-    await ui.idle();
-    expect(ui.$(".agentic-chat-user")?.textContent).toContain("Read the active note and summarize it");
-    expect(ui.calls()).toBe(1);
-  });
-
   it("streaming: the Queue button holds the draft as a chip and sends it after the turn", async () => {
     const held = gate();
     await mount([replayTextTurn("first", { hold: true }), replayTextTurn("second")], held);
@@ -103,7 +95,7 @@ describe("chat view state machine", () => {
     expect(chrome()).toEqual(STREAMING);
 
     await ui.queue("follow-up prompt");
-    expect(chrome().send).toBe("Update");
+    expect(chrome().send).toBe("update");
     expect(ui.$(".agentic-chat-chips")?.textContent).toContain("follow-up prompt");
 
     held.release();
@@ -137,7 +129,7 @@ describe("chat view state machine", () => {
     await mount([replayTextTurn("never finishes", { hold: true })], held);
     await ui.send("long task");
     await ui.queue("draft while running");
-    expect(chrome().send).toBe("Update");
+    expect(chrome().send).toBe("update");
 
     ui.$<HTMLButtonElement>(".agentic-chat-stop")?.click();
     await ui.idle();

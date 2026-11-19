@@ -508,8 +508,7 @@ export class AssistantBubble {
    */
   private renderSourceChips(): void {
     if (this.sourcePaths.size === 0) return;
-    const container = this.el.createDiv({ cls: "agentic-chat-sources" });
-    container.createSpan({ cls: "agentic-chat-sources-label", text: "Sources" });
+    const container = this.el.createDiv({ cls: "agentic-chat-sources", attr: { role: "group", "aria-label": "Sources" } });
     const paths = [...this.sourcePaths].slice(0, MAX_SOURCE_CHIPS);
     for (const path of paths) {
       const chip = container.createEl("button", {
@@ -542,17 +541,20 @@ export class AssistantBubble {
     if (existing?.getAttr("data-error-text") === text) return;
     const banner = acHook(this.el.createDiv({ cls: "agentic-chat-error" }), "turn-error");
     banner.setAttr("data-error-text", text);
+    const errorIcon = banner.createSpan({ cls: "agentic-chat-error-icon", attr: { "aria-hidden": "true" } });
+    setIcon(errorIcon, "alert-circle");
+    const errorBody = banner.createDiv({ cls: "agentic-chat-error-body" });
     if (text.includes("\n")) {
-      const details = banner.createEl("details", { cls: "agentic-chat-error-details" });
+      const details = errorBody.createEl("details", { cls: "agentic-chat-error-details" });
       details.createEl("summary", { text: text.split("\n", 1)[0] });
       details.createEl("pre", { text });
     } else {
-      banner.setText(text);
+      errorBody.createDiv({ cls: "agentic-chat-error-text", text });
     }
     // A text+error turn already carries the "Ask again" action row; only add an
     // inline banner Retry for text-less failures so there is one action, one way.
     if (this.actions.onRetry && !this.markdown) {
-      const retry = banner.createEl("button", {
+      const retry = errorBody.createEl("button", {
         cls: "agentic-chat-error-retry",
         attr: { type: "button", "aria-label": "Retry the failed request" },
       });
@@ -564,14 +566,18 @@ export class AssistantBubble {
     this.el.insertBefore(banner, this.actionsEl);
   }
 
-  /** Render the inline action row (copy, retry). Safe to call once. */
-  showActions(opts: { canRetry: boolean }): void {
+  /**
+   * Render the turn actions (copy, retry) and the per-answer meta
+   * (`6s · 4.1k tokens · $0.004`). Safe to call once.
+   */
+  showActions(opts: { canRetry: boolean; meta?: string }): void {
     if (this.actionsEl.childElementCount > 0) return;
     if (!this.markdown.trim()) return;
     this.actionButton("copy", "Copy response", () => void this.copy());
     if (opts.canRetry && this.actions.onRetry) {
       this.actionButton("refresh-cw", "Ask again", this.actions.onRetry);
     }
+    if (opts.meta) acHook(this.actionsEl.createSpan({ cls: "agentic-chat-turn-meta", text: opts.meta }), "turn-meta");
   }
 
   private actionButton(icon: string, label: string, onClick: () => void): void {

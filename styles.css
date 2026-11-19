@@ -1,3 +1,139 @@
+/* ===== Agentic Chat — design tokens (UI v2) =====
+
+   The only place for raw colours, pixel sizes, and Obsidian theme variables.
+   Every rule below uses --ac-* tokens; `npm run check:css-tokens` enforces it.
+   The block sits on body (modals and settings live outside the view) and again
+   on the view, so the view resolves the theme variables of its own leaf. */
+
+body,
+.agentic-chat-view {
+  /* spacing: 4px grid, with half steps for dense rows */
+  --ac-space-0: 2px;
+  --ac-space-1: 4px;
+  --ac-space-1h: 6px;
+  --ac-space-2: 8px;
+  --ac-space-2h: 10px;
+  --ac-space-3: 12px;
+  --ac-space-3h: 14px;
+  --ac-space-4: 16px;
+  --ac-space-6: 24px;
+
+  /* lines */
+  --ac-line: 1px;
+  --ac-line-strong: 2px;
+  --ac-line-accent: 3px;
+
+  /* radius */
+  --ac-radius-xs: 4px;
+  --ac-radius-s: 6px;
+  --ac-radius-m: 10px;
+  --ac-radius-l: 16px;
+  --ac-radius-pill: 999px;
+
+  /* type */
+  --ac-font-family: var(--font-interface);
+  --ac-font-mono: var(--font-monospace);
+  --ac-font-ui: var(--font-ui-small);
+  --ac-font-small: var(--font-ui-smaller);
+  --ac-font-tiny: var(--font-smallest);
+  --ac-font-body: var(--font-text-size);
+  --ac-line-body: var(--line-height-normal);
+  --ac-weight-medium: var(--font-medium);
+  --ac-weight-semibold: var(--font-semibold);
+  --ac-weight-bold: var(--font-bold);
+  --ac-font-title: 20px;
+
+  /* surfaces and text */
+  --ac-surface: var(--background-primary);
+  /* Raised and sunken are tints, so they show on any pane background (the
+     sidebar is --background-secondary, the main area --background-primary). */
+  --ac-surface-raised: color-mix(in srgb, var(--text-normal) 6%, transparent);
+  --ac-surface-sunken: color-mix(in srgb, var(--text-normal) 10%, transparent);
+  --ac-border: var(--background-modifier-border);
+  --ac-hover: var(--background-modifier-hover);
+  --ac-active: var(--background-modifier-active-hover, var(--background-secondary-alt));
+  --ac-text: var(--text-normal);
+  --ac-text-muted: var(--text-muted);
+  --ac-text-faint: var(--text-faint);
+  --ac-text-on-accent: var(--text-on-accent);
+  --ac-accent: var(--interactive-accent);
+  --ac-link: var(--text-accent);
+  --ac-selection: var(--text-selection, var(--interactive-accent));
+
+  /* status: the only five state colours */
+  --ac-status-running: var(--interactive-accent);
+  --ac-status-needs-you: var(--color-orange);
+  --ac-status-error: var(--color-red);
+  --ac-status-done: var(--color-green);
+  --ac-status-unread: var(--interactive-accent);
+
+  /* tints: a status mixed into the surface */
+  --ac-tint-error: color-mix(in srgb, var(--ac-status-error) 8%, var(--ac-surface));
+  --ac-tint-error-border: color-mix(in srgb, var(--ac-status-error) 30%, var(--ac-border));
+  --ac-tint-needs-you: color-mix(in srgb, var(--ac-status-needs-you) 6%, var(--ac-surface));
+  --ac-tint-needs-you-border: color-mix(in srgb, var(--ac-status-needs-you) 45%, var(--ac-border));
+  --ac-tint-done: color-mix(in srgb, var(--ac-status-done) 14%, transparent);
+  --ac-tint-add: color-mix(in srgb, var(--ac-status-done) 13%, transparent);
+  --ac-tint-remove: color-mix(in srgb, var(--ac-status-error) 12%, transparent);
+  --ac-tint-running: color-mix(in srgb, var(--ac-status-running) 25%, transparent);
+  --ac-tint-accent-border: color-mix(in srgb, var(--ac-accent) 55%, var(--ac-border));
+
+  /* rings and shadows */
+  --ac-ring-accent-inset: inset 0 0 0 1px var(--ac-accent);
+  --ac-ring-needs-you: 0 0 0 1px var(--ac-status-needs-you);
+  --ac-ring-focus: 0 0 0 3px color-mix(in srgb, var(--ac-accent) 14%, transparent);
+  --ac-shadow-s: var(--shadow-s);
+  --ac-shadow-card: 0 1px 2px rgba(0, 0, 0, 0.04), 0 4px 16px rgba(0, 0, 0, 0.04);
+  --ac-shadow-menu: 0 12px 32px rgba(0, 0, 0, 0.16);
+  --ac-layer-popover: var(--layer-popover);
+
+  /* sizes */
+  --ac-dot: 7px;
+  --ac-icon-xs: 12px;
+  --ac-icon-s: 14px;
+  --ac-icon: 16px;
+  --ac-icon-l: 18px;
+  --ac-icon-xl: 28px;
+  --ac-spinner: 13px;
+  --ac-chip-remove: 18px;
+  --ac-chip-h: 24px;
+  --ac-hit-s: 22px;
+  --ac-hit: 28px;
+  --ac-send: 32px;
+  --ac-row-min: 32px;
+  --ac-input-min: 48px;
+  --ac-textarea-min: 72px;
+  --ac-thumb-w: 160px;
+  --ac-thumb-h: 120px;
+  --ac-source-max: 180px;
+  --ac-source-name-max: 150px;
+  --ac-chip-max: 220px;
+  --ac-chip-text-max: 200px;
+  --ac-chip-wide: 320px;
+  --ac-tab-max: 140px;
+  --ac-menu-w: 240px;
+  --ac-scroll-s: 200px;
+  --ac-scroll-m: 240px;
+  --ac-scroll-l: 360px;
+  --ac-user-max: 85%;
+
+  --ac-safe-bottom: env(safe-area-inset-bottom, 0px);
+
+  /* motion */
+  --ac-motion: 160ms cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+
+/* Touch: 44px targets and at least 16px body text (iOS zooms on smaller inputs). */
+body.is-mobile,
+.is-mobile .agentic-chat-view {
+  --ac-hit: 44px;
+  --ac-hit-s: 36px;
+  --ac-send: 40px;
+  --ac-chip-h: 32px;
+  --ac-chip-remove: 28px;
+  --ac-font-body: max(16px, var(--font-text-size));
+}
+
 /* ===== Agentic Chat — sidebar view ===== */
 
 .agentic-chat-view {
@@ -27,6 +163,8 @@
 
 /* --- Message list --- */
 
+/* One turn reads as one unit: the user's message, the activity, the answer,
+   then sources and actions. The transcript gets the space. */
 .agentic-chat-messages {
   flex: 1 1 auto;
   min-width: 0;
@@ -35,114 +173,106 @@
   width: 100%;
   overflow-y: auto;
   overflow-x: hidden;
-  padding: var(--size-4-3);
+  padding: var(--ac-space-3) var(--ac-space-4) var(--ac-space-6);
   display: flex;
   flex-direction: column;
-  gap: var(--size-4-3);
+  gap: var(--ac-space-3);
   /* Let users select and copy chat text. Descendants at the default `auto`
      inherit this used value, so the whole transcript becomes selectable. */
   user-select: text;
   -webkit-user-select: text;
 }
 
+/* A new turn starts with more air above the user's message. */
+.agentic-chat-messages > .agentic-chat-user:not(:first-child) {
+  margin-top: var(--ac-space-3);
+}
+
 .agentic-chat-empty {
-  margin: auto;
-  text-align: center;
-  color: var(--text-muted);
-  max-width: 28em;
+  margin: auto 0;
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: var(--size-4-2);
+  align-items: flex-start;
+  gap: var(--ac-space-3);
+  padding: 0 var(--ac-space-2);
+  max-width: 32em;
+  color: var(--ac-text-muted);
+}
+
+.agentic-chat-empty-icon {
+  color: var(--ac-accent);
 }
 
 .agentic-chat-empty-icon svg {
-  width: 32px;
-  height: 32px;
+  width: var(--ac-icon-xl);
+  height: var(--ac-icon-xl);
 }
 
-.agentic-chat-empty-suggestions {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: var(--size-2-2);
-  margin-top: var(--size-2-1);
+.agentic-chat-empty-title {
+  margin: 0;
+  color: var(--ac-text);
+  font-size: var(--ac-font-title);
+  font-weight: var(--ac-weight-semibold);
+  letter-spacing: -0.01em;
 }
 
-.agentic-chat-empty-suggestion {
-  padding: 5px 12px;
-  border: 1px solid var(--background-modifier-border);
-  border-radius: 999px;
-  background-color: var(--background-secondary);
-  color: var(--text-muted);
-  font-size: var(--font-ui-smaller);
-  font-weight: var(--font-medium);
-  cursor: pointer;
-  transition: background-color 150ms, border-color 150ms, color 150ms;
-}
-
-.agentic-chat-empty-suggestion:hover {
-  background-color: var(--background-modifier-hover);
-  border-color: var(--interactive-accent);
-  color: var(--text-normal);
-}
-
-.agentic-chat-empty-suggestion:focus-visible {
-  outline: 2px solid var(--interactive-accent);
-  outline-offset: 1px;
+.agentic-chat-empty-text {
+  margin: 0;
+  font-size: var(--ac-font-ui);
+  line-height: var(--ac-line-body);
 }
 
 .agentic-chat-message {
-  border-radius: var(--radius-m);
   max-width: 100%;
   min-width: 0;
   overflow-wrap: anywhere;
 }
 
+/* User: a soft raised bubble on the right. */
 .agentic-chat-user {
   align-self: flex-end;
-  background-color: var(--background-secondary-alt);
-  color: var(--text-normal);
-  padding: var(--size-4-2) var(--size-4-3);
-  max-width: 88%;
-  border: 1px solid var(--background-modifier-border);
-  border-radius: var(--radius-m);
+  max-width: var(--ac-user-max);
+  padding: var(--ac-space-2) var(--ac-space-3);
+  border-radius: var(--ac-radius-l) var(--ac-radius-l) var(--ac-radius-s) var(--ac-radius-l);
+  background-color: var(--ac-surface-raised);
+  color: var(--ac-text);
+  font-size: var(--ac-font-body);
+  line-height: 1.5;
 }
 
-/* The user bubble no longer uses the accent fill, so default selection is fine. */
 .agentic-chat-user ::selection,
 .agentic-chat-user::selection {
-  background-color: var(--text-selection, var(--interactive-accent));
-  color: var(--text-on-accent);
+  background-color: var(--ac-selection);
+  color: var(--ac-text-on-accent);
 }
 
 .agentic-chat-user-text {
   white-space: pre-wrap;
-  /* Editing a sent prompt: click to reload it into the composer. */
   cursor: text;
 }
 
+/* Editing a sent prompt: click to reload it into the composer. */
 .agentic-chat-user.is-editable .agentic-chat-user-text {
   cursor: pointer;
 }
 
 .agentic-chat-user.is-editing {
-  outline: 2px solid var(--interactive-accent);
-  outline-offset: 1px;
+  outline: var(--ac-line-strong) solid var(--ac-accent);
+  outline-offset: var(--ac-line);
 }
 
 .agentic-chat-user-attachments {
-  font-size: var(--font-ui-smaller);
-  opacity: 0.85;
-  margin-bottom: var(--size-2-2);
+  margin-bottom: var(--ac-space-1);
+  color: var(--ac-text-muted);
+  font-size: var(--ac-font-small);
 }
 
 /* Inline image thumbnails in a user bubble (vision attachments). */
 .agentic-chat-user-images {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--size-2-2);
-  margin-bottom: var(--size-2-2);
+  gap: var(--ac-space-1);
+  margin-bottom: var(--ac-space-1);
 }
 
 .agentic-chat-user-images:empty {
@@ -150,14 +280,14 @@
 }
 
 .agentic-chat-user-image {
-  max-width: 160px;
-  max-height: 120px;
+  max-width: var(--ac-thumb-w);
+  max-height: var(--ac-thumb-h);
   width: auto;
   height: auto;
   object-fit: contain;
-  border-radius: var(--radius-s);
-  border: 1px solid var(--background-modifier-border);
-  background-color: var(--background-primary);
+  border-radius: var(--ac-radius-s);
+  border: var(--ac-line) solid var(--ac-border);
+  background-color: var(--ac-surface);
 }
 
 .agentic-chat-user-image.is-openable {
@@ -165,19 +295,21 @@
 }
 
 .agentic-chat-user-image.is-openable:hover {
-  border-color: var(--interactive-accent);
+  border-color: var(--ac-accent);
 }
 
 /* Vault images rendered inline in assistant markdown. */
 .agentic-chat-text img.agentic-chat-image {
-  border-radius: var(--radius-s);
-  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--ac-radius-s);
+  border: var(--ac-line) solid var(--ac-border);
 }
 
+/* Assistant: no container. Full width, reading-size type. */
 .agentic-chat-assistant {
-  align-self: flex-start;
-  background-color: var(--background-secondary);
-  padding: var(--size-4-2) var(--size-4-3);
+  align-self: stretch;
+  display: flex;
+  flex-direction: column;
+  gap: var(--ac-space-2);
   width: 100%;
   max-width: 100%;
   min-width: 0;
@@ -185,11 +317,15 @@
 }
 
 .agentic-chat-text {
-  font-size: var(--font-ui-medium);
-  line-height: 1.5;
+  font-size: var(--ac-font-body);
+  line-height: var(--ac-line-body);
   min-width: 0;
   max-width: 100%;
   overflow-wrap: anywhere;
+}
+
+.agentic-chat-text.is-empty {
+  display: none;
 }
 
 .agentic-chat-text.is-streaming {
@@ -206,12 +342,15 @@
 
 /* Rendered markdown (finalized assistant text) lives inside .agentic-chat-text
    via Obsidian's MarkdownRenderer. Clamp its inner elements so a long code
-   block, table, or URL never forces the pane wider than the leaf — the bug
-   the user sees as "right side cut off" after shrinking the window. */
+   block, table, or URL never forces the pane wider than the leaf. */
 .agentic-chat-text.markdown-rendered {
   min-width: 0;
   max-width: 100%;
   overflow: hidden;
+}
+
+.agentic-chat-text a {
+  color: var(--ac-link);
 }
 
 .agentic-chat-text pre,
@@ -225,6 +364,7 @@
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   overflow-x: auto;
+  border-radius: var(--ac-radius-s);
 }
 
 .agentic-chat-text table {
@@ -243,43 +383,69 @@
 }
 
 .agentic-chat-mermaid-error {
-  border-left: 3px solid var(--text-error);
-  padding-left: var(--size-2-3);
+  border-left: var(--ac-line-accent) solid var(--ac-status-error);
+  padding-left: var(--ac-space-1h);
 }
 
+/* Errors: the red tint and an alert icon. One of the two loud moments. */
 .agentic-chat-error {
   display: flex;
-  flex-direction: column;
-  gap: var(--size-2-2);
-  padding: var(--size-4-2) var(--size-4-3);
-  margin: var(--size-2-2) 0 var(--size-4-2);
-  border-radius: var(--radius-s);
-  background-color: oklch(66.6% 0.18 21.433 / 0.1);
-  border: 1px solid oklch(66.6% 0.18 21.433 / 0.3);
-  color: var(--text-normal);
-  font-size: 12px;
+  align-items: flex-start;
+  gap: var(--ac-space-2);
+  padding: var(--ac-space-2) var(--ac-space-2h);
+  border-radius: var(--ac-radius-m);
+  background-color: var(--ac-tint-error);
+  border: var(--ac-line) solid var(--ac-tint-error-border);
+  color: var(--ac-text);
+  font-size: var(--ac-font-ui);
   line-height: 1.4;
+}
+
+.agentic-chat-error-icon {
+  display: flex;
+  flex: 0 0 auto;
+  margin-top: var(--ac-space-0);
+  color: var(--ac-status-error);
+}
+
+.agentic-chat-error-icon svg {
+  width: var(--ac-icon);
+  height: var(--ac-icon);
+}
+
+.agentic-chat-error-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ac-space-1h);
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 .agentic-chat-error-retry {
   display: inline-flex;
   align-items: center;
-  gap: var(--size-2-1);
+  gap: var(--ac-space-1);
   align-self: flex-start;
-  padding: 3px 10px;
-  border-radius: var(--radius-s);
-  border: 1px solid var(--background-modifier-border);
-  background-color: var(--background-secondary-alt);
-  color: var(--text-normal);
-  font-size: var(--font-ui-smaller);
-  font-weight: var(--font-medium);
+  min-height: var(--ac-hit-s);
+  padding: 0 var(--ac-space-2h);
+  border-radius: var(--ac-radius-s);
+  border: var(--ac-line) solid var(--ac-border);
+  background-color: var(--ac-surface);
+  color: var(--ac-text);
+  font-size: var(--ac-font-small);
+  font-weight: var(--ac-weight-medium);
   cursor: pointer;
-  transition: background-color 150ms, border-color 150ms;
+  box-shadow: none;
+  transition: background-color var(--ac-motion), border-color var(--ac-motion);
+}
+
+.agentic-chat-error-retry svg {
+  width: var(--ac-icon-xs);
+  height: var(--ac-icon-xs);
 }
 
 .agentic-chat-error-retry:hover {
-  background-color: var(--background-modifier-hover);
-  border-color: var(--interactive-accent);
+  background-color: var(--ac-hover);
 }
 
 /* A multi-line error collapses so only its first line shows until expanded. */
@@ -288,91 +454,92 @@
 }
 
 .agentic-chat-error-details > pre {
-  margin: var(--size-2-2) 0 0;
+  margin: var(--ac-space-1) 0 0;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-  font-size: var(--font-smallest);
+  font-size: var(--ac-font-tiny);
 }
 
-/* --- Info / slash-command output --- */
+/* --- Info / slash-command output: a quiet raised card, no accent border --- */
 
 .agentic-chat-info {
   align-self: stretch;
-  background-color: var(--background-secondary);
-  padding: var(--size-4-2) var(--size-4-3);
   width: 100%;
-  font-size: var(--font-ui-small);
+  padding: var(--ac-space-2) var(--ac-space-3);
+  border-radius: var(--ac-radius-m);
+  background-color: var(--ac-surface-raised);
+  font-size: var(--ac-font-ui);
 }
 
 .agentic-chat-info-details > summary {
   cursor: pointer;
-  font-weight: var(--font-medium);
-  color: var(--text-muted);
+  font-weight: var(--ac-weight-medium);
+  color: var(--ac-text-muted);
 }
 
 .agentic-chat-info-body {
-  margin-top: var(--size-2-3);
+  margin-top: var(--ac-space-1h);
 }
 
 .agentic-chat-info-list {
   margin: 0;
-  padding-left: var(--size-4-4);
+  padding-left: var(--ac-space-4);
   display: flex;
   flex-direction: column;
-  gap: var(--size-2-1);
+  gap: var(--ac-space-0);
 }
 
 .agentic-chat-info-list code {
-  font-size: var(--font-smallest);
+  font-size: var(--ac-font-tiny);
 }
 
-/* Error blocks: a subtle error-tinted background with a clear red accent, but
-   normal-contrast body text. (Previously red text on a red background, which
-   left the message unreadable.) */
+/* An error panel (slash command, settings gate) uses the same red tint. */
 .agentic-chat-info-error {
-  background-color: var(--background-secondary);
-  border-left: 3px solid var(--text-error);
-  color: var(--text-normal);
+  background-color: var(--ac-tint-error);
+  border: var(--ac-line) solid var(--ac-tint-error-border);
+  color: var(--ac-text);
 }
 
 .agentic-chat-info-error .agentic-chat-info-body {
-  color: var(--text-normal);
+  color: var(--ac-text);
 }
 
 .agentic-chat-info-error .agentic-chat-info-details > summary {
-  color: var(--text-error);
+  color: var(--ac-status-error);
 }
 
 .agentic-chat-info-error ::selection {
-  background-color: var(--text-error);
-  color: var(--text-on-accent);
+  background-color: var(--ac-status-error);
+  color: var(--ac-text-on-accent);
 }
 
+/* A question from the agent needs you: the orange card. */
 .agentic-chat-ask-user {
-  border-left: 3px solid var(--interactive-accent);
+  background-color: var(--ac-tint-needs-you);
+  border: var(--ac-line) solid var(--ac-tint-needs-you-border);
 }
 
 .agentic-chat-ask-question {
-  color: var(--text-normal);
-  font-weight: var(--font-medium);
-  margin-bottom: var(--size-2-2);
+  color: var(--ac-text);
+  font-weight: var(--ac-weight-medium);
+  margin-bottom: var(--ac-space-1);
 }
 
 .agentic-chat-ask-state {
-  color: var(--text-muted);
-  margin-bottom: var(--size-2-2);
+  color: var(--ac-text-muted);
+  margin-bottom: var(--ac-space-1);
 }
 
 .agentic-chat-ask-controls {
   display: flex;
   flex-direction: column;
-  gap: var(--size-2-2);
+  gap: var(--ac-space-1);
 }
 
 .agentic-chat-ask-choices {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--size-2-1);
+  gap: var(--ac-space-1);
 }
 
 .agentic-chat-ask-choice {
@@ -383,6 +550,7 @@
   width: 100%;
   min-height: 4.5em;
   resize: vertical;
+  font-size: var(--ac-font-body);
 }
 
 .agentic-chat-ask-submit {
@@ -401,21 +569,21 @@
    and the text was hard to read). */
 .agentic-chat-settings-warning {
   display: flex;
-  gap: var(--size-4-2);
+  gap: var(--ac-space-2);
   align-items: flex-start;
-  margin: var(--size-4-2) 0;
-  padding: var(--size-4-2) var(--size-4-3);
-  border-radius: var(--radius-m);
-  background-color: var(--background-secondary);
-  border-left: 3px solid var(--text-warning);
-  color: var(--text-muted);
-  font-size: var(--font-ui-small);
+  margin: var(--ac-space-2) 0;
+  padding: var(--ac-space-2) var(--ac-space-3);
+  border-radius: var(--ac-radius-m);
+  background-color: var(--ac-surface-raised);
+  border-left: var(--ac-line-accent) solid var(--ac-status-needs-you);
+  color: var(--ac-text-muted);
+  font-size: var(--ac-font-ui);
 }
 
 .agentic-chat-settings-warning-icon {
   flex-shrink: 0;
-  font-weight: var(--font-bold);
-  color: var(--text-warning);
+  font-weight: var(--ac-weight-bold);
+  color: var(--ac-status-needs-you);
 }
 
 /* --- Settings tabs --- */
@@ -438,37 +606,37 @@
 .agentic-chat-settings-tabs {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--size-2-2);
-  margin-bottom: var(--size-4-3);
-  border-bottom: 1px solid var(--background-modifier-border);
-  padding-bottom: var(--size-2-3);
+  gap: var(--ac-space-1);
+  margin-bottom: var(--ac-space-3);
+  border-bottom: var(--ac-line) solid var(--ac-border);
+  padding-bottom: var(--ac-space-1h);
 }
 
 .agentic-chat-settings-tab {
-  padding: var(--size-2-2) var(--size-4-2);
-  border-radius: var(--radius-m);
+  padding: var(--ac-space-1) var(--ac-space-2);
+  border-radius: var(--ac-radius-m);
   background-color: transparent;
   border: none;
-  color: var(--text-muted);
-  font-size: var(--font-ui-small);
+  color: var(--ac-text-muted);
+  font-size: var(--ac-font-ui);
   cursor: pointer;
   box-shadow: none;
 }
 
 .agentic-chat-settings-tab:hover {
-  background-color: var(--background-modifier-hover);
-  color: var(--text-normal);
+  background-color: var(--ac-hover);
+  color: var(--ac-text);
 }
 
 .agentic-chat-settings-tab:focus-visible {
-  outline: 2px solid var(--interactive-accent);
-  outline-offset: 2px;
+  outline: var(--ac-line-strong) solid var(--ac-accent);
+  outline-offset: var(--ac-line-strong);
 }
 
 .agentic-chat-settings-tab.is-active {
-  background-color: var(--background-modifier-active-hover, var(--background-secondary-alt));
-  color: var(--text-normal);
-  font-weight: var(--font-semibold);
+  background-color: var(--ac-active, var(--ac-surface-sunken));
+  color: var(--ac-text);
+  font-weight: var(--ac-weight-semibold);
 }
 
 /* --- Reasoning --- */
@@ -476,21 +644,21 @@
 .agentic-chat-reasoning {
   display: flex;
   flex-direction: column;
-  gap: var(--size-2-1);
-  margin-bottom: var(--size-2-2);
-  font-size: var(--font-ui-small);
+  gap: var(--ac-space-0);
+  margin-bottom: var(--ac-space-1);
+  font-size: var(--ac-font-ui);
 }
 
 /* Header: chevron + status pill ("Thinking" pulsing while streaming) + live elapsed time. */
 .agentic-chat-reasoning-summary {
   display: inline-flex;
   align-items: center;
-  gap: var(--size-2-2);
+  gap: var(--ac-space-1);
   width: fit-content;
-  padding: 2px 0;
+  padding: var(--ac-space-0) 0;
   cursor: pointer;
   list-style: none;
-  color: var(--text-muted);
+  color: var(--ac-text-muted);
 }
 
 .agentic-chat-reasoning-summary::-webkit-details-marker {
@@ -500,13 +668,13 @@
 .agentic-chat-reasoning-chevron {
   display: flex;
   align-items: center;
-  color: var(--text-faint);
+  color: var(--ac-text-faint);
   transition: transform 0.2s cubic-bezier(0.23, 1, 0.32, 1);
 }
 
 .agentic-chat-reasoning-chevron svg {
-  width: 12px;
-  height: 12px;
+  width: var(--ac-icon-xs);
+  height: var(--ac-icon-xs);
 }
 
 .agentic-chat-reasoning[open] .agentic-chat-reasoning-chevron {
@@ -516,29 +684,29 @@
 .agentic-chat-reasoning-pill {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 3px 8px 3px 6px;
-  border-radius: var(--radius-s);
-  background-color: var(--background-secondary-alt);
-  border: 1px solid var(--background-modifier-border);
-  font-size: var(--font-ui-smaller);
-  color: var(--text-normal);
+  gap: var(--ac-space-1h);
+  padding: var(--ac-space-1) var(--ac-space-2) var(--ac-space-1) var(--ac-space-1h);
+  border-radius: var(--ac-radius-s);
+  background-color: var(--ac-surface-sunken);
+  border: var(--ac-line) solid var(--ac-border);
+  font-size: var(--ac-font-small);
+  color: var(--ac-text);
 }
 
 .agentic-chat-reasoning-dot {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 6px;
-  height: 6px;
+  width: var(--ac-dot);
+  height: var(--ac-dot);
   flex-shrink: 0;
   border-radius: 50%;
-  background-color: var(--interactive-accent);
+  background-color: var(--ac-accent);
 }
 
 .agentic-chat-reasoning-dot svg {
-  width: 10px;
-  height: 10px;
+  width: var(--ac-icon-xs);
+  height: var(--ac-icon-xs);
 }
 
 .agentic-chat-reasoning:not(.is-done) .agentic-chat-reasoning-dot {
@@ -548,21 +716,21 @@
 /* Settled reasoning uses the same "completed" capsule as tool-step icons:
    green tint well + check icon + pop-in. */
 .agentic-chat-reasoning.is-done .agentic-chat-reasoning-dot {
-  width: 14px;
-  height: 14px;
-  background-color: oklch(70.5% 0.154 153.814 / 0.14);
-  color: var(--text-success);
+  width: var(--ac-icon-s);
+  height: var(--ac-icon-s);
+  background-color: var(--ac-tint-done);
+  color: var(--ac-status-done);
   animation: agentic-chat-pop-in 300ms cubic-bezier(0.23, 1, 0.32, 1);
 }
 
 .agentic-chat-reasoning-label {
-  font-weight: var(--font-medium);
-  color: var(--text-muted);
+  font-weight: var(--ac-weight-medium);
+  color: var(--ac-text-muted);
 }
 
 .agentic-chat-reasoning-time {
-  font-size: var(--font-smallest);
-  color: var(--text-faint);
+  font-size: var(--ac-font-tiny);
+  color: var(--ac-text-faint);
   font-variant-numeric: tabular-nums;
 }
 
@@ -572,8 +740,8 @@
    tool_execution_start) so commentary renders above the tool call it introduces. */
 .agentic-chat-timeline {
   position: relative;
-  padding-left: 14px;
-  margin-bottom: var(--size-2-1);
+  padding-left: var(--ac-space-3h);
+  margin-bottom: var(--ac-space-0);
   min-width: 0;
   max-width: 100%;
 }
@@ -586,26 +754,26 @@
 }
 
 .agentic-chat-timeline .agentic-chat-text:not(.is-empty) {
-  margin-bottom: var(--size-2-2);
+  margin-bottom: var(--ac-space-1);
 }
 
 .agentic-chat-timeline-rail {
   position: absolute;
-  left: 4px;
-  top: 8px;
-  width: 1px;
-  background-color: var(--background-modifier-border);
-  border-radius: 1px;
+  left: var(--ac-space-1);
+  top: var(--ac-space-2);
+  width: var(--ac-line);
+  background-color: var(--ac-border);
+  border-radius: var(--ac-radius-xs);
   pointer-events: none;
   transition: height 160ms cubic-bezier(0.23, 1, 0.32, 1);
 }
 
 .agentic-chat-reasoning-body {
   white-space: pre-wrap;
-  color: var(--text-muted);
+  color: var(--ac-text-muted);
   padding-left: 0;
-  margin-top: var(--size-2-1);
-  font-size: 12px;
+  margin-top: var(--ac-space-0);
+  font-size: var(--ac-font-small);
   line-height: 1.5;
 }
 
@@ -648,80 +816,65 @@
   }
 }
 
-/* --- Source chips under a finalized response --- */
+/* --- Source chips under a finalized response: outline pills --- */
 
 .agentic-chat-sources {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: var(--size-2-2);
-  margin-top: var(--size-2-3);
-  margin-bottom: var(--size-2-2);
-  padding-top: var(--size-2-2);
-  border-top: 1px solid var(--background-modifier-border);
-}
-
-.agentic-chat-sources-label {
-  font-size: var(--font-smallest);
-  font-weight: var(--font-semibold);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--text-faint);
-  margin-right: var(--size-2-1);
+  gap: var(--ac-space-1h);
 }
 
 .agentic-chat-source-chip {
   display: inline-flex;
   align-items: center;
-  gap: var(--size-2-1);
-  max-width: 160px;
-  padding: 2px var(--size-2-2);
-  height: 22px;
-  border-radius: var(--radius-s);
-  border: 1px solid var(--background-modifier-border);
-  background-color: var(--background-secondary-alt);
-  color: var(--text-muted);
-  font-size: var(--font-ui-smaller);
+  gap: var(--ac-space-1);
+  max-width: var(--ac-source-max);
+  height: var(--ac-chip-h);
+  padding: 0 var(--ac-space-2);
+  border-radius: var(--ac-radius-pill);
+  border: var(--ac-line) solid var(--ac-border);
+  background-color: transparent;
+  color: var(--ac-text-muted);
+  font-size: var(--ac-font-small);
   line-height: 1;
   cursor: pointer;
   box-shadow: none;
-  transition: background-color 150ms cubic-bezier(0.23, 1, 0.32, 1), color 150ms, border-color 150ms;
+  transition: background-color var(--ac-motion), color var(--ac-motion);
 }
 
 .agentic-chat-source-chip:hover {
-  background-color: var(--background-modifier-hover);
-  color: var(--text-normal);
-  border-color: var(--interactive-accent);
+  background-color: var(--ac-hover);
+  color: var(--ac-text);
 }
 
 .agentic-chat-source-chip:focus-visible,
 .agentic-chat-error-retry:focus-visible {
-  outline: 2px solid var(--interactive-accent);
-  outline-offset: 1px;
+  outline: var(--ac-line-strong) solid var(--ac-accent);
+  outline-offset: var(--ac-line);
 }
 
 .agentic-chat-source-chip-icon {
   display: flex;
   align-items: center;
   flex-shrink: 0;
-  color: var(--text-faint);
 }
 
 .agentic-chat-source-chip-icon svg {
-  width: 12px;
-  height: 12px;
+  width: var(--ac-icon-xs);
+  height: var(--ac-icon-xs);
 }
 
 .agentic-chat-source-chip-name {
-  max-width: 140px;
+  max-width: var(--ac-source-name-max);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .agentic-chat-sources-more {
-  font-size: var(--font-ui-smaller);
-  color: var(--text-faint);
+  font-size: var(--ac-font-small);
+  color: var(--ac-text-faint);
 }
 
 /* --- Tool call steps --- */
@@ -729,29 +882,29 @@
 .agentic-chat-steps {
   display: flex;
   flex-direction: column;
-  gap: var(--size-2-2);
+  gap: var(--ac-space-1);
   min-width: 0;
   max-width: 100%;
 }
 
 .agentic-chat-steps:not(:empty) {
-  margin-bottom: var(--size-4-2);
+  margin-bottom: var(--ac-space-2);
 }
 
 .agentic-chat-step {
   flex: 1;
   min-width: 0;
-  border: 1px solid var(--background-modifier-border);
-  border-radius: var(--radius-s);
-  padding: var(--size-2-2) var(--size-4-2);
-  background-color: var(--background-primary);
-  font-size: var(--font-ui-small);
+  border: var(--ac-line) solid var(--ac-border);
+  border-radius: var(--ac-radius-s);
+  padding: var(--ac-space-1) var(--ac-space-2);
+  background-color: var(--ac-surface);
+  font-size: var(--ac-font-ui);
   overflow: hidden;
   transition: background-color 150ms cubic-bezier(0.23, 1, 0.32, 1);
 }
 
 .agentic-chat-step:hover {
-  background-color: var(--background-secondary-alt);
+  background-color: var(--ac-surface-sunken);
 }
 
 /* Header row: chevron toggle + status icon + title (+ elapsed time). Only the
@@ -760,14 +913,14 @@
 .agentic-chat-step-header {
   display: flex;
   align-items: center;
-  gap: var(--size-2-2);
-  min-height: 32px;
+  gap: var(--ac-space-1);
+  min-height: var(--ac-row-min);
 }
 
 .agentic-chat-step-row {
   display: flex;
   align-items: flex-start;
-  gap: 6px;
+  gap: var(--ac-space-1h);
   min-width: 0;
   max-width: 100%;
 }
@@ -776,9 +929,9 @@
 .agentic-chat-step-toggle {
   display: flex;
   align-items: center;
-  margin-top: 8px;
-  color: var(--text-faint);
-  border-radius: var(--radius-s);
+  margin-top: var(--ac-space-2);
+  color: var(--ac-text-faint);
+  border-radius: var(--ac-radius-s);
   cursor: pointer;
 }
 
@@ -788,8 +941,8 @@
 }
 
 .agentic-chat-step-toggle:focus-visible {
-  outline: 2px solid var(--interactive-accent);
-  outline-offset: 1px;
+  outline: var(--ac-line-strong) solid var(--ac-accent);
+  outline-offset: var(--ac-line);
 }
 
 .agentic-chat-step-chevron {
@@ -798,8 +951,8 @@
 }
 
 .agentic-chat-step-chevron svg {
-  width: 12px;
-  height: 12px;
+  width: var(--ac-icon-xs);
+  height: var(--ac-icon-xs);
 }
 
 .agentic-chat-step-row.is-open .agentic-chat-step-chevron {
@@ -816,16 +969,16 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 16px;
-  height: 16px;
+  width: var(--ac-icon);
+  height: var(--ac-icon);
   flex-shrink: 0;
-  color: var(--text-muted);
+  color: var(--ac-text-muted);
 }
 
 .agentic-chat-step-icon svg,
 .agentic-chat-reasoning-dot svg {
-  width: 12px;
-  height: 12px;
+  width: var(--ac-icon-xs);
+  height: var(--ac-icon-xs);
 }
 
 .agentic-chat-step.is-running .agentic-chat-step-icon svg {
@@ -834,20 +987,20 @@
 
 .agentic-chat-step.is-done .agentic-chat-step-icon {
   border-radius: 50%;
-  background-color: oklch(70.5% 0.154 153.814 / 0.14);
-  color: var(--color-green);
+  background-color: var(--ac-tint-done);
+  color: var(--ac-status-done);
   animation: agentic-chat-pop-in 300ms cubic-bezier(0.23, 1, 0.32, 1);
 }
 
 .agentic-chat-step.is-error .agentic-chat-step-icon {
   border-radius: 50%;
-  background-color: oklch(66.6% 0.18 21.433 / 0.14);
-  color: var(--text-error);
+  background-color: var(--ac-tint-error);
+  color: var(--ac-status-error);
   animation: agentic-chat-pop-in 300ms cubic-bezier(0.23, 1, 0.32, 1);
 }
 
 .agentic-chat-step-name {
-  font-weight: var(--font-medium);
+  font-weight: var(--ac-weight-medium);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -857,10 +1010,10 @@
 
 .agentic-chat-step-time {
   margin-left: auto;
-  padding-left: var(--size-2-2);
-  font-family: var(--font-monospace);
-  font-size: var(--font-smallest);
-  color: var(--text-faint);
+  padding-left: var(--ac-space-1);
+  font-family: var(--ac-font-mono);
+  font-size: var(--ac-font-tiny);
+  color: var(--ac-text-faint);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
   flex-shrink: 0;
@@ -869,52 +1022,52 @@
 /* Aggregated subagent status pill: one label + state per card, so "Stop" and
    "Done" never appear together on the same unit. */
 .agentic-chat-step-status {
-  margin-left: var(--size-2-2);
-  padding: 1px 8px;
-  border-radius: 999px;
-  font-size: var(--font-smallest);
-  font-weight: var(--font-medium);
+  margin-left: var(--ac-space-1);
+  padding: var(--ac-line) var(--ac-space-2);
+  border-radius: var(--ac-radius-pill);
+  font-size: var(--ac-font-tiny);
+  font-weight: var(--ac-weight-medium);
   white-space: nowrap;
   flex-shrink: 0;
-  color: var(--text-muted);
-  background-color: var(--background-modifier-hover);
+  color: var(--ac-text-muted);
+  background-color: var(--ac-hover);
 }
 
 .agentic-chat-step-status.is-running {
-  color: var(--text-accent);
+  color: var(--ac-link);
 }
 
 .agentic-chat-step-status.is-done {
-  color: var(--color-green);
+  color: var(--ac-status-done);
 }
 
 .agentic-chat-step-status.is-error {
-  color: var(--text-error);
+  color: var(--ac-status-error);
 }
 
 .agentic-chat-step-status.is-queued {
-  color: var(--text-muted);
+  color: var(--ac-text-muted);
 }
 
 /* Body holds the readable Tool-call + Result sections. */
 .agentic-chat-step-body {
   display: flex;
   flex-direction: column;
-  gap: var(--size-2-2);
-  margin-top: var(--size-2-2);
+  gap: var(--ac-space-1);
+  margin-top: var(--ac-space-1);
 }
 
 .agentic-chat-step-section-label {
-  font-size: var(--font-smallest);
+  font-size: var(--ac-font-tiny);
   text-transform: uppercase;
   letter-spacing: 0.04em;
-  color: var(--text-faint);
-  margin-bottom: var(--size-2-1);
+  color: var(--ac-text-faint);
+  margin-bottom: var(--ac-space-0);
 }
 
 .agentic-chat-step-call-args {
-  color: var(--text-muted);
-  font-size: var(--font-smallest);
+  color: var(--ac-text-muted);
+  font-size: var(--ac-font-tiny);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
@@ -924,7 +1077,7 @@
   display: inline-block;
   max-width: 100%;
   vertical-align: bottom;
-  color: var(--text-accent);
+  color: var(--ac-link);
   cursor: pointer;
   word-break: normal;
   white-space: nowrap;
@@ -938,28 +1091,28 @@
 
 /* Compact oldText(−)/newText(+) diff for an edit step (the change itself, no file context). */
 .agentic-chat-step-diff {
-  margin: var(--size-2-2) 0 0;
-  padding: var(--size-2-2);
-  background-color: var(--background-primary);
-  border-radius: var(--radius-s);
-  max-height: 200px;
+  margin: var(--ac-space-1) 0 0;
+  padding: var(--ac-space-1);
+  background-color: var(--ac-surface);
+  border-radius: var(--ac-radius-s);
+  max-height: var(--ac-scroll-s);
   overflow-y: auto;
-  font-size: var(--font-smallest);
+  font-size: var(--ac-font-tiny);
 }
 
 .agentic-chat-step-diff-line {
   display: flex;
-  gap: var(--size-2-1);
+  gap: var(--ac-space-0);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
 
 .agentic-chat-step-diff-line.is-del {
-  color: var(--color-red);
+  color: var(--ac-status-error);
 }
 
 .agentic-chat-step-diff-line.is-add {
-  color: var(--color-green);
+  color: var(--ac-status-done);
 }
 
 .agentic-chat-diff-marker {
@@ -968,116 +1121,116 @@
 }
 
 .agentic-chat-diff-elide {
-  color: var(--text-faint);
+  color: var(--ac-text-faint);
 }
 
 .agentic-chat-step-result > pre {
   margin: 0;
-  padding: var(--size-2-3);
-  background-color: var(--background-primary);
-  border-radius: var(--radius-s);
+  padding: var(--ac-space-1h);
+  background-color: var(--ac-surface);
+  border-radius: var(--ac-radius-s);
   white-space: pre-wrap;
-  max-height: 240px;
+  max-height: var(--ac-scroll-m);
   overflow-y: auto;
-  font-size: var(--font-smallest);
+  font-size: var(--ac-font-tiny);
 }
 
 .agentic-chat-subagents {
-  margin-top: var(--size-2-2);
+  margin-top: var(--ac-space-1);
   display: flex;
   flex-direction: column;
-  gap: var(--size-2-1);
+  gap: var(--ac-space-0);
 }
 
 .agentic-chat-subagent > summary {
   cursor: pointer;
   display: flex;
-  gap: var(--size-2-2);
+  gap: var(--ac-space-1);
   align-items: center;
 }
 
 .agentic-chat-subagent-name {
-  color: var(--text-normal);
+  color: var(--ac-text);
 }
 
 /* Status rendered as a small pill; text labels stay stable for e2e contracts. */
 .agentic-chat-subagent-status {
   margin-left: auto;
-  font-size: var(--font-smallest);
-  color: var(--text-muted);
-  padding: 1px var(--size-2-2);
-  border-radius: 999px;
-  border: 1px solid var(--background-modifier-border);
-  background-color: var(--background-secondary);
+  font-size: var(--ac-font-tiny);
+  color: var(--ac-text-muted);
+  padding: var(--ac-line) var(--ac-space-1);
+  border-radius: var(--ac-radius-pill);
+  border: var(--ac-line) solid var(--ac-border);
+  background-color: var(--ac-surface-raised);
   white-space: nowrap;
 }
 
 .agentic-chat-subagent.is-running .agentic-chat-subagent-status {
-  color: var(--text-accent);
-  border-color: var(--interactive-accent);
+  color: var(--ac-link);
+  border-color: var(--ac-accent);
   animation: agentic-chat-pulse 1.6s ease-in-out infinite;
 }
 
 .agentic-chat-subagent.is-done .agentic-chat-subagent-status {
-  color: var(--color-green);
-  border-color: var(--color-green);
+  color: var(--ac-status-done);
+  border-color: var(--ac-status-done);
 }
 
 .agentic-chat-subagent.is-error .agentic-chat-subagent-status {
-  color: var(--text-error);
-  border-color: var(--text-error);
+  color: var(--ac-status-error);
+  border-color: var(--ac-status-error);
 }
 
 /* Stopped by the user or timed out: red like an error so it gets noticed,
    though the dispatch itself returns a normal result (no re-dispatch pressure). */
 .agentic-chat-subagent.is-aborted .agentic-chat-subagent-status {
-  color: var(--text-error);
-  border-color: var(--text-error);
+  color: var(--ac-status-error);
+  border-color: var(--ac-status-error);
 }
 
 .agentic-chat-subagent.is-queued .agentic-chat-subagent-status {
-  color: var(--text-muted);
-  border-color: var(--background-modifier-border);
+  color: var(--ac-text-muted);
+  border-color: var(--ac-border);
 }
 
 /* Subtle completion readout under the child name: duration · tokens · cost. */
 .agentic-chat-subagent-meta {
-  font-size: var(--font-smallest);
-  color: var(--text-faint);
+  font-size: var(--ac-font-tiny);
+  color: var(--ac-text-faint);
   white-space: nowrap;
 }
 
 .agentic-chat-step-ask-user {
-  margin-top: var(--size-2-2);
-  color: var(--text-muted);
-  font-size: var(--font-ui-smaller);
+  margin-top: var(--ac-space-1);
+  color: var(--ac-text-muted);
+  font-size: var(--ac-font-small);
 }
 
 .agentic-chat-step-ask-user-status {
-  color: var(--text-accent);
-  font-weight: var(--font-medium);
+  color: var(--ac-link);
+  font-weight: var(--ac-weight-medium);
 }
 
 .agentic-chat-step-ask-user-question,
 .agentic-chat-step-ask-user-answer {
-  margin-top: var(--size-2-1);
+  margin-top: var(--ac-space-0);
 }
 
 .agentic-chat-subagent > pre {
-  margin: var(--size-2-2) 0 0;
-  padding: var(--size-2-3);
-  background-color: var(--background-secondary);
-  border-radius: var(--radius-s);
+  margin: var(--ac-space-1) 0 0;
+  padding: var(--ac-space-1h);
+  background-color: var(--ac-surface-raised);
+  border-radius: var(--ac-radius-s);
   white-space: pre-wrap;
-  max-height: 240px;
+  max-height: var(--ac-scroll-m);
   overflow-y: auto;
-  font-size: var(--font-smallest);
+  font-size: var(--ac-font-tiny);
 }
 
 .agentic-chat-subagent-stop {
-  margin-left: var(--size-2-2);
-  padding: 0 var(--size-2-2);
-  font-size: var(--font-ui-smaller);
+  margin-left: var(--ac-space-1);
+  padding: 0 var(--ac-space-1);
+  font-size: var(--ac-font-small);
   line-height: 1;
   height: auto;
   min-height: unset;
@@ -1093,13 +1246,46 @@
 
 .agentic-chat-composer {
   position: relative;
-  padding: var(--size-4-2) var(--size-4-3) var(--size-4-3);
+  flex: 0 0 auto;
+  padding: 0 var(--ac-space-3) var(--ac-space-3);
+  /* Phones: stay above the home indicator and the keyboard inset. */
+  padding-bottom: calc(var(--ac-space-3) + var(--ac-safe-bottom));
   display: flex;
   flex-direction: column;
-  gap: var(--size-2-2);
+  gap: var(--ac-space-1h);
   min-width: 0;
   max-width: 100%;
   width: 100%;
+}
+
+/* Status line above the card. It has no height until it has news. */
+.agentic-chat-status-line {
+  display: flex;
+  align-items: center;
+  gap: var(--ac-space-1h);
+  padding: 0 var(--ac-space-1h);
+  min-width: 0;
+  color: var(--ac-text-muted);
+  font-size: var(--ac-font-small);
+}
+
+.agentic-chat-status {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agentic-chat-status:empty {
+  display: none;
+}
+
+.agentic-chat-status-line.is-running .agentic-chat-status:empty {
+  display: inline;
+}
+
+.agentic-chat-status-line.is-running .agentic-chat-status:empty::before {
+  content: "Working…";
 }
 
 /* --- Tab strip (up to MAX_TABS independent sessions) --- */
@@ -1110,7 +1296,7 @@
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: var(--size-2-2);
+  gap: var(--ac-space-1);
   min-width: 0;
   max-width: 100%;
 }
@@ -1118,64 +1304,63 @@
 .agentic-chat-tab-actions {
   display: flex;
   align-items: center;
-  gap: var(--size-2-1);
+  gap: var(--ac-space-0);
   flex: 0 0 auto;
 }
 
 .agentic-chat-tabs {
   display: flex;
   align-items: center;
-  gap: var(--size-2-2);
+  gap: var(--ac-space-1);
   flex: 1 1 auto;
   min-width: 0;
   flex-wrap: wrap;
 }
 
-/* --- The unified input card (chips + textarea + toolbar in one rectangle) --- */
+/* --- The composer card: chips, textarea, and toolbar in one rounded card --- */
 
 .agentic-chat-field {
   display: flex;
   flex-direction: column;
-  gap: var(--size-2-2);
-  min-height: 92px;
   min-width: 0;
   max-width: 100%;
   width: 100%;
   overflow: hidden;
-  padding: var(--size-2-3) var(--size-4-2);
-  border: 1px solid var(--background-modifier-border);
-  border-radius: var(--radius-m);
-  background-color: var(--background-primary);
+  border: var(--ac-line) solid var(--ac-border);
+  border-radius: var(--ac-radius-l);
+  background-color: var(--ac-surface);
+  box-shadow: var(--ac-shadow-card);
+  transition: border-color var(--ac-motion), box-shadow var(--ac-motion);
 }
 
-/* Mirror a focused input: the whole card lights up when the textarea has focus. */
+/* The whole card shows focus when the textarea has it. */
 .agentic-chat-field:focus-within {
-  border-color: var(--interactive-accent);
-  box-shadow: 0 0 0 1px var(--interactive-accent);
+  border-color: var(--ac-tint-accent-border);
+  box-shadow: var(--ac-ring-focus);
 }
 
 .agentic-chat-tab {
   display: inline-flex;
   align-items: center;
-  gap: var(--size-2-1);
-  padding: 2px var(--size-2-3);
-  min-width: 24px;
+  gap: var(--ac-space-0);
+  padding: var(--ac-space-0) var(--ac-space-1h);
+  min-width: var(--ac-hit-s);
   justify-content: center;
-  border: 1px solid var(--background-modifier-border);
-  border-radius: var(--radius-s);
-  background-color: var(--background-secondary);
-  color: var(--text-muted);
-  font-size: var(--font-ui-smaller);
+  border: var(--ac-line) solid var(--ac-border);
+  border-radius: var(--ac-radius-s);
+  background-color: var(--ac-surface-raised);
+  color: var(--ac-text-muted);
+  font-size: var(--ac-font-small);
   cursor: pointer;
 }
 
 .agentic-chat-tab:hover {
-  background-color: var(--background-modifier-hover);
+  background-color: var(--ac-hover);
 }
 
 .agentic-chat-tab.is-active {
-  border-color: var(--interactive-accent);
-  color: var(--text-normal);
+  border-color: var(--ac-accent);
+  color: var(--ac-text);
 }
 
 /* Keyboard focus affordance for the non-button composer controls. */
@@ -1183,57 +1368,57 @@
 .agentic-chat-tab-close:focus-visible,
 .agentic-chat-tab-add:focus-visible,
 .agentic-chat-effort:focus-visible {
-  outline: 2px solid var(--interactive-accent);
-  outline-offset: 1px;
+  outline: var(--ac-line-strong) solid var(--ac-accent);
+  outline-offset: var(--ac-line);
 }
 
 .agentic-chat-tab-busy {
-  width: 6px;
-  height: 6px;
+  width: var(--ac-dot);
+  height: var(--ac-dot);
   border-radius: 50%;
-  background-color: var(--interactive-accent);
+  background-color: var(--ac-accent);
   animation: agentic-chat-pulse 1s ease-in-out infinite;
 }
 
 .agentic-chat-tab.is-needs-approval {
-  border-color: var(--text-warning);
-  box-shadow: 0 0 0 1px var(--text-warning);
+  border-color: var(--ac-status-needs-you);
+  box-shadow: var(--ac-ring-needs-you);
 }
 
 .agentic-chat-tab-close {
   display: inline-flex;
   align-items: center;
-  color: var(--text-faint);
-  border-radius: var(--radius-s);
+  color: var(--ac-text-faint);
+  border-radius: var(--ac-radius-s);
 }
 
 .agentic-chat-tab-close:hover {
-  color: var(--text-error);
+  color: var(--ac-status-error);
 }
 
 .agentic-chat-tab-close svg {
-  width: 11px;
-  height: 11px;
+  width: var(--ac-icon-xs);
+  height: var(--ac-icon-xs);
 }
 
 .agentic-chat-tab-add {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 3px;
-  color: var(--text-muted);
-  border-radius: var(--radius-s);
+  padding: var(--ac-space-1);
+  color: var(--ac-text-muted);
+  border-radius: var(--ac-radius-s);
   cursor: pointer;
 }
 
 .agentic-chat-tab-add:hover {
-  color: var(--text-normal);
-  background-color: var(--background-modifier-hover);
+  color: var(--ac-text);
+  background-color: var(--ac-hover);
 }
 
 .agentic-chat-tab-add svg {
-  width: 14px;
-  height: 14px;
+  width: var(--ac-icon-s);
+  height: var(--ac-icon-s);
 }
 
 @keyframes agentic-chat-pulse {
@@ -1249,7 +1434,8 @@
 .agentic-chat-chips {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--size-2-2);
+  gap: var(--ac-space-1h);
+  padding: var(--ac-space-2h) var(--ac-space-2h) 0;
 }
 
 .agentic-chat-chips:empty {
@@ -1259,22 +1445,25 @@
 .agentic-chat-chip {
   display: inline-flex;
   align-items: center;
-  gap: var(--size-2-1);
-  background-color: var(--background-secondary);
-  border: 1px solid var(--background-modifier-border);
-  border-radius: var(--radius-l);
-  padding: 2px var(--size-2-3);
-  font-size: var(--font-ui-smaller);
-  max-width: min(220px, 100%);
+  gap: var(--ac-space-1);
+  max-width: min(var(--ac-chip-max), 100%);
   min-width: 0;
+  min-height: var(--ac-chip-h);
+  padding: 0 var(--ac-space-1) 0 var(--ac-space-2);
   overflow: hidden;
-  min-height: 22px;
+  border: var(--ac-line) solid transparent;
+  border-radius: var(--ac-radius-s);
+  background-color: var(--ac-surface-raised);
+  color: var(--ac-text-muted);
+  font-size: var(--ac-font-small);
   line-height: 1;
 }
 
+/* The active note is attached automatically: a dashed outline, removable. */
 .agentic-chat-chip.is-active-note {
   border-style: dashed;
-  border-color: var(--interactive-accent);
+  border-color: var(--ac-border);
+  background-color: transparent;
 }
 
 .agentic-chat-chip-label {
@@ -1286,12 +1475,11 @@
 }
 
 .agentic-chat-chip-tag {
-  font-size: var(--font-smallest);
+  flex-shrink: 0;
+  color: var(--ac-text-faint);
+  font-size: var(--ac-font-tiny);
   text-transform: uppercase;
   letter-spacing: 0.04em;
-  color: var(--text-accent);
-  opacity: 0.85;
-  flex-shrink: 0;
 }
 
 .agentic-chat-chip-icon,
@@ -1299,36 +1487,38 @@
   flex: 0 0 auto;
   display: flex;
   align-items: center;
+  justify-content: center;
 }
 
 .agentic-chat-chip-icon svg,
 .agentic-chat-chip-remove svg {
-  width: 12px;
-  height: 12px;
+  width: var(--ac-icon-xs);
+  height: var(--ac-icon-xs);
 }
 
 .agentic-chat-chip-remove {
+  min-width: var(--ac-chip-remove);
+  min-height: var(--ac-chip-remove);
+  border-radius: var(--ac-radius-xs);
+  color: var(--ac-text-faint);
   cursor: pointer;
-  color: var(--text-muted);
 }
 
 .agentic-chat-chip-remove:hover {
-  color: var(--text-error);
+  background-color: var(--ac-hover);
+  color: var(--ac-text);
 }
 
-/* A prompt queued while the agent is busy: dashed warning outline, preview text. */
+/* A prompt queued while the agent works: a dashed preview, same behaviour. */
 .agentic-chat-chip.is-pending {
   border-style: dashed;
-  border-color: var(--text-warning);
-  max-width: min(320px, 100%);
-}
-
-.agentic-chat-chip.is-pending .agentic-chat-chip-tag {
-  color: var(--text-warning);
+  border-color: var(--ac-border);
+  background-color: transparent;
+  max-width: min(var(--ac-chip-wide), 100%);
 }
 
 .agentic-chat-chip-text {
-  max-width: 200px;
+  max-width: var(--ac-chip-text-max);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1344,19 +1534,29 @@
   max-width: 100%;
 }
 
-/* The textarea carries no box of its own — the card is the input rectangle.
-   Keep vertical resize so a long prompt can grow the card. */
+/* The textarea has no box of its own; the card is the input. It grows with
+   its text from one line to eight (see autoGrow), then scrolls. */
 .agentic-chat-input {
   width: 100%;
   max-width: 100%;
   min-width: 0;
-  resize: vertical;
-  min-height: 48px;
-  padding: var(--size-2-2) 0 0 0;
+  min-height: var(--ac-input-min);
+  /* autoGrow sets these on the element as the text grows. */
+  height: var(--ac-input-h, auto);
+  overflow-y: var(--ac-input-overflow, hidden);
+  resize: none;
+  padding: var(--ac-space-2h) var(--ac-space-3) var(--ac-space-1);
   border: none;
   background: transparent;
   box-shadow: none;
+  color: var(--ac-text);
   font-family: inherit;
+  font-size: var(--ac-font-body);
+  line-height: 1.5;
+}
+
+.agentic-chat-input::placeholder {
+  color: var(--ac-text-faint);
 }
 
 .agentic-chat-input:focus,
@@ -1370,117 +1570,170 @@
 
 .agentic-chat-autocomplete {
   position: absolute;
-  bottom: calc(100% + var(--size-2-2));
+  bottom: calc(100% + var(--ac-space-1));
   left: 0;
   right: 0;
-  max-height: 240px;
+  max-height: var(--ac-scroll-m);
   overflow-y: auto;
-  z-index: var(--layer-popover);
-  background-color: var(--background-primary);
-  border: 1px solid var(--background-modifier-border);
-  border-radius: var(--radius-m);
-  box-shadow: var(--shadow-s);
-  padding: var(--size-2-2);
+  z-index: var(--ac-layer-popover);
+  background-color: var(--ac-surface);
+  border: var(--ac-line) solid var(--ac-border);
+  border-radius: var(--ac-radius-m);
+  box-shadow: var(--ac-shadow-s);
+  padding: var(--ac-space-1);
 }
 
 .agentic-chat-autocomplete-item {
   display: flex;
   align-items: center;
-  gap: var(--size-2-3);
-  padding: var(--size-2-2) var(--size-2-3);
-  border-radius: var(--radius-s);
+  gap: var(--ac-space-1h);
+  padding: var(--ac-space-1) var(--ac-space-1h);
+  border-radius: var(--ac-radius-s);
   cursor: pointer;
 }
 
 .agentic-chat-autocomplete-item.is-selected {
-  background-color: var(--background-modifier-hover);
+  background-color: var(--ac-hover);
 }
 
 .agentic-chat-autocomplete-icon {
   display: flex;
   align-items: center;
-  color: var(--text-muted);
+  color: var(--ac-text-muted);
 }
 
 .agentic-chat-autocomplete-icon svg {
-  width: 14px;
-  height: 14px;
+  width: var(--ac-icon-s);
+  height: var(--ac-icon-s);
 }
 
 .agentic-chat-autocomplete-main {
   display: flex;
   align-items: baseline;
-  gap: var(--size-2-3);
+  gap: var(--ac-space-1h);
   min-width: 0;
 }
 
 .agentic-chat-autocomplete-label {
-  font-size: var(--font-ui-small);
+  font-size: var(--ac-font-ui);
   white-space: nowrap;
 }
 
 .agentic-chat-autocomplete-detail {
-  font-size: var(--font-ui-smaller);
-  color: var(--text-muted);
+  font-size: var(--ac-font-small);
+  color: var(--ac-text-muted);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-/* --- Bottom toolbar (model · effort · context | Safe↔YOLO) --- */
+/* --- Toolbar: attach · model·effort · spacer · context · Safe/YOLO · send/stop --- */
 
 .agentic-chat-toolbar {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
-  gap: var(--size-2-3);
+  gap: var(--ac-space-1);
   min-width: 0;
   max-width: 100%;
   width: 100%;
+  padding: var(--ac-space-1) var(--ac-space-1h) var(--ac-space-1h);
 }
 
-.agentic-chat-toolbar-left {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--size-2-2);
-  min-width: 0;
-  max-width: 100%;
+.agentic-chat-toolbar-spacer {
   flex: 1 1 auto;
 }
 
-.agentic-chat-toolbar-right {
-  display: flex;
-  flex-wrap: wrap;
+.agentic-chat-attach {
+  flex: 0 0 auto;
+  min-width: var(--ac-hit);
+  height: var(--ac-hit);
+  padding: 0;
+  display: inline-flex;
   align-items: center;
-  justify-content: flex-end;
-  gap: var(--size-2-3);
-  margin-left: auto;
-  min-width: 0;
-  max-width: 100%;
+  justify-content: center;
+  border-radius: var(--ac-radius-s);
+  color: var(--ac-text-muted);
 }
 
-/* --- Effort knob (per-message reasoning level), right segment of the model pill --- */
+.agentic-chat-attach svg {
+  width: var(--ac-icon);
+  height: var(--ac-icon);
+}
+
+/* Model · effort: one quiet pill. Effort is muted next to the model name. */
+.agentic-chat-model {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 100%;
+  height: var(--ac-hit);
+  padding: 0 var(--ac-space-1);
+  border-radius: var(--ac-radius-pill);
+  overflow: hidden;
+  color: var(--ac-text-muted);
+  font-size: var(--ac-font-small);
+  white-space: nowrap;
+  transition: background-color var(--ac-motion);
+}
+
+.agentic-chat-model:hover {
+  background-color: var(--ac-hover);
+}
+
+.agentic-chat-model-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ac-space-1);
+  min-width: 0;
+  height: 100%;
+  padding: 0 var(--ac-space-1);
+  cursor: pointer;
+}
+
+.agentic-chat-model-pill:hover,
+.agentic-chat-effort:hover {
+  color: var(--ac-text);
+}
+
+/* A one-shot model override (/model for one message) gets the accent ring. */
+.agentic-chat-model-pill.is-override {
+  box-shadow: var(--ac-ring-accent-inset);
+  border-radius: var(--ac-radius-pill);
+}
+
+.agentic-chat-model-pill.is-override .agentic-chat-model-provider {
+  color: var(--ac-link);
+}
+
+.agentic-chat-model-provider {
+  color: var(--ac-text-faint);
+  font-size: var(--ac-font-tiny);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.agentic-chat-model-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.agentic-chat-model-divider {
+  flex: 0 0 auto;
+  color: var(--ac-text-faint);
+}
 
 .agentic-chat-effort {
   display: inline-flex;
   align-items: center;
-  justify-content: center;
-  gap: var(--size-2-1);
-  padding: 1px 5px;
-  border-radius: var(--radius-l);
+  height: 100%;
+  padding: 0 var(--ac-space-1);
   cursor: pointer;
-  white-space: nowrap;
-  min-width: 0;
-}
-
-.agentic-chat-effort:hover {
-  background-color: var(--background-modifier-hover);
 }
 
 .agentic-chat-effort.is-unavailable {
   cursor: default;
-  opacity: 0.72;
 }
 
 .agentic-chat-effort.is-disabled {
@@ -1488,40 +1741,89 @@
   opacity: 0.5;
 }
 
+.agentic-chat-effort-value {
+  color: var(--ac-text-faint);
+}
+
 .agentic-chat-model-pill:focus-visible,
 .agentic-chat-effort:focus-visible,
-.agentic-chat-send:focus-visible,
-.agentic-chat-stop:focus-visible {
-  outline: 2px solid var(--interactive-accent);
-  outline-offset: 1px;
+.agentic-chat-mode-toggle:focus-visible,
+.agentic-chat-round:focus-visible,
+.agentic-chat-tab:focus-visible,
+.agentic-chat-tab-close:focus-visible,
+.agentic-chat-tab-add:focus-visible {
+  outline: var(--ac-line-strong) solid var(--ac-accent);
+  outline-offset: var(--ac-line);
 }
 
-/* Effort value reads as a low→max scale: muted at the bottom step, ramping
-   toward the accent at the top, uniform across levels (no override split). */
-.agentic-chat-effort-value {
-  font-size: calc(var(--font-smallest) * 0.92);
-  font-weight: var(--font-medium);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  line-height: 1;
-  color: color-mix(
-    in oklab,
-    var(--text-muted),
-    var(--interactive-accent) calc(var(--effort-step, 0) * 60%)
-  );
+/* Context ring + %: muted until the window fills up. No click action. */
+.agentic-chat-ctx {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ac-space-1);
+  flex: 0 0 auto;
+  height: var(--ac-hit);
+  padding: 0 var(--ac-space-1);
+  color: var(--ac-text-muted);
+  font-size: var(--ac-font-small);
+  font-variant-numeric: tabular-nums;
+  cursor: default;
 }
 
-/* --- Permission mode (YOLO toggle) --- */
+.agentic-chat-ctx-ring {
+  width: var(--ac-icon-l);
+  height: var(--ac-icon-l);
+}
 
+.agentic-chat-ctx-ring circle {
+  fill: none;
+  stroke-width: 3;
+}
+
+.agentic-chat-ctx-track {
+  stroke: var(--ac-border);
+}
+
+.agentic-chat-ctx-value {
+  stroke: currentColor;
+  stroke-linecap: round;
+  transform: rotate(-90deg);
+  transform-origin: 50% 50%;
+  transition: stroke-dashoffset var(--ac-motion);
+}
+
+.agentic-chat-ctx.is-warn {
+  color: var(--ac-status-needs-you);
+}
+
+.agentic-chat-ctx.is-high {
+  color: var(--ac-status-error);
+}
+
+/* Safe / YOLO: a shield and a label. Orange while YOLO. */
 .agentic-chat-mode-toggle {
   display: inline-flex;
   align-items: center;
-  gap: 1px;
-  padding: 1px;
-  border: 1px solid var(--background-modifier-border);
-  border-radius: 999px;
-  background-color: var(--background-secondary);
+  gap: var(--ac-space-1);
+  flex: 0 0 auto;
+  height: var(--ac-hit);
+  padding: 0 var(--ac-space-2);
+  border-radius: var(--ac-radius-pill);
+  color: var(--ac-text-muted);
+  font-size: var(--ac-font-small);
   cursor: pointer;
+  user-select: none;
+  transition: background-color var(--ac-motion), color var(--ac-motion);
+}
+
+.agentic-chat-mode-toggle:hover {
+  background-color: var(--ac-hover);
+  color: var(--ac-text);
+}
+
+.agentic-chat-mode-toggle.is-active,
+.agentic-chat-mode-toggle.is-active:hover {
+  color: var(--ac-status-needs-you);
 }
 
 .agentic-chat-mode-toggle.is-disabled {
@@ -1530,188 +1832,71 @@
   cursor: default;
 }
 
-.agentic-chat-mode-seg {
-  padding: 2px 8px;
-  border-radius: 999px;
-  font-size: var(--font-ui-smaller);
-  color: var(--text-muted);
-  user-select: none;
-  transition: background-color 120ms ease, color 120ms ease;
+.agentic-chat-mode-icon {
+  display: flex;
 }
 
-.agentic-chat-mode-toggle:focus-visible {
-  outline: 2px solid var(--interactive-accent);
-  outline-offset: 1px;
+.agentic-chat-mode-icon svg {
+  width: var(--ac-icon-s);
+  height: var(--ac-icon-s);
 }
 
-/* Safe is the active segment by default; YOLO lights up instead when enabled. */
-.agentic-chat-mode-toggle:not(.is-active) .agentic-chat-mode-seg:nth-child(1) {
-  background-color: var(--background-primary);
-  box-shadow: 0 0 0 1px var(--background-modifier-border);
-  color: var(--text-normal);
+/* Send and stop: round buttons at the end of the toolbar. */
+.agentic-chat-round {
+  flex: 0 0 auto;
+  width: var(--ac-send);
+  height: var(--ac-send);
+  min-width: var(--ac-send);
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 50%;
+  box-shadow: none;
+  cursor: pointer;
 }
 
-.agentic-chat-mode-toggle.is-active .agentic-chat-mode-seg:nth-child(2) {
-  background-color: var(--interactive-accent);
-  color: var(--text-on-accent);
+.agentic-chat-round svg {
+  width: var(--ac-icon);
+  height: var(--ac-icon);
 }
 
-.agentic-chat-status {
-  flex: 1 1 auto;
-  text-align: right;
-  font-size: var(--font-ui-smaller);
-  color: var(--text-muted);
+.agentic-chat-send {
+  background-color: var(--ac-accent);
+  color: var(--ac-text-on-accent);
 }
 
-/* --- Working indicator (agent is running) --- */
+.agentic-chat-send:hover {
+  filter: brightness(1.07);
+}
 
+.agentic-chat-send[data-ac-state="queue"],
+.agentic-chat-send[data-ac-state="update"] {
+  background-color: var(--ac-surface-raised);
+  color: var(--ac-text);
+}
+
+.agentic-chat-stop {
+  background-color: var(--ac-text);
+  color: var(--ac-surface);
+}
+
+.agentic-chat-stop svg {
+  width: var(--ac-icon-xs);
+  height: var(--ac-icon-xs);
+  fill: currentColor;
+}
+
+/* Working: a ring spinner in the status line while a turn runs. */
 .agentic-chat-working {
   flex: 0 0 auto;
-  width: 12px;
-  height: 12px;
-  border: 2px solid var(--background-modifier-border);
-  border-top-color: var(--interactive-accent);
+  width: var(--ac-spinner);
+  height: var(--ac-spinner);
+  border: var(--ac-line-strong) solid var(--ac-tint-running);
+  border-top-color: var(--ac-status-running);
   border-radius: 50%;
-  animation: agentic-chat-spin 0.7s linear infinite;
-}
-
-/* --- Context-window arc gauge + percent readout --- */
-/* The element stays a <progress> for semantics/a11y, but its look is an arc:
-   a conic-gradient ring whose fill is the --ctx-pct percent (set by
-   syncContextBar off the unchanged contextPercent helper), with the center
-   masked out. Color tracks the fill level via --ctx-fill. */
-
-.agentic-chat-ctx-percent {
-  font-size: var(--font-ui-smaller);
-  color: var(--text-muted);
-}
-
-.agentic-chat-ctx-percent.is-warn {
-  color: var(--color-yellow);
-}
-
-.agentic-chat-ctx-percent.is-high {
-  color: var(--color-red);
-}
-
-.agentic-chat-ctx-bar {
-  appearance: none;
-  -webkit-appearance: none;
-  flex: 0 0 auto;
-  width: 22px;
-  height: 22px;
-  margin: 0;
-  padding: 0;
-  border: 0;
-  border-radius: 50%;
-  --ctx-fill: var(--color-green);
-  background: conic-gradient(
-    var(--ctx-fill) calc(var(--ctx-pct, 0) * 1%),
-    var(--background-modifier-border) 0
-  );
-  /* Knock the center out so the fill reads as a thin ring, not a solid disc. */
-  -webkit-mask: radial-gradient(circle, transparent 56%, #000 58%);
-  mask: radial-gradient(circle, transparent 56%, #000 58%);
-}
-
-.agentic-chat-ctx-bar.is-warn {
-  --ctx-fill: var(--color-yellow);
-}
-
-.agentic-chat-ctx-bar.is-high {
-  --ctx-fill: var(--color-red);
-}
-
-/* --- Model + effort in one two-sided pill --- */
-
-.agentic-chat-model {
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
-  padding: 1px;
-  border: 1px solid var(--background-modifier-border);
-  border-radius: var(--radius-l);
-  background-color: var(--background-secondary);
-  max-width: min(22rem, 100%);
-  min-width: 0;
-  /* Content-width pill: shrinks on narrow panes (model name truncates), never
-     stretches to fill the composer row — a growing pill read as an oversized
-     "effort chip" on wide panes and full-width once the @container 400px rule
-     kicked in while narrowing the pane. */
-  flex: 0 1 auto;
-  overflow: hidden;
-}
-
-.agentic-chat-model-divider {
-  width: 1px;
-  height: 12px;
-  flex: 0 0 auto;
-  background-color: var(--background-modifier-border);
-  margin: 0 1px;
-}
-
-.agentic-chat-model-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--size-2-2);
-  padding: 2px 6px;
-  border-radius: var(--radius-l);
-  cursor: pointer;
-  min-width: 0;
-}
-
-.agentic-chat-model-pill:hover {
-  background-color: var(--background-modifier-hover);
-}
-
-.agentic-chat-model-pill.is-override {
-  box-shadow: inset 0 0 0 1px var(--interactive-accent);
-  border-radius: var(--radius-l);
-}
-
-.agentic-chat-model-pill.is-override .agentic-chat-model-provider {
-  color: var(--text-accent);
-}
-
-.agentic-chat-model-provider {
-  font-size: var(--font-smallest);
-  color: var(--text-faint);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-
-.agentic-chat-model-name {
-  font-size: var(--font-ui-smaller);
-  color: var(--text-muted);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-/* --- Usage line --- */
-
-.agentic-chat-usage {
-  flex: 1 1 auto;
-  font-size: var(--font-ui-smaller);
-  color: var(--text-faint);
-  text-align: right;
-}
-
-.agentic-chat-usage:empty {
-  display: none;
-}
-
-/* Cache-hit color tone on the bottom usage line: red <50%, amber <75%, green ≥75%. */
-.agentic-chat-cache.is-low {
-  color: var(--color-red);
-}
-
-.agentic-chat-cache.is-mid {
-  color: var(--color-yellow);
-}
-
-.agentic-chat-cache.is-high {
-  color: var(--color-green);
+  animation: agentic-chat-spin 0.8s linear infinite;
 }
 
 /* --- Session list modal --- */
@@ -1723,30 +1908,30 @@
 
 .agentic-chat-session-search {
   width: 100%;
-  margin-bottom: var(--size-2-3);
+  margin-bottom: var(--ac-space-1h);
 }
 
 .agentic-chat-session-empty {
-  color: var(--text-muted);
+  color: var(--ac-text-muted);
   text-align: center;
-  padding: var(--size-4-2);
+  padding: var(--ac-space-2);
 }
 
 .agentic-chat-session-row {
   display: flex;
   align-items: center;
-  gap: var(--size-4-2);
-  padding: var(--size-2-3) var(--size-2-2);
-  border-radius: var(--radius-s);
-  border-bottom: 1px solid var(--background-modifier-border);
+  gap: var(--ac-space-2);
+  padding: var(--ac-space-1h) var(--ac-space-1);
+  border-radius: var(--ac-radius-s);
+  border-bottom: var(--ac-line) solid var(--ac-border);
 }
 
 .agentic-chat-session-row:hover {
-  background-color: var(--background-modifier-hover);
+  background-color: var(--ac-hover);
 }
 
 .agentic-chat-session-row.is-active {
-  border-left: 3px solid var(--interactive-accent);
+  border-left: var(--ac-line-accent) solid var(--ac-accent);
 }
 
 .agentic-chat-session-main {
@@ -1756,24 +1941,24 @@
 }
 
 .agentic-chat-session-title {
-  font-weight: var(--font-medium);
+  font-weight: var(--ac-weight-medium);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
 .agentic-chat-session-meta {
-  font-size: var(--font-ui-smaller);
-  color: var(--text-muted);
+  font-size: var(--ac-font-small);
+  color: var(--ac-text-muted);
 }
 
 .agentic-chat-session-rename {
   flex: 0 0 auto;
-  color: var(--text-muted);
+  color: var(--ac-text-muted);
 }
 
 .agentic-chat-session-rename:hover {
-  color: var(--text-normal);
+  color: var(--ac-text);
 }
 
 .agentic-chat-session-rename-input {
@@ -1783,51 +1968,51 @@
 
 .agentic-chat-session-delete {
   flex: 0 0 auto;
-  color: var(--text-muted);
+  color: var(--ac-text-muted);
 }
 
 .agentic-chat-session-delete:hover {
-  color: var(--text-error);
+  color: var(--ac-status-error);
 }
 
 /* --- Approval modal --- */
 
 .agentic-chat-approval-session {
-  color: var(--text-muted);
-  font-size: var(--font-ui-smaller);
-  margin: 0 0 var(--size-2-2);
+  color: var(--ac-text-muted);
+  font-size: var(--ac-font-small);
+  margin: 0 0 var(--ac-space-1);
 }
 
 .agentic-chat-approval-args {
-  max-height: 240px;
+  max-height: var(--ac-scroll-m);
   overflow: auto;
-  padding: var(--size-2-3);
-  background-color: var(--background-secondary);
-  border-radius: var(--radius-s);
+  padding: var(--ac-space-1h);
+  background-color: var(--ac-surface-raised);
+  border-radius: var(--ac-radius-s);
   white-space: pre-wrap;
-  font-size: var(--font-smallest);
+  font-size: var(--ac-font-tiny);
 }
 
 .agentic-chat-deny-reason {
-  margin: var(--size-4-2) 0 var(--size-2-2);
+  margin: var(--ac-space-2) 0 var(--ac-space-1);
 }
 
 .agentic-chat-deny-reason-input {
   width: 100%;
-  min-height: 48px;
-  padding: var(--size-2-2);
+  min-height: var(--ac-input-min);
+  padding: var(--ac-space-1);
   font: inherit;
-  font-size: var(--font-ui-small);
-  border-radius: var(--radius-s);
+  font-size: var(--ac-font-ui);
+  border-radius: var(--ac-radius-s);
 }
 
 .agentic-chat-diff {
-  max-height: 360px;
+  max-height: var(--ac-scroll-l);
   overflow: auto;
-  padding: var(--size-2-3);
-  background-color: var(--background-secondary);
-  border-radius: var(--radius-s);
-  font-size: var(--font-smallest);
+  padding: var(--ac-space-1h);
+  background-color: var(--ac-surface-raised);
+  border-radius: var(--ac-radius-s);
+  font-size: var(--ac-font-tiny);
   line-height: 1.45;
 }
 
@@ -1838,76 +2023,76 @@
 .agentic-chat-diff-expand {
   display: block;
   width: 100%;
-  border: 1px solid var(--background-modifier-border);
-  border-radius: var(--radius-s);
-  background-color: var(--background-primary);
-  color: var(--text-muted);
-  font-family: var(--font-interface);
-  font-size: var(--font-smallest);
+  border: var(--ac-line) solid var(--ac-border);
+  border-radius: var(--ac-radius-s);
+  background-color: var(--ac-surface);
+  color: var(--ac-text-muted);
+  font-family: var(--ac-font-family);
+  font-size: var(--ac-font-tiny);
   line-height: 1.4;
-  margin: var(--size-2-1) 0;
-  padding: var(--size-2-1) var(--size-2-3);
+  margin: var(--ac-space-0) 0;
+  padding: var(--ac-space-0) var(--ac-space-1h);
   text-align: center;
 }
 
 .agentic-chat-diff-expand:hover {
-  color: var(--text-normal);
-  background-color: var(--background-modifier-hover);
+  color: var(--ac-text);
+  background-color: var(--ac-hover);
 }
 
 .agentic-chat-approval-diff-line,
 .agentic-chat-quick-ask-diff-line {
   display: block;
-  margin: 0 calc(var(--size-2-3) * -1);
-  padding: 0 var(--size-2-3);
+  margin: 0 calc(var(--ac-space-1h) * -1);
+  padding: 0 var(--ac-space-1h);
   white-space: pre-wrap;
 }
 
 .agentic-chat-approval-diff-line.is-add,
 .agentic-chat-quick-ask-diff-line.is-add {
-  color: var(--text-success);
-  background-color: rgba(var(--color-green-rgb), 0.12);
+  color: var(--ac-status-done);
+  background-color: var(--ac-tint-add);
 }
 
 .agentic-chat-approval-diff-line.is-remove,
 .agentic-chat-quick-ask-diff-line.is-remove {
-  color: var(--text-error);
-  background-color: rgba(var(--color-red-rgb), 0.12);
+  color: var(--ac-status-error);
+  background-color: var(--ac-tint-remove);
 }
 
 .agentic-chat-approval-diff-line.is-context,
 .agentic-chat-quick-ask-diff-line.is-context {
-  color: var(--text-muted);
+  color: var(--ac-text-muted);
 }
 
 /* --- Quick Ask modal --- */
 
 .agentic-chat-quick-ask-target {
-  color: var(--text-muted);
+  color: var(--ac-text-muted);
   margin-top: 0;
 }
 
 .agentic-chat-quick-ask-instruction {
   width: 100%;
-  min-height: 72px;
+  min-height: var(--ac-textarea-min);
   resize: vertical;
 }
 
 .agentic-chat-quick-ask-preview {
-  margin-top: var(--size-4-2);
+  margin-top: var(--ac-space-2);
 }
 
 .agentic-chat-quick-ask-empty,
 .agentic-chat-quick-ask-summary {
-  color: var(--text-muted);
-  margin: var(--size-2-2) 0;
+  color: var(--ac-text-muted);
+  margin: var(--ac-space-1) 0;
 }
 
 .agentic-chat-quick-ask-actions {
   display: flex;
   justify-content: flex-end;
-  gap: var(--size-2-2);
-  margin-top: var(--size-4-2);
+  gap: var(--ac-space-1);
+  margin-top: var(--ac-space-2);
 }
 
 /* --- Settings --- */
@@ -1915,7 +2100,7 @@
 .agentic-chat-system-prompt {
   width: 100%;
   /* Narrow declarative pages indent the control; never push past the pane. */
-  min-width: min(320px, 100%);
+  min-width: min(var(--ac-chip-wide), 100%);
 }
 
 .agentic-chat-folder-input {
@@ -1934,7 +2119,7 @@
    flow onto a second line when they do not fit instead of clipping labels. */
 .agentic-chat-plugins-import .setting-item-control {
   flex-wrap: wrap;
-  gap: var(--size-2-2);
+  gap: var(--ac-space-1);
   align-items: center;
 }
 
@@ -1942,7 +2127,7 @@
    settings panes instead of overflowing the card. Mirrors the Import row. */
 .agentic-chat-mcp-add .setting-item-control {
   flex-wrap: wrap;
-  gap: var(--size-2-2);
+  gap: var(--ac-space-1);
   align-items: center;
 }
 
@@ -1965,7 +2150,7 @@
   max-width: 100%;
   flex-wrap: wrap;
   justify-content: flex-end;
-  gap: var(--size-2-2);
+  gap: var(--ac-space-1);
   margin-inline-start: auto;
 }
 /* Obsidian phone CSS stretches setting buttons to the full control width
@@ -1978,18 +2163,18 @@
 /* Add MCP server heading — rendered as a plain div instead of a Setting heading
    so 1.13.7's setting-group CSS cannot hide it. */
 .agentic-chat-mcp-heading {
-  margin: var(--size-4-3) 0 var(--size-2-3);
-  padding: 0 var(--size-4-2);
+  margin: var(--ac-space-3) 0 var(--ac-space-1h);
+  padding: 0 var(--ac-space-2);
 }
 .agentic-chat-mcp-heading-title {
-  color: var(--text-normal);
-  font-size: var(--font-ui-medium);
-  font-weight: var(--font-semibold);
+  color: var(--ac-text);
+  font-size: var(--ac-font-body);
+  font-weight: var(--ac-weight-semibold);
   line-height: 1.3;
 }
 .agentic-chat-mcp-heading .setting-item-description {
-  margin-top: var(--size-2-1);
-  color: var(--text-muted);
+  margin-top: var(--ac-space-0);
+  color: var(--ac-text-muted);
   opacity: 1;
 }
 
@@ -2000,10 +2185,10 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  gap: var(--size-4-2);
-  padding: var(--size-4-2) 0;
-  border-top: 1px solid var(--background-modifier-border);
-  min-height: 48px;
+  gap: var(--ac-space-2);
+  padding: var(--ac-space-2) 0;
+  border-top: var(--ac-line) solid var(--ac-border);
+  min-height: var(--ac-input-min);
 }
 
 .agentic-chat-plugin-main {
@@ -2014,14 +2199,14 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: var(--text-normal);
-  font-weight: var(--font-medium);
+  color: var(--ac-text);
+  font-weight: var(--ac-weight-medium);
 }
 
 .agentic-chat-plugin-meta {
-  margin-top: 2px;
-  font-size: var(--font-ui-smaller);
-  color: var(--text-muted);
+  margin-top: var(--ac-space-0);
+  font-size: var(--ac-font-small);
+  color: var(--ac-text-muted);
   overflow-wrap: anywhere;
 }
 
@@ -2034,7 +2219,7 @@
   align-items: center;
   flex-wrap: wrap;
   justify-content: flex-end;
-  gap: var(--size-2-2);
+  gap: var(--ac-space-1);
   flex: 0 0 auto;
 }
 
@@ -2042,132 +2227,127 @@
   flex: 0 0 auto;
 }
 
-/* --- Inline result actions (copy / retry) --- */
+/* --- Turn actions (copy, retry) and the per-answer meta --- */
 
+/* Quiet until you need them: shown on hover or focus on desktop, always on
+   touch, so nothing depends on hover. */
 .agentic-chat-actions {
   display: flex;
-  gap: var(--size-2-2);
-  margin-top: var(--size-2-2);
+  align-items: center;
+  gap: var(--ac-space-0);
+  margin-left: calc(var(--ac-space-1h) * -1);
+  opacity: 0;
+  transition: opacity var(--ac-motion);
 }
 
 .agentic-chat-actions:empty {
   display: none;
 }
 
-.agentic-chat-action {
-  opacity: 0;
-  transition: opacity 120ms ease;
+.agentic-chat-assistant:hover .agentic-chat-actions,
+.agentic-chat-actions:focus-within,
+.is-mobile .agentic-chat-actions {
+  opacity: 1;
 }
 
-.agentic-chat-assistant:hover .agentic-chat-action,
-.agentic-chat-action:focus-visible {
-  opacity: 1;
+.agentic-chat-action {
+  min-width: var(--ac-hit);
+  height: var(--ac-hit);
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--ac-text-muted);
+}
+
+.agentic-chat-action svg {
+  width: var(--ac-icon-s);
+  height: var(--ac-icon-s);
+}
+
+.agentic-chat-turn-meta {
+  margin-left: var(--ac-space-1h);
+  color: var(--ac-text-faint);
+  font-size: var(--ac-font-small);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 /* --- Clickable in-pane lists (e.g. /skill picker) --- */
 
 .agentic-chat-info-subtitle {
-  color: var(--text-muted);
-  margin-bottom: var(--size-2-3);
+  color: var(--ac-text-muted);
+  margin-bottom: var(--ac-space-1h);
 }
 
 .agentic-chat-action-list {
   display: flex;
   flex-direction: column;
-  gap: var(--size-2-1);
+  gap: var(--ac-space-0);
 }
 
 .agentic-chat-action-row {
   display: flex;
   align-items: center;
-  gap: var(--size-2-3);
+  gap: var(--ac-space-1h);
   width: 100%;
   text-align: left;
-  padding: var(--size-2-2) var(--size-2-3);
-  border-radius: var(--radius-s);
+  padding: var(--ac-space-1) var(--ac-space-1h);
+  border-radius: var(--ac-radius-s);
   background-color: transparent;
   box-shadow: none;
   cursor: pointer;
 }
 
 .agentic-chat-action-row:hover {
-  background-color: var(--background-modifier-hover);
+  background-color: var(--ac-hover);
 }
 
 .agentic-chat-action-row-icon {
   display: flex;
   align-items: center;
-  color: var(--text-muted);
+  color: var(--ac-text-muted);
 }
 
 .agentic-chat-action-row-icon svg {
-  width: 14px;
-  height: 14px;
+  width: var(--ac-icon-s);
+  height: var(--ac-icon-s);
 }
 
 .agentic-chat-action-row-main {
   display: flex;
   align-items: baseline;
-  gap: var(--size-2-3);
+  gap: var(--ac-space-1h);
   min-width: 0;
 }
 
 .agentic-chat-action-row-label {
-  font-size: var(--font-ui-small);
+  font-size: var(--ac-font-ui);
   white-space: nowrap;
 }
 
 .agentic-chat-action-row-detail {
-  font-size: var(--font-ui-smaller);
-  color: var(--text-muted);
+  font-size: var(--ac-font-small);
+  color: var(--ac-text-muted);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-/* Narrow panes (right sidebar, stacked leaves, or small window after drag):
-   the pane width, not the viewport, drives wrapping. Without this the
-   model pill + Safe↔YOLO + context gauge keep their wide intrinsic size,
-   the row overflows, and the whole view is clipped on the right — the
-   "cut off" the user sees after shrinking the window or dragging the
-   splitter to reveal the editor. */
+/* Narrow panes (right sidebar, stacked leaves, or a small window): the pane
+   width, not the viewport, drives the layout, so nothing clips on the right. */
 @container agentic-chat (max-width: 400px) {
   .agentic-chat-messages {
-    padding: var(--size-4-2);
+    padding: var(--ac-space-2) var(--ac-space-3) var(--ac-space-4);
   }
 
   .agentic-chat-composer {
-    padding: var(--size-4-2);
-  }
-
-  .agentic-chat-field {
-    padding: var(--size-2-2) var(--size-2-3);
-  }
-
-  .agentic-chat-toolbar {
-    gap: var(--size-2-2);
-  }
-
-  .agentic-chat-model {
-    max-width: 100%;
-    /* No flex-basis: 100% — content-width pill with truncated model name;
-       a full-width pill is what made the chip stretch with the pane width. */
-  }
-
-  .agentic-chat-toolbar-left,
-  .agentic-chat-toolbar-right {
-    flex-basis: 100%;
-    max-width: 100%;
-    justify-content: flex-start;
-  }
-
-  .agentic-chat-toolbar-right {
-    margin-left: 0;
-    justify-content: space-between;
+    padding-left: var(--ac-space-2);
+    padding-right: var(--ac-space-2);
   }
 
   .agentic-chat-user {
-    max-width: 96%;
+    max-width: 92%;
   }
 }
 
@@ -2176,7 +2356,17 @@
     flex-wrap: wrap;
   }
 
-  .agentic-chat-field {
-    min-height: 88px;
+  .agentic-chat-mode-label,
+  .agentic-chat-ctx-percent {
+    display: none;
   }
+}
+
+/* Touch: the same layout, bigger targets, nothing hover-only. */
+.is-mobile .agentic-chat-mode-label {
+  display: none;
+}
+
+.is-mobile .agentic-chat-toolbar {
+  gap: var(--ac-space-0);
 }

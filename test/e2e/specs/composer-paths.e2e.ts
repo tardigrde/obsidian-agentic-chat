@@ -158,7 +158,7 @@ describe("agentic-chat composer paths", function () {
 
     await sendWithButton("queued draft before edit");
     await browser.waitUntil(
-      async () => (await $('[data-ac="send"]').getText()).trim() === "Update",
+      async () => (await $('[data-ac="send"]').getAttribute("data-ac-state")) === "update",
       { timeout: 5_000, timeoutMsg: "send button did not switch to update mode" },
     );
 
@@ -195,7 +195,7 @@ describe("agentic-chat composer paths", function () {
     const input = await $('[data-ac="composer-input"]');
     expect(await input.getValue()).toBe("replacement after stop");
     await browser.waitUntil(
-      async () => (await $('[data-ac="send"]').getText()).trim() === "Send",
+      async () => (await $('[data-ac="send"]').getAttribute("data-ac-state")) === "send",
       { timeout: 5_000, timeoutMsg: "stop did not disarm the queued draft" },
     );
 

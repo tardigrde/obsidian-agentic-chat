@@ -71,14 +71,15 @@ export class ChatView extends ItemView {
   private fieldEl!: HTMLElement;
   private inputEl!: HTMLTextAreaElement;
   private modeToggleEl!: HTMLElement;
+  private modeLabelEl?: HTMLElement;
   private menu!: AutocompleteMenu;
   private sendButton!: HTMLButtonElement;
   private stopButton!: HTMLButtonElement;
   private statusEl!: HTMLElement;
   private modelPillEl!: HTMLElement;
   private effortKnobEl!: HTMLElement;
-  private usageEl!: HTMLElement;
-  private contextBarEl!: HTMLProgressElement;
+  private contextEl!: HTMLElement;
+  private contextRingEl!: SVGCircleElement;
   private contextPercentEl!: HTMLElement;
   private workingEl!: HTMLElement;
   private closed = true;
@@ -159,8 +160,8 @@ export class ChatView extends ItemView {
       elements: {
         effortKnobEl: () => this.effortKnobEl,
         modelPillEl: () => this.modelPillEl,
-        usageEl: () => this.usageEl,
-        contextBarEl: () => this.contextBarEl,
+        contextEl: () => this.contextEl,
+        contextRingEl: () => this.contextRingEl,
         contextPercentEl: () => this.contextPercentEl,
         sendButton: () => this.sendButton,
         stopButton: () => this.stopButton,
@@ -552,6 +553,7 @@ export class ChatView extends ItemView {
         cancelAutocomplete: () => this.cancelAutocomplete(),
         handleDrop: (event) => this.handleDrop(event),
         cycleEffort: () => void this.cycleEffort(),
+        attach: () => this.composer.openMentionPicker(),
         toggleMode: () => this.toggleMode(),
         switchModel: () => void this.switchModel(),
         newSession: () => void this.newSession(),
@@ -569,14 +571,15 @@ export class ChatView extends ItemView {
     this.fieldEl = layout.fieldEl;
     this.inputEl = layout.inputEl;
     this.modeToggleEl = layout.modeToggleEl;
+    this.modeLabelEl = layout.modeLabelEl;
     this.menu = layout.menu;
     this.sendButton = layout.sendButton;
     this.stopButton = layout.stopButton;
     this.statusEl = layout.statusEl;
     this.modelPillEl = layout.modelPillEl;
     this.effortKnobEl = layout.effortKnobEl;
-    this.usageEl = layout.usageEl;
-    this.contextBarEl = layout.contextBarEl;
+    this.contextEl = layout.contextEl;
+    this.contextRingEl = layout.contextRingEl;
     this.contextPercentEl = layout.contextPercentEl;
     this.workingEl = layout.workingEl;
   }
@@ -603,27 +606,13 @@ export class ChatView extends ItemView {
 
   private renderEmptyState(): void {
     this.emptyStateEl = acHook(this.messagesEl.createDiv({ cls: "agentic-chat-empty" }), "empty");
-    const icon = this.emptyStateEl.createDiv({ cls: "agentic-chat-empty-icon" });
-    setIcon(icon, "bot");
-    this.emptyStateEl.createDiv({
+    const icon = this.emptyStateEl.createDiv({ cls: "agentic-chat-empty-icon", attr: { "aria-hidden": "true" } });
+    setIcon(icon, "sparkles");
+    this.emptyStateEl.createEl("h2", { cls: "agentic-chat-empty-title", text: "What should we work on?" });
+    this.emptyStateEl.createEl("p", {
       cls: "agentic-chat-empty-text",
-      text: "Ask anything about your vault. The agent can read, search, write, and edit notes — every tool call is shown inline. Type / for commands or @ to attach a note.",
+      text: "I can search, read, and edit your vault. In Safe mode you approve every change. Type / for commands or @ to attach a note.",
     });
-    // Suggested prompts fill the empty surface with a low-effort starting point
-    // (teaches / and @ without a manual) instead of a big vertical void.
-    const suggestions = [
-      "Read the active note and summarize it",
-      "List notes changed in the last week",
-      "Draft a weekly overview of my vault",
-    ];
-    const row = this.emptyStateEl.createDiv({ cls: "agentic-chat-empty-suggestions" });
-    for (const suggestion of suggestions) {
-      const chip = row.createEl("button", { cls: "agentic-chat-empty-suggestion", text: suggestion });
-      chip.addEventListener("click", () => {
-        this.inputEl.value = suggestion;
-        void this.submit("button");
-      });
-    }
   }
 
   private clearEmptyState(): void {
@@ -687,7 +676,9 @@ export class ChatView extends ItemView {
     this.modeToggleEl.toggleClass("is-active", settings.mode === "yolo");
     this.modeToggleEl.toggleClass("is-disabled", streaming);
     this.modeToggleEl.setAttr("aria-checked", String(settings.mode === "yolo"));
-    this.modeToggleEl.setAttr("aria-label", `Permission mode: ${settings.mode === "yolo" ? "YOLO" : "Safe"}`);
+    const modeName = settings.mode === "yolo" ? "YOLO" : "Safe";
+    this.modeToggleEl.setAttr("aria-label", `Permission mode: ${modeName}`);
+    this.modeLabelEl?.setText(modeName);
     // Effort can't change mid-turn (it would disagree with the in-flight request).
     this.effortKnobEl?.toggleClass("is-disabled", streaming);
   }

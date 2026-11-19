@@ -371,13 +371,13 @@ describe("agentic-chat deterministic approvals", function () {
     ]);
     await sendPrompt("scripted queue initial");
     await browser.waitUntil(
-      async () => (await $('[data-ac="send"]').getText()).trim() === "Queue",
+      async () => (await $('[data-ac="send"]').getAttribute("data-ac-state")) === "queue",
       { timeout: 5_000, timeoutMsg: "send button did not switch to queue mode" },
     );
 
     await sendPrompt("queued draft before edit");
     await browser.waitUntil(
-      async () => (await $('[data-ac="send"]').getText()).trim() === "Update",
+      async () => (await $('[data-ac="send"]').getAttribute("data-ac-state")) === "update",
       { timeout: 5_000, timeoutMsg: "send button did not switch to update mode" },
     );
     const input = await $('[data-ac="composer-input"]');

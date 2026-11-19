@@ -19,6 +19,8 @@ import {
   type ToolResultLite,
 } from "./message-content";
 import { acHook } from "./test-hooks";
+import { addUsage, emptyUsage } from "../agent/usage";
+import { formatTurnMeta } from "./format";
 import { openSystemUrl } from "../platform/system-browser";
 import { isPinnedToBottom } from "./scroll-pinning";
 import { isSummaryMessage } from "../agent/compaction";
@@ -49,8 +51,10 @@ export class TranscriptView {
   // duplicate standalone error panel that showServiceError() would otherwise
   // emit for the same turn-level error (e.g. "Request was aborted").
   lastBubbleError: string | undefined;
-  // Last completed turn's usage, shown collapsed in the single bottom bar.
-  lastTurnUsage: Usage | null = null;
+  // Usage of the current turn (every assistant message since the last user
+  // message), shown as the per-answer meta. A live run also times itself.
+  private turnUsage: Usage | null = null;
+  private runStartedAt: number | null = null;
   private autoScrollPinned = true;
   private userScrollIntent = false;
   private userScrollIntentTimer: number | null = null;
@@ -64,6 +68,8 @@ export class TranscriptView {
   beginRun(): void {
     this.bubble?.dispose();
     this.bubble = null;
+    this.turnUsage = null;
+    this.runStartedAt = performance.now();
   }
 
   /** message_start for an assistant message. */
@@ -88,6 +94,7 @@ export class TranscriptView {
   /** agent_end: settle a bubble that never got final text. */
   endRun(): void {
     this.bubble?.finalizeWithoutText();
+    this.runStartedAt = null;
   }
 
   /** Forget the live bubble without disposing it (the next render replaces the DOM). */
@@ -121,6 +128,7 @@ export class TranscriptView {
     this.messagesEl.empty();
     this.bubble = null;
     this.lastBubbleError = undefined;
+    this.turnUsage = null;
     const toolResults = collectToolResults(messages);
     const lastAssistant = lastIndex(messages, (message) => message.role === "assistant");
     let rendered = 0;
@@ -179,12 +187,18 @@ export class TranscriptView {
   private applyAssistantMessage(
     bubble: AssistantBubble,
     message: AgentMessage,
-    options: { canRetry: boolean },
+    options: { canRetry: boolean; live?: boolean },
   ): void {
+    const usage = assistantUsage(message);
+    if (usage) {
+      this.turnUsage ??= emptyUsage();
+      addUsage(this.turnUsage, usage);
+    }
     const text = messageText(message);
     if (text) {
       void bubble.finalizeText(text, this.host.app, this.host.component);
-      bubble.showActions({ canRetry: options.canRetry });
+      const elapsedMs = options.live && this.runStartedAt !== null ? performance.now() - this.runStartedAt : undefined;
+      bubble.showActions({ canRetry: options.canRetry, meta: formatTurnMeta({ usage: this.turnUsage, elapsedMs }) });
     } else {
       bubble.finalizeWithoutText();
     }
@@ -192,10 +206,6 @@ export class TranscriptView {
     if (errorMessage) {
       bubble.showError(errorMessage);
       if (options.canRetry) this.lastBubbleError = errorMessage;
-    }
-    const usage = assistantUsage(message);
-    if (usage) {
-      this.lastTurnUsage = usage;
     }
   }
 
@@ -205,6 +215,7 @@ export class TranscriptView {
     editIndex?: number,
     options: { forceScroll?: boolean; historyImages?: MessageImageLite[] } = {},
   ): void {
+    this.turnUsage = null;
     const el = acHook(this.messagesEl.createDiv({ cls: ["agentic-chat-message", "agentic-chat-user"] }), "user-message");
     if (attachments.length > 0) {
       const labels = attachments.map((entry) =>
@@ -294,7 +305,7 @@ export class TranscriptView {
   finalizeBubble(message: AgentMessage): void {
     const bubble = this.bubble;
     if (!bubble) return;
-    this.applyAssistantMessage(bubble, message, { canRetry: true });
+    this.applyAssistantMessage(bubble, message, { canRetry: true, live: true });
   }
 
   private newBubble(): AssistantBubble {

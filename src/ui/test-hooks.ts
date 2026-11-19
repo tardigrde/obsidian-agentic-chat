@@ -32,6 +32,7 @@ export const AC_HOOKS = [
   "approval-deny",
   "approval-stop",
   "turn-actions",
+  "turn-meta",
   "composer",
   "composer-card",
   "composer-input",

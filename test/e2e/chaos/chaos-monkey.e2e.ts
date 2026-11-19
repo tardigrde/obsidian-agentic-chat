@@ -525,7 +525,7 @@ async function runQueue(action: ChaosAction): Promise<void> {
 
   await sendWithButton(QUEUE_DRAFT);
   await browser.waitUntil(
-    async () => (await $('[data-ac="send"]').getText()).trim() === "Update",
+    async () => (await $('[data-ac="send"]').getAttribute("data-ac-state")) === "update",
     { timeout: 10_000, timeoutMsg: "send button did not switch to queue/update mode" },
   );
   const input = await $('[data-ac="composer-input"]');
@@ -542,7 +542,7 @@ async function runQueue(action: ChaosAction): Promise<void> {
     );
   }
   await browser.waitUntil(
-    async () => (await $('[data-ac="send"]').getText()).trim() === "Send" || (await isRunning()),
+    async () => (await $('[data-ac="send"]').getAttribute("data-ac-state")) === "send" || (await isRunning()),
     { timeout: 30_000, timeoutMsg: "the queued draft did not flush at turn end" },
   );
   const transcript = await transcriptText();
@@ -584,7 +584,7 @@ async function runStopSend(action: ChaosAction): Promise<void> {
     throw new Error("stop did not keep the queued replacement in the composer");
   }
   await browser.waitUntil(
-    async () => (await $('[data-ac="send"]').getText()).trim() === "Send",
+    async () => (await $('[data-ac="send"]').getAttribute("data-ac-state")) === "send",
     { timeout: 10_000, timeoutMsg: "stop did not disarm the queued draft" },
   );
   await $('[data-ac="send"]').click();
