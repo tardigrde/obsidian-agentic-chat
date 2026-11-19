@@ -24,8 +24,8 @@ describe("unknown slash command", function () {
   it("shows a hint for an unknown command and does not send it to the model", async function () {
     await submitComposer("/sesions clear");
     await waitForTranscript("Unknown command");
-    await expect($(".agentic-chat-messages")).toHaveText(/is not a command or a skill/);
-    await expect($(".agentic-chat-messages")).not.toHaveText(/The model got the path/);
+    await expect($('[data-ac="messages"]')).toHaveText(/is not a command or a skill/);
+    await expect($('[data-ac="messages"]')).not.toHaveText(/The model got the path/);
     if (process.env.AGENTIC_CHAT_SCREENSHOT_DIR) {
       await browser.saveScreenshot(`${process.env.AGENTIC_CHAT_SCREENSHOT_DIR}/unknown-command.png`);
     }

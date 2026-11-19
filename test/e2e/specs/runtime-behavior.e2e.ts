@@ -8,23 +8,23 @@ const PRIVATE_NOTE_BODY = "PRIVATE E2E SECRET: ignored active note body must not
 
 async function openChat(): Promise<void> {
   await browser.executeObsidianCommand("agentic-chat:open-chat");
-  await $(".agentic-chat-view").waitForExist();
+  await $('[data-ac="view"]').waitForExist();
   await waitForComposerReady();
 }
 
 async function runSlashCommand(command: string): Promise<void> {
-  const input = await $(".agentic-chat-input");
+  const input = await $('[data-ac="composer-input"]');
   await input.click();
   await input.setValue(command);
-  await $(".agentic-chat-send").click();
+  await $('[data-ac="send"]').click();
 }
 
 async function sendPrompt(prompt: string): Promise<void> {
   await waitForComposerReady();
-  const input = await $(".agentic-chat-input");
+  const input = await $('[data-ac="composer-input"]');
   await input.click();
   await input.setValue(prompt);
-  await $(".agentic-chat-send").click();
+  await $('[data-ac="send"]').click();
 }
 
 async function closeOpenModals(): Promise<void> {
@@ -41,9 +41,9 @@ async function closeOpenModals(): Promise<void> {
 }
 
 async function latestInfoText(): Promise<string> {
-  await $(".agentic-chat-info").waitForExist();
+  await $('[data-ac="info"], [data-ac="error"]').waitForExist();
   return await browser.execute(() => {
-    const infos = Array.from(document.querySelectorAll<HTMLElement>(".agentic-chat-info"));
+    const infos = Array.from(document.querySelectorAll<HTMLElement>('[data-ac="info"], [data-ac="error"]'));
     return infos.at(-1)?.innerText ?? "";
   });
 }
@@ -147,7 +147,7 @@ async function searchSessions(query: string): Promise<void> {
 
 async function transcriptIsPinned(): Promise<boolean> {
   return await browser.execute(() => {
-    const el = document.querySelector<HTMLElement>(".agentic-chat-messages");
+    const el = document.querySelector<HTMLElement>('[data-ac="messages"]');
     if (!el) return false;
     return el.scrollHeight <= el.clientHeight || el.scrollHeight - el.scrollTop - el.clientHeight <= 4;
   });
@@ -164,7 +164,7 @@ describe("agentic-chat runtime behavior", function () {
   });
 
   it("reopens, renames, and deletes persisted sessions without a model call", async function () {
-    await expect($(".agentic-chat-messages")).toHaveText(/beta seeded answer line 20/);
+    await expect($('[data-ac="messages"]')).toHaveText(/beta seeded answer line 20/);
     expect(await transcriptIsPinned()).toBe(true);
 
     await searchSessions("Alpha");
@@ -185,7 +185,7 @@ describe("agentic-chat runtime behavior", function () {
     );
 
     await $(".agentic-chat-session-row .agentic-chat-session-main").click();
-    await expect($(".agentic-chat-messages")).toHaveText(/alpha seeded answer/);
+    await expect($('[data-ac="messages"]')).toHaveText(/alpha seeded answer/);
 
     await searchSessions("Renamed Alpha");
     await $(".agentic-chat-session-row .agentic-chat-session-delete").click();
@@ -207,7 +207,7 @@ describe("agentic-chat runtime behavior", function () {
     );
 
     await sendPrompt("check ignored active note handling");
-    await expect($(".agentic-chat-info-error")).toHaveText(/Add a openrouter API key/);
+    await expect($('[data-ac="error"]')).toHaveText(/Add a openrouter API key/);
 
     const prompt = await browser.executeObsidian(async ({ app }, viewType) => {
       const view = app.workspace.getLeavesOfType(viewType)[0]?.view as unknown as {
@@ -247,23 +247,23 @@ describe("agentic-chat runtime behavior", function () {
 
   it("keeps the composer usable in a narrow viewport and pins streamed text to the bottom", async function () {
     await browser.execute(() => {
-      const view = document.querySelector<HTMLElement>(".agentic-chat-view");
+      const view = document.querySelector<HTMLElement>('[data-ac="view"]');
       if (!view) return;
       view.dataset.e2eWidth = view.style.width;
       view.dataset.e2eMaxWidth = view.style.maxWidth;
       view.style.width = "390px";
       view.style.maxWidth = "390px";
     });
-    await expect($(".agentic-chat-input")).toBeDisplayed();
-    await expect($(".agentic-chat-send")).toBeDisplayed();
-    await expect($(".agentic-chat-model-pill")).toBeDisplayed();
+    await expect($('[data-ac="composer-input"]')).toBeDisplayed();
+    await expect($('[data-ac="send"]')).toBeDisplayed();
+    await expect($('[data-ac="model-pill"]')).toBeDisplayed();
 
     const pinned = await browser.executeObsidian(async ({ app }, viewType) => {
       const view = app.workspace.getLeavesOfType(viewType)[0]?.view as unknown as {
         handleAgentEvent?: (event: unknown) => void;
       };
       if (!view?.handleAgentEvent) return { pinned: false, scrollHeight: 0, clientHeight: 0, scrollTop: 0 };
-      const el = document.querySelector<HTMLElement>(".agentic-chat-messages");
+      const el = document.querySelector<HTMLElement>('[data-ac="messages"]');
       if (!el) return { pinned: false, scrollHeight: 0, clientHeight: 0, scrollTop: 0 };
       el.scrollTop = el.scrollHeight;
       el.dispatchEvent(new Event("scroll"));
@@ -290,7 +290,7 @@ describe("agentic-chat runtime behavior", function () {
     }, VIEW_TYPE_AGENT_CHAT);
     if (!pinned.pinned) throw new Error(`stream did not stay pinned: ${JSON.stringify(pinned)}`);
     await browser.execute(() => {
-      const view = document.querySelector<HTMLElement>(".agentic-chat-view");
+      const view = document.querySelector<HTMLElement>('[data-ac="view"]');
       if (!view) return;
       view.style.width = view.dataset.e2eWidth ?? "";
       view.style.maxWidth = view.dataset.e2eMaxWidth ?? "";
@@ -304,7 +304,7 @@ describe("agentic-chat runtime behavior", function () {
       const view = app.workspace.getLeavesOfType(viewType)[0]?.view as unknown as {
         handleAgentEvent?: (event: unknown) => void;
       };
-      const el = document.querySelector<HTMLElement>(".agentic-chat-messages");
+      const el = document.querySelector<HTMLElement>('[data-ac="messages"]');
       if (!view?.handleAgentEvent || !el) return { overflowed: false, before: -1, after: -1 };
 
       view.handleAgentEvent({ type: "agent_start" });
@@ -345,7 +345,7 @@ describe("agentic-chat runtime behavior", function () {
 
   it("force-scrolls back to the bottom when the user sends a new prompt", async function () {
     await browser.execute(() => {
-      const el = document.querySelector<HTMLElement>(".agentic-chat-messages");
+      const el = document.querySelector<HTMLElement>('[data-ac="messages"]');
       if (!el) throw new Error("messages pane not found");
       for (let index = 0; index < 80; index += 1) {
         const row = document.createElement("div");
@@ -364,7 +364,7 @@ describe("agentic-chat runtime behavior", function () {
       await new Promise((resolve) =>
         window.requestAnimationFrame(() => window.requestAnimationFrame(() => resolve(undefined))),
       );
-      const el = document.querySelector<HTMLElement>(".agentic-chat-messages");
+      const el = document.querySelector<HTMLElement>('[data-ac="messages"]');
       if (!el) return false;
       return el.scrollHeight <= el.clientHeight || el.scrollHeight - el.scrollTop - el.clientHeight <= 4;
     });

@@ -194,14 +194,14 @@ async function screenshot(label: string): Promise<void> {
 }
 
 async function transcriptText(): Promise<string> {
-  return await $(".agentic-chat-messages").getText();
+  return await $('[data-ac="messages"]').getText();
 }
 
 async function sendWithButton(text: string): Promise<void> {
-  const input = await $(".agentic-chat-input");
+  const input = await $('[data-ac="composer-input"]');
   await input.click();
   await input.setValue(text);
-  await $(".agentic-chat-send").click();
+  await $('[data-ac="send"]').click();
 }
 
 async function pressEnter(): Promise<void> {
@@ -233,7 +233,7 @@ async function waitForCall(label: string): Promise<void> {
 
 async function isRunning(): Promise<boolean> {
   return await browser.execute(() => {
-    const stop = document.querySelector<HTMLElement>(".agentic-chat-stop");
+    const stop = document.querySelector<HTMLElement>('[data-ac="stop"]');
     return Boolean(stop && stop.offsetParent !== null);
   });
 }
@@ -269,7 +269,7 @@ async function waitForStableAnswer(previous: string, timeoutMs: number): Promise
 async function approveIfPresent(timeoutMs: number, allowed: boolean): Promise<boolean> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
-    const modal = await $(".agentic-chat-approval");
+    const modal = await $('[data-ac="approval"]');
     if (await modal.isExisting()) {
       await modal.waitForDisplayed({ timeout: 5_000 }).catch(() => undefined);
       if (allowed) {
@@ -280,7 +280,7 @@ async function approveIfPresent(timeoutMs: number, allowed: boolean): Promise<bo
         }
       } else {
         const clicked = await browser.execute(() => {
-          const modalEl = document.querySelector<HTMLElement>(".agentic-chat-approval");
+          const modalEl = document.querySelector<HTMLElement>('[data-ac="approval"]');
           if (!modalEl) return false;
           const buttons = Array.from(modalEl.querySelectorAll<HTMLButtonElement>("button"));
           const deny = buttons.find((button) => button.innerText.trim() === "Deny");
@@ -293,7 +293,7 @@ async function approveIfPresent(timeoutMs: number, allowed: boolean): Promise<bo
         if (!clicked) continue;
         await browser.pause(200);
         const confirmed = await browser.execute(() => {
-          const modalEl = document.querySelector<HTMLElement>(".agentic-chat-approval");
+          const modalEl = document.querySelector<HTMLElement>('[data-ac="approval"]');
           if (!modalEl) return false;
           const buttons = Array.from(modalEl.querySelectorAll<HTMLButtonElement>("button"));
           const confirm = buttons.find((button) => button.innerText.trim() === "Confirm Deny");
@@ -306,7 +306,7 @@ async function approveIfPresent(timeoutMs: number, allowed: boolean): Promise<bo
         if (!confirmed) {
           // Some builds deny in one click; treat the disappearing modal as success.
           await browser.pause(200);
-          const stillOpen = await $(".agentic-chat-approval").isExisting();
+          const stillOpen = await $('[data-ac="approval"]').isExisting();
           if (!stillOpen) return true;
           continue;
         }
@@ -362,7 +362,7 @@ async function assertSessionsValid(): Promise<{ files: number; lines: number }> 
 }
 
 async function countErrorPanels(): Promise<number> {
-  return await browser.execute(() => document.querySelectorAll(".agentic-chat-info-error").length);
+  return await browser.execute(() => document.querySelectorAll('[data-ac="error"]').length);
 }
 
 async function waitForNewAnswer(previous: string, timeoutMs: number): Promise<string> {
@@ -399,7 +399,7 @@ async function runPrompt(action: ChaosAction): Promise<void> {
 }
 
 async function runSlash(action: ChaosAction): Promise<void> {
-  const panelsBefore = await browser.execute(() => document.querySelectorAll(".agentic-chat-info").length);
+  const panelsBefore = await browser.execute(() => document.querySelectorAll('[data-ac="info"], [data-ac="error"]').length);
   await sendPrompt(action.prompt ?? "");
   // `/help` and `/status` both answer locally with a new info panel. `/status`
   // lists the provider; an action list belongs to a picker command, not here.
@@ -408,7 +408,7 @@ async function runSlash(action: ChaosAction): Promise<void> {
     async () =>
       await browser.execute(
         (before, text) => {
-          const panels = Array.from(document.querySelectorAll<HTMLElement>(".agentic-chat-info"));
+          const panels = Array.from(document.querySelectorAll<HTMLElement>('[data-ac="info"], [data-ac="error"]'));
           const latest = panels.at(-1);
           return panels.length > before && Boolean(latest) && (latest as HTMLElement).innerText.includes(text);
         },
@@ -460,7 +460,7 @@ async function runRetiredCommands(action: ChaosAction): Promise<void> {
 async function expectRetiredCommandHint(command: string): Promise<void> {
   const latestHint = async (): Promise<string> =>
     await browser.execute(() => {
-      const panels = document.querySelectorAll(".agentic-chat-info:not(.agentic-chat-info-error)");
+      const panels = document.querySelectorAll('[data-ac="info"]');
       return panels.length > 0 ? (panels[panels.length - 1].textContent ?? "") : "";
     });
   await sendPrompt(`${command} explain what you do`);
@@ -480,14 +480,14 @@ async function runSteer(action: ChaosAction): Promise<void> {
   await sendPrompt(action.prompt ?? "");
   if (plan.live) {
     await browser.waitUntil(
-      async () => (await browser.$$(".agentic-chat-step")).length > 0 || (await isRunning()),
+      async () => (await browser.$$('[data-ac="step"]')).length > 0 || (await isRunning()),
       { timeout: 60_000, timeoutMsg: "the live steer prompt never started a tool call" },
     );
   } else {
     await waitForCall(`${action.id} tool`);
   }
 
-  const input = await $(".agentic-chat-input");
+  const input = await $('[data-ac="composer-input"]');
   await input.click();
   await input.setValue(STEER_TEXT);
   await pressEnter();
@@ -497,7 +497,7 @@ async function runSteer(action: ChaosAction): Promise<void> {
     timeoutMsg: "steering text was not cleared from the composer",
   });
   await browser.waitUntil(
-    async () => (await $(".agentic-chat-status").getText()).includes("Queued for the active turn."),
+    async () => (await $('[data-ac="status"]').getText()).includes("Queued for the active turn."),
     { timeout: 10_000, timeoutMsg: "steering status was not reported" },
   );
 
@@ -525,10 +525,10 @@ async function runQueue(action: ChaosAction): Promise<void> {
 
   await sendWithButton(QUEUE_DRAFT);
   await browser.waitUntil(
-    async () => (await $(".agentic-chat-send").getText()).trim() === "Update",
+    async () => (await $('[data-ac="send"]').getText()).trim() === "Update",
     { timeout: 10_000, timeoutMsg: "send button did not switch to queue/update mode" },
   );
-  const input = await $(".agentic-chat-input");
+  const input = await $('[data-ac="composer-input"]');
   await input.setValue(QUEUE_EDITED);
   if ((await input.getValue()) !== QUEUE_EDITED) throw new Error("queued draft edit did not stick");
 
@@ -542,7 +542,7 @@ async function runQueue(action: ChaosAction): Promise<void> {
     );
   }
   await browser.waitUntil(
-    async () => (await $(".agentic-chat-send").getText()).trim() === "Send" || (await isRunning()),
+    async () => (await $('[data-ac="send"]').getText()).trim() === "Send" || (await isRunning()),
     { timeout: 30_000, timeoutMsg: "the queued draft did not flush at turn end" },
   );
   const transcript = await transcriptText();
@@ -552,7 +552,7 @@ async function runQueue(action: ChaosAction): Promise<void> {
     // A live model may answer the queued text with a tool or a question. The
     // draft was still sent; stop the follow-up turn so the next action is clean.
     result.runnerNotes.push("queue: the queued draft started a follow-up live turn; the driver stopped it after the assertion");
-    await (await $(".agentic-chat-stop")).click();
+    await (await $('[data-ac="stop"]')).click();
     await browser.waitUntil(async () => !(await isRunning()), {
       timeout: 15_000,
       timeoutMsg: "the queued follow-up turn did not stop",
@@ -572,22 +572,22 @@ async function runStopSend(action: ChaosAction): Promise<void> {
   else await waitForCall(`${action.id} held`);
 
   await sendWithButton(STOP_REPLACEMENT);
-  const stopButton = await $(".agentic-chat-stop");
+  const stopButton = await $('[data-ac="stop"]');
   await stopButton.waitForDisplayed({ timeout: 10_000 });
   await stopButton.click();
-  await browser.waitUntil(async () => !(await $(".agentic-chat-stop").isDisplayed()), {
+  await browser.waitUntil(async () => !(await $('[data-ac="stop"]').isDisplayed()), {
     timeout: 15_000,
     timeoutMsg: "the stopped turn never settled",
   });
-  const input = await $(".agentic-chat-input");
+  const input = await $('[data-ac="composer-input"]');
   if ((await input.getValue()).trim() !== STOP_REPLACEMENT) {
     throw new Error("stop did not keep the queued replacement in the composer");
   }
   await browser.waitUntil(
-    async () => (await $(".agentic-chat-send").getText()).trim() === "Send",
+    async () => (await $('[data-ac="send"]').getText()).trim() === "Send",
     { timeout: 10_000, timeoutMsg: "stop did not disarm the queued draft" },
   );
-  await $(".agentic-chat-send").click();
+  await $('[data-ac="send"]').click();
 
   if (!plan.live) await setE2ERelease(true);
   await waitForNewAnswer(beforeAnswer, 120_000);
@@ -635,7 +635,7 @@ async function runMaxTurns(action: ChaosAction): Promise<void> {
       return;
     }
     const responsive = await browser.execute(() => {
-      const input = document.querySelector<HTMLTextAreaElement>(".agentic-chat-input");
+      const input = document.querySelector<HTMLTextAreaElement>('[data-ac="composer-input"]');
       if (!input) return false;
       input.focus();
       input.value = "responsiveness probe";
@@ -644,7 +644,7 @@ async function runMaxTurns(action: ChaosAction): Promise<void> {
     });
     if (!responsive) throw new Error("the composer is not responsive after the turn cap fired");
     await browser.execute(() => {
-      const input = document.querySelector<HTMLTextAreaElement>(".agentic-chat-input");
+      const input = document.querySelector<HTMLTextAreaElement>('[data-ac="composer-input"]');
       if (input) {
         input.value = "";
         input.dispatchEvent(new Event("input", { bubbles: true }));
@@ -871,8 +871,8 @@ async function runLargeInput(action: ChaosAction): Promise<void> {
   await waitForNewAnswer(before, 120_000);
 
   const overflow = await browser.execute(() => {
-    const composer = document.querySelector<HTMLTextAreaElement>(".agentic-chat-input");
-    const messages = document.querySelector<HTMLElement>(".agentic-chat-messages");
+    const composer = document.querySelector<HTMLTextAreaElement>('[data-ac="composer-input"]');
+    const messages = document.querySelector<HTMLElement>('[data-ac="messages"]');
     return {
       document: document.documentElement.scrollWidth - window.innerWidth,
       composer: composer ? composer.scrollWidth - composer.clientWidth : 0,

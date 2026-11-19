@@ -11,17 +11,17 @@ export const VIEW_TYPE_AGENT_CHAT = "agentic-chat-chat-view";
 
 export async function openChat(): Promise<void> {
   await browser.executeObsidianCommand("agentic-chat:open-chat");
-  await $(".agentic-chat-view").waitForExist();
+  await $('[data-ac="view"]').waitForExist();
   await waitForComposerReady();
 }
 
 /** Type into the composer and press its send control, like a user. */
 export async function sendPrompt(prompt: string): Promise<void> {
   await waitForComposerReady();
-  const input = await $(".agentic-chat-input");
+  const input = await $('[data-ac="composer-input"]');
   await input.click();
   await input.setValue(prompt);
-  await $(".agentic-chat-send").click();
+  await $('[data-ac="send"]').click();
 }
 
 /** Set the composer value and click send in one page call. Same submit route
@@ -29,8 +29,8 @@ export async function sendPrompt(prompt: string): Promise<void> {
 export async function submitComposer(value: string): Promise<void> {
   await waitForComposerReady();
   await browser.execute((text) => {
-    const textarea = document.querySelector<HTMLTextAreaElement>(".agentic-chat-input");
-    const send = document.querySelector<HTMLButtonElement>(".agentic-chat-send");
+    const textarea = document.querySelector<HTMLTextAreaElement>('[data-ac="composer-input"]');
+    const send = document.querySelector<HTMLButtonElement>('[data-ac="send"]');
     if (!textarea || !send) throw new Error("agentic-chat composer is not mounted");
     textarea.value = text;
     textarea.dispatchEvent(new Event("input", { bubbles: true }));
@@ -39,7 +39,7 @@ export async function submitComposer(value: string): Promise<void> {
 }
 
 export async function transcriptText(): Promise<string> {
-  return await browser.execute(() => document.querySelector<HTMLElement>(".agentic-chat-messages")?.innerText ?? "");
+  return await browser.execute(() => document.querySelector<HTMLElement>('[data-ac="messages"]')?.innerText ?? "");
 }
 
 export async function waitForTranscript(text: string, timeout = 10_000): Promise<void> {
@@ -51,16 +51,16 @@ export async function waitForTranscript(text: string, timeout = 10_000): Promise
 
 /** Text of the newest info block (slash-command output). */
 export async function latestInfoText(): Promise<string> {
-  await $(".agentic-chat-info").waitForExist();
+  await $('[data-ac="info"], [data-ac="error"]').waitForExist();
   return await browser.execute(() => {
-    const infos = Array.from(document.querySelectorAll<HTMLElement>(".agentic-chat-info"));
+    const infos = Array.from(document.querySelectorAll<HTMLElement>('[data-ac="info"], [data-ac="error"]'));
     return infos.at(-1)?.innerText ?? "";
   });
 }
 
 /** Wait until no turn is running (the Stop control is gone). */
 export async function waitForIdle(timeout = 10_000): Promise<void> {
-  await browser.waitUntil(async () => !(await $(".agentic-chat-stop").isDisplayed()), {
+  await browser.waitUntil(async () => !(await $('[data-ac="stop"]').isDisplayed()), {
     timeout,
     timeoutMsg: "the turn never settled",
   });
@@ -114,7 +114,7 @@ export async function trashPaths(paths: string[]): Promise<void> {
 }
 
 export async function allowApproval(): Promise<void> {
-  const modal = await $(".agentic-chat-approval");
+  const modal = await $('[data-ac="approval"]');
   await modal.waitForExist({ timeout: 10_000 });
   const allow = await modal.$("button=Allow");
   await allow.waitForExist({ timeout: 5_000 });
@@ -124,7 +124,7 @@ export async function allowApproval(): Promise<void> {
 
 /** Deny is two-step: the first click arms the optional reason field. */
 export async function denyApproval(): Promise<void> {
-  const modal = await $(".agentic-chat-approval");
+  const modal = await $('[data-ac="approval"]');
   await modal.waitForExist({ timeout: 10_000 });
   const deny = await modal.$("button=Deny");
   await deny.waitForExist({ timeout: 5_000 });
@@ -132,7 +132,7 @@ export async function denyApproval(): Promise<void> {
   const confirmDeny = await modal.$("button=Confirm Deny");
   await confirmDeny.waitForExist({ timeout: 5_000 });
   const title = await browser.execute(
-    () => document.querySelector(".agentic-chat-approval")?.closest(".modal")?.querySelector(".modal-title")?.textContent ?? "",
+    () => document.querySelector('[data-ac="approval"]')?.closest(".modal")?.querySelector(".modal-title")?.textContent ?? "",
   );
   expect(title).toMatch(/^Deny "/);
   await confirmDeny.click();
@@ -142,7 +142,7 @@ export async function denyApproval(): Promise<void> {
 /** Close an approval modal a failed test left open, so the next test fails on
  * its own assertion and not on an intercepted click. */
 export async function dismissOpenApproval(): Promise<void> {
-  const modal = await $(".agentic-chat-approval");
+  const modal = await $('[data-ac="approval"]');
   if (!(await modal.isExisting())) return;
   const deny = await modal.$("button=Deny");
   if (await deny.isExisting()) {

@@ -6,6 +6,7 @@ import { slugifyPluginName } from "../plugins/manifest";
 import { approvalPreviewNeedsContent, toolApprovalDescription } from "../tools/tool-contracts";
 import { compactDiffLines, diffLines, diffPrefix, diffStat, diffTooLarge, type CompactDiffWindow, type DiffLine } from "../vault/diff";
 import { normalizeVaultPath } from "../vault/path";
+import { acHook } from "./test-hooks";
 
 /** Cap diff lines rendered in the modal so a huge change can't bloat the dialog. */
 const MAX_DIFF_DISPLAY_LINES = 400;
@@ -71,6 +72,7 @@ export class ApprovalModal extends Modal {
       contentEl.createEl("p", { cls: "agentic-chat-approval-session", text: `Session: ${this.request.sessionLabel}` });
     }
     contentEl.addClass("agentic-chat-approval");
+    acHook(contentEl, "approval");
 
     contentEl.createEl("p", {
       text: toolApprovalDescription(this.request.toolName),
@@ -109,12 +111,13 @@ export class ApprovalModal extends Modal {
     }
 
     if (this.onStop) {
-      new Setting(contentEl).addButton((button) =>
+      new Setting(contentEl).addButton((button) => {
+        acHook(button.buttonEl, "approval-stop");
         button
           .setButtonText("Stop turn")
           .setClass("agentic-chat-approval-stop")
-          .onClick(() => this.stopTurn()),
-      );
+          .onClick(() => this.stopTurn());
+      });
     }
 
     // Two-step deny: the first click arms the flow and reveals an optional
@@ -142,6 +145,7 @@ export class ApprovalModal extends Modal {
     new Setting(contentEl)
       .addButton((button) => {
         denyButton = button;
+        acHook(button.buttonEl, "approval-deny");
         button
           .setButtonText("Deny")
           .setClass("mod-warning")
@@ -154,12 +158,13 @@ export class ApprovalModal extends Modal {
             }
           });
       })
-      .addButton((button) =>
+      .addButton((button) => {
+        acHook(button.buttonEl, "approval-allow");
         button
           .setButtonText("Allow")
           .setCta()
-          .onClick(() => this.decide({ approved: true, remember })),
-      );
+          .onClick(() => this.decide({ approved: true, remember }));
+      });
 
     // Enter accepts (Escape already dismisses via the default modal handler).
     // Let a focused button handle Enter itself so Tab-to-Deny still works.

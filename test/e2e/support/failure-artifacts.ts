@@ -106,7 +106,7 @@ async function collectObsidianDiagnostics(dir: string): Promise<void> {
       const latest = sessions[0];
 
       return {
-        uiText: document.querySelector(".agentic-chat-view")?.textContent ?? "",
+        uiText: document.querySelector('[data-ac="view"]')?.textContent ?? "",
         vault: {
           configDir: app.vault.configDir,
           adapterName: adapter.getName(),

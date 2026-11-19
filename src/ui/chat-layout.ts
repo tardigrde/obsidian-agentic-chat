@@ -2,6 +2,7 @@ import { setIcon, type App, type Component } from "obsidian";
 import type { AcItem } from "./autocomplete";
 import { AutocompleteMenu } from "./autocomplete-menu";
 import type { ComposerSubmitSource } from "./composer-input";
+import { acHook } from "./test-hooks";
 import { TranscriptView } from "./transcript-view";
 
 export interface ChatLayoutCallbacks {
@@ -61,8 +62,9 @@ export function buildLayout(deps: ChatLayoutDeps): ChatLayoutElements {
   const root = deps.contentEl;
   root.empty();
   root.addClass("agentic-chat-view");
+  acHook(root, "view");
 
-  const messagesEl = root.createDiv({ cls: "agentic-chat-messages" });
+  const messagesEl = acHook(root.createDiv({ cls: "agentic-chat-messages" }), "messages");
   const transcript = new TranscriptView(messagesEl, {
     app: deps.app,
     component: deps.component,
@@ -77,36 +79,39 @@ export function buildLayout(deps: ChatLayoutDeps): ChatLayoutElements {
   deps.registerDomEvent(messagesEl, "keydown", () => transcript.markUserScrollIntent());
   deps.registerDomEvent(messagesEl, "scroll", () => transcript.updateScrollPinning());
 
-  const composer = root.createDiv({ cls: "agentic-chat-composer" });
+  const composer = acHook(root.createDiv({ cls: "agentic-chat-composer" }), "composer");
 
   // Nav row above the input card: tab pills on the left (switch between up to
   // MAX_TABS independent sessions), header actions on the right (C4 / design ref).
   const tabsRow = composer.createDiv({ cls: "agentic-chat-tabs-row" });
-  const tabsEl = tabsRow.createDiv({ cls: "agentic-chat-tabs", attr: { role: "tablist" } });
+  const tabsEl = acHook(tabsRow.createDiv({ cls: "agentic-chat-tabs", attr: { role: "tablist" } }), "tab-strip");
   const headerActions = tabsRow.createDiv({ cls: "agentic-chat-tab-actions" });
   const newChatButton = headerActions.createEl("button", {
     cls: "clickable-icon",
     attr: { "aria-label": "New chat" },
   });
+  acHook(newChatButton, "new-chat");
   setIcon(newChatButton, "square-pen");
   newChatButton.addEventListener("click", () => callbacks.newSession());
   const historyButton = headerActions.createEl("button", {
     cls: "clickable-icon",
     attr: { "aria-label": "Conversation history" },
   });
+  acHook(historyButton, "history");
   setIcon(historyButton, "history");
   historyButton.addEventListener("click", () => callbacks.openHistory());
 
   // The single bordered input card: context row (chips) + textarea + bottom toolbar
   // all live *inside* one rectangle, instead of stacked around a bordered textarea.
-  const fieldEl = composer.createDiv({ cls: "agentic-chat-field" });
-  const chipsEl = fieldEl.createDiv({ cls: "agentic-chat-chips" });
+  const fieldEl = acHook(composer.createDiv({ cls: "agentic-chat-field" }), "composer-card");
+  const chipsEl = acHook(fieldEl.createDiv({ cls: "agentic-chat-chips" }), "chips");
 
   const inputWrap = fieldEl.createDiv({ cls: "agentic-chat-input-wrap" });
   const inputEl = inputWrap.createEl("textarea", {
     cls: "agentic-chat-input",
     attr: { rows: "3", placeholder: "Ask about your vault — / for commands, @ to attach a note… (Enter to send)" },
   });
+  acHook(inputEl, "composer-input");
   const menu = new AutocompleteMenu(
     composer,
     (item) => callbacks.chooseAutocomplete(item),
@@ -165,6 +170,7 @@ export function buildLayout(deps: ChatLayoutDeps): ChatLayoutElements {
     cls: "agentic-chat-model-pill",
     attr: { "aria-label": "Switch model" },
   });
+  acHook(modelPillEl, "model-pill");
   modelPillEl.addEventListener("click", () => callbacks.switchModel());
   modelGroup.createSpan({ cls: "agentic-chat-model-divider", attr: { "aria-hidden": "true" } });
 
@@ -173,6 +179,7 @@ export function buildLayout(deps: ChatLayoutDeps): ChatLayoutElements {
     cls: "agentic-chat-effort",
     attr: { role: "button", tabindex: "0" },
   });
+  acHook(effortKnobEl, "effort");
   effortKnobEl.addEventListener("click", () => callbacks.cycleEffort());
   effortKnobEl.addEventListener("keydown", (event) => {
     if (event.key === "Enter" || event.key === " ") {
@@ -186,6 +193,7 @@ export function buildLayout(deps: ChatLayoutDeps): ChatLayoutElements {
     attr: { "aria-label": "Context window used", max: "100", value: "0" },
   });
   const contextPercentEl = toolbarLeft.createSpan({ cls: "agentic-chat-ctx-percent" });
+  acHook(contextBarEl, "context");
   contextBarEl.hide();
   contextPercentEl.hide();
 
@@ -197,6 +205,7 @@ export function buildLayout(deps: ChatLayoutDeps): ChatLayoutElements {
     cls: "agentic-chat-mode-toggle",
     attr: { role: "switch", tabindex: "0", "aria-label": "Permission mode: Safe", "aria-checked": "false" },
   });
+  acHook(modeToggleEl, "mode-toggle");
   modeToggleEl.createSpan({ cls: "agentic-chat-mode-seg", text: "Safe" });
   modeToggleEl.createSpan({ cls: "agentic-chat-mode-seg", text: "YOLO" });
   modeToggleEl.setAttr(
@@ -214,11 +223,13 @@ export function buildLayout(deps: ChatLayoutDeps): ChatLayoutElements {
 
   const workingEl = toolbarRight.createDiv({ cls: "agentic-chat-working", attr: { "aria-hidden": "true" } });
   workingEl.hide();
-  const statusEl = toolbarRight.createDiv({ cls: "agentic-chat-status" });
+  const statusEl = acHook(toolbarRight.createDiv({ cls: "agentic-chat-status" }), "status");
   const stopButton = toolbarRight.createEl("button", { cls: ["agentic-chat-stop", "mod-warning"], text: "Stop" });
+  acHook(stopButton, "stop");
   stopButton.hide();
   stopButton.addEventListener("click", () => callbacks.stopActiveTurn());
   const sendButton = toolbarRight.createEl("button", { cls: ["agentic-chat-send", "mod-cta"], text: "Send" });
+  acHook(sendButton, "send");
   sendButton.addEventListener("click", () => callbacks.submit("button"));
 
   // Token/cost readout on its own muted line; hidden until there's usage.

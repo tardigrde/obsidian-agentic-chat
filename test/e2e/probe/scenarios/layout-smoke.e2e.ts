@@ -19,17 +19,17 @@ describe("probe: layout smoke", function () {
     await mark("chat open");
 
     await sendPrompt("/help");
-    const info = await $(".agentic-chat-info");
+    const info = await $('[data-ac="info"], [data-ac="error"]');
     await info.waitForExist();
     await expect(info).toHaveText(/Slash commands/);
     await mark("help rendered");
 
-    await expectNoHorizontalOverflow(".agentic-chat-view");
-    await expectWithinViewport(".agentic-chat-input");
+    await expectNoHorizontalOverflow('[data-ac="view"]');
+    await expectWithinViewport('[data-ac="composer-input"]');
 
     const metrics = await browser.execute(() => {
-      const view = document.querySelector<HTMLElement>(".agentic-chat-view");
-      const input = document.querySelector<HTMLElement>(".agentic-chat-input");
+      const view = document.querySelector<HTMLElement>('[data-ac="view"]');
+      const input = document.querySelector<HTMLElement>('[data-ac="composer-input"]');
       const viewRect = view?.getBoundingClientRect();
       const inputRect = input?.getBoundingClientRect();
       return {

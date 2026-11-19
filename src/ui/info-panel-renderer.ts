@@ -1,8 +1,9 @@
+import { acHook } from "./test-hooks";
 import { setIcon } from "obsidian";
 import type { ActionRow } from "./workflow-renderer";
 
 export function renderInfoPanel(parent: HTMLElement, title: string, entries: Array<[string, string]>): HTMLElement {
-  const el = parent.createDiv({ cls: ["agentic-chat-message", "agentic-chat-info"] });
+  const el = acHook(parent.createDiv({ cls: ["agentic-chat-message", "agentic-chat-info"] }), "info");
   const details = el.createEl("details", { cls: "agentic-chat-info-details" });
   details.open = true;
   details.createEl("summary", { text: title });
@@ -18,7 +19,7 @@ export function renderInfoPanel(parent: HTMLElement, title: string, entries: Arr
 export function renderSummaryPanel(parent: HTMLElement, text: string): HTMLElement {
   const inner = /<conversation-summary>\n?([\s\S]*?)\n?<\/conversation-summary>/.exec(text);
   const summary = (inner ? inner[1] : text).trim();
-  const el = parent.createDiv({ cls: ["agentic-chat-message", "agentic-chat-info"] });
+  const el = acHook(parent.createDiv({ cls: ["agentic-chat-message", "agentic-chat-info"] }), "info");
   const details = el.createEl("details", { cls: "agentic-chat-info-details" });
   details.createEl("summary", { text: "Summarized earlier conversation" });
   details.createDiv({ cls: "agentic-chat-info-body", text: summary });
@@ -26,7 +27,7 @@ export function renderSummaryPanel(parent: HTMLElement, text: string): HTMLEleme
 }
 
 export function renderActionPanel(parent: HTMLElement, title: string, subtitle: string, items: ActionRow[]): HTMLElement {
-  const el = parent.createDiv({ cls: ["agentic-chat-message", "agentic-chat-info"] });
+  const el = acHook(parent.createDiv({ cls: ["agentic-chat-message", "agentic-chat-info"] }), "info");
   const details = el.createEl("details", { cls: "agentic-chat-info-details" });
   details.open = true;
   details.createEl("summary", { text: title });
@@ -46,7 +47,7 @@ export function renderActionPanel(parent: HTMLElement, title: string, subtitle: 
 }
 
 export function renderErrorPanel(parent: HTMLElement, message: string): HTMLElement {
-  const el = parent.createDiv({ cls: ["agentic-chat-message", "agentic-chat-info", "agentic-chat-info-error"] });
+  const el = acHook(parent.createDiv({ cls: ["agentic-chat-message", "agentic-chat-info", "agentic-chat-info-error"] }), "error");
   const details = el.createEl("details", { cls: "agentic-chat-info-details" });
   details.open = true;
   details.createEl("summary", { text: "Error" });

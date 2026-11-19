@@ -5,6 +5,7 @@ import type { ToolApprovalRequest, UserApprovalChoice } from "../agent/tool-call
 import type { AskUserRequest } from "../tools/ask-user-tool";
 import type { ApprovalModal } from "./approval-modal";
 import { freshChatTabState, type ChatTabWorkingState } from "./chat-tab-state";
+import { acHook } from "./test-hooks";
 import { restoreUndeliveredText, UNDELIVERED_STEER_STATUS } from "./composer-input";
 
 /** One open conversation in the leaf: its own agent service + saved UI state. */
@@ -202,6 +203,7 @@ export class ChatTabs {
         cls: "agentic-chat-tab",
         attr: { role: "tab", tabindex: "0", "aria-selected": String(active), "aria-label": this.tabLabel(tab), title: this.tabLabel(tab) },
       });
+      acHook(pill, "tab");
       pill.toggleClass("is-active", active);
       pill.createSpan({ cls: "agentic-chat-tab-num", text: String(index + 1) });
       if (tab.service.isStreaming()) pill.createSpan({ cls: "agentic-chat-tab-busy", attr: { "aria-hidden": "true" } });
@@ -215,6 +217,7 @@ export class ChatTabs {
           cls: "agentic-chat-tab-close",
           attr: { role: "button", tabindex: "0", "aria-label": "Close tab" },
         });
+        acHook(close, "tab-close");
         setIcon(close, "x");
         this.onActivate(close, () => this.closeTab(index), true);
       }
@@ -224,6 +227,7 @@ export class ChatTabs {
         cls: "agentic-chat-tab-add",
         attr: { role: "button", tabindex: "0", "aria-label": "New tab", title: "New tab" },
       });
+      acHook(add, "tab-add");
       setIcon(add, "plus");
       this.onActivate(add, () => void this.addTab());
     }

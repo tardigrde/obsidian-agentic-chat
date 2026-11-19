@@ -581,7 +581,7 @@ async function setStoredMode(mode: string): Promise<void> {
 
 async function readToggleState(): Promise<{ checked: string | null; label: string | null }> {
   return await browser.execute(() => {
-    const toggle = document.querySelector<HTMLElement>(".agentic-chat-mode-toggle");
+    const toggle = document.querySelector<HTMLElement>('[data-ac="mode-toggle"]');
     if (!toggle) throw new Error("composer mode toggle not found");
     return { checked: toggle.getAttribute("aria-checked"), label: toggle.getAttribute("aria-label") };
   });
@@ -594,7 +594,7 @@ describe("agentic-chat settings mode sync", function () {
     await setStoredMode("safe");
     await seedWelcomeNote();
     await browser.executeObsidianCommand("agentic-chat:open-chat");
-    await $(".agentic-chat-view").waitForExist();
+    await $('[data-ac="view"]').waitForExist();
     await waitForComposerReady();
     await openAgenticChatSettings();
     await selectSettingsTab("Agent");
@@ -609,7 +609,7 @@ describe("agentic-chat settings mode sync", function () {
     expect(await readSettingSelect("Permission mode")).toBe("safe");
 
     await focusMainWindow();
-    await $(".agentic-chat-mode-toggle").click();
+    await $('[data-ac="mode-toggle"]').click();
 
     await waitForAgenticChatSetting(
       (settings) => settings.mode === "yolo",

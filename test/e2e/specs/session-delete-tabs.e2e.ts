@@ -15,23 +15,23 @@ type TabsView = {
 };
 
 async function tabCount(): Promise<number> {
-  return await browser.execute(() => document.querySelectorAll(".agentic-chat-tab").length);
+  return await browser.execute(() => document.querySelectorAll('[data-ac="tab"]').length);
 }
 
 async function addTab(): Promise<void> {
   const before = await tabCount();
-  await browser.execute(() => document.querySelector<HTMLElement>(".agentic-chat-tab-add")?.click());
+  await browser.execute(() => document.querySelector<HTMLElement>('[data-ac="tab-add"]')?.click());
   await browser.waitUntil(async () => (await tabCount()) > before, { timeout: 5_000, timeoutMsg: "no new tab" });
 }
 
 async function selectTab(index: number): Promise<void> {
   await browser.execute((target) => {
-    document.querySelectorAll<HTMLElement>(".agentic-chat-tab")[target]?.click();
+    document.querySelectorAll<HTMLElement>('[data-ac="tab"]')[target]?.click();
   }, index);
   await browser.waitUntil(
     async () =>
       await browser.execute(
-        (target) => document.querySelectorAll<HTMLElement>(".agentic-chat-tab")[target]?.classList.contains("is-active"),
+        (target) => document.querySelectorAll<HTMLElement>('[data-ac="tab"]')[target]?.classList.contains("is-active"),
         index,
       ),
     { timeout: 5_000, timeoutMsg: `tab ${index} never became active` },

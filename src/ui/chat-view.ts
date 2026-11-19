@@ -49,6 +49,7 @@ import type { ActionRow } from "./workflow-renderer";
 import { TranscriptView } from "./transcript-view";
 import type { SlashContext } from "./slash/context";
 import { persistEffortLevel } from "./slash/model";
+import { acHook } from "./test-hooks";
 
 export { VIEW_TYPE_AGENT_CHAT };
 
@@ -454,7 +455,7 @@ export class ChatView extends ItemView {
 
   private async renderAskUserPrompt(request: AskUserRequest, signal?: AbortSignal): Promise<string> {
     this.clearEmptyState();
-    const el = this.messagesEl.createDiv({ cls: ["agentic-chat-message", "agentic-chat-info", "agentic-chat-ask-user"] });
+    const el = acHook(this.messagesEl.createDiv({ cls: ["agentic-chat-message", "agentic-chat-info", "agentic-chat-ask-user"] }), "ask-user");
     const details = el.createEl("details", { cls: "agentic-chat-info-details" });
     details.open = true;
     details.createEl("summary", { text: "Question from agent" });
@@ -463,11 +464,11 @@ export class ChatView extends ItemView {
     const answerState = body.createDiv({ cls: "agentic-chat-ask-state", text: "Waiting for your answer." });
     const controls = body.createDiv({ cls: "agentic-chat-ask-controls" });
     const choices = request.choices.length ? controls.createDiv({ cls: "agentic-chat-ask-choices" }) : null;
-    const textarea = controls.createEl("textarea", {
+    const textarea = acHook(controls.createEl("textarea", {
       cls: "agentic-chat-ask-input",
       attr: { rows: "3", placeholder: "Type an answer..." },
-    });
-    const submit = controls.createEl("button", { cls: ["mod-cta", "agentic-chat-ask-submit"], text: "Send answer" });
+    }), "ask-input");
+    const submit = acHook(controls.createEl("button", { cls: ["mod-cta", "agentic-chat-ask-submit"], text: "Send answer" }), "ask-submit");
 
     this.scrollToBottom({ force: true });
     textarea.focus();
@@ -601,7 +602,7 @@ export class ChatView extends ItemView {
   }
 
   private renderEmptyState(): void {
-    this.emptyStateEl = this.messagesEl.createDiv({ cls: "agentic-chat-empty" });
+    this.emptyStateEl = acHook(this.messagesEl.createDiv({ cls: "agentic-chat-empty" }), "empty");
     const icon = this.emptyStateEl.createDiv({ cls: "agentic-chat-empty-icon" });
     setIcon(icon, "bot");
     this.emptyStateEl.createDiv({

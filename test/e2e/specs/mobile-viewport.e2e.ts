@@ -8,7 +8,7 @@ const VIEW_TYPE_AGENT_CHAT = "agentic-chat-chat-view";
 const MOBILE_WIDTH = Number(process.env.AGENTIC_CHAT_E2E_VIEWPORT_WIDTH || 390);
 const MOBILE_HEIGHT = Number(process.env.AGENTIC_CHAT_E2E_VIEWPORT_HEIGHT || 844);
 /** The parts of the chat a phone user must reach. */
-const COMPOSER_PARTS = [".agentic-chat-view", ".agentic-chat-input", ".agentic-chat-send"];
+const COMPOSER_PARTS = ['[data-ac="view"]', '[data-ac="composer-input"]', '[data-ac="send"]'];
 const MOBILE_WRITE_PATH = "Mobile/E2E-Mobile-Approval.md";
 const MOBILE_WRITE_BODY = "mobile approval write ok";
 
@@ -39,16 +39,16 @@ async function setMobileViewport(): Promise<void> {
 
 async function openChat(): Promise<void> {
   await browser.executeObsidianCommand("agentic-chat:open-chat");
-  await $(".agentic-chat-view").waitForExist();
+  await $('[data-ac="view"]').waitForExist();
   await waitForComposerReady();
 }
 
 async function sendPrompt(prompt: string): Promise<void> {
   await waitForComposerReady();
-  const input = await $(".agentic-chat-input");
+  const input = await $('[data-ac="composer-input"]');
   await input.click();
   await input.setValue(prompt);
-  await $(".agentic-chat-send").click();
+  await $('[data-ac="send"]').click();
 }
 
 async function runSlashCommand(command: string): Promise<void> {
@@ -329,7 +329,7 @@ function assertHeadingRowReadable(metrics: HeadingRowMetrics, label: string): vo
 }
 
 async function allowApproval(): Promise<void> {
-  const modal = await $(".agentic-chat-approval");
+  const modal = await $('[data-ac="approval"]');
   await modal.waitForExist({ timeout: 10_000 });
   await expect(modal.$("button=Allow")).toBeDisplayed();
   await expect(modal.$("button=Deny")).toBeDisplayed();
@@ -365,11 +365,11 @@ describe("agentic-chat mobile viewport", function () {
   });
 
   it("keeps the chat composer and toolbar usable at phone width", async function () {
-    await expect($(".agentic-chat-input")).toBeDisplayed();
-    await expect($(".agentic-chat-send")).toBeDisplayed();
-    await expect($(".agentic-chat-mode-toggle")).toBeDisplayed();
-    await assertFits(".agentic-chat-view", "chat view");
-    await assertFits(".agentic-chat-field", "composer field");
+    await expect($('[data-ac="composer-input"]')).toBeDisplayed();
+    await expect($('[data-ac="send"]')).toBeDisplayed();
+    await expect($('[data-ac="mode-toggle"]')).toBeDisplayed();
+    await assertFits('[data-ac="view"]', "chat view");
+    await assertFits('[data-ac="composer-card"]', "composer field");
     await expectWithinWindow(COMPOSER_PARTS);
   });
 
@@ -427,12 +427,12 @@ describe("agentic-chat mobile viewport", function () {
     await browser.waitUntil(
       async () =>
         await browser.execute(() => {
-          const texts = Array.from(document.querySelectorAll<HTMLElement>(".agentic-chat-assistant .agentic-chat-text"));
+          const texts = Array.from(document.querySelectorAll<HTMLElement>('[data-ac="assistant-text"]'));
           return texts.some((text) => text.innerText.includes("MobileWrap"));
         }),
       { timeout: 10_000, timeoutMsg: "mobile long response did not render" },
     );
-    await assertFits(".agentic-chat-messages", "message list");
+    await assertFits('[data-ac="messages"]', "message list");
     // After a transcript, the composer must still be inside the window.
     await expectWithinWindow(COMPOSER_PARTS);
     await browser.executeObsidian(async ({ app }, viewType) => {

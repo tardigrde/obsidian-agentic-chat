@@ -25,7 +25,7 @@ const STOP_APPROVAL_NOTE_PATH = "E2E-Stop-Approval.md";
 
 async function openChat(): Promise<void> {
   await browser.executeObsidianCommand("agentic-chat:open-chat");
-  await $(".agentic-chat-view").waitForExist();
+  await $('[data-ac="view"]').waitForExist();
   await waitForComposerReady();
 }
 
@@ -33,10 +33,10 @@ async function sendPrompt(prompt: string): Promise<void> {
   // A missed first send shifts every later scripted turn by one, so a flaky
   // click here fails the whole spec. Wait until the composer can be hit.
   await waitForComposerReady();
-  const input = await $(".agentic-chat-input");
+  const input = await $('[data-ac="composer-input"]');
   await input.click();
   await input.setValue(prompt);
-  await $(".agentic-chat-send").click();
+  await $('[data-ac="send"]').click();
 }
 
 async function runSlashCommand(command: string): Promise<void> {
@@ -113,7 +113,7 @@ async function noteExists(path: string): Promise<boolean> {
 }
 
 async function allowApproval(): Promise<void> {
-  const modal = await $(".agentic-chat-approval");
+  const modal = await $('[data-ac="approval"]');
   await modal.waitForExist({ timeout: 10_000 });
   const allow = await modal.$("button=Allow");
   await allow.waitForExist({ timeout: 5_000 });
@@ -122,7 +122,7 @@ async function allowApproval(): Promise<void> {
 }
 
 async function denyApproval(): Promise<void> {
-  const modal = await $(".agentic-chat-approval");
+  const modal = await $('[data-ac="approval"]');
   await modal.waitForExist({ timeout: 10_000 });
   const deny = await modal.$("button=Deny");
   await deny.waitForExist({ timeout: 5_000 });
@@ -131,17 +131,17 @@ async function denyApproval(): Promise<void> {
   const confirmDeny = await modal.$("button=Confirm Deny");
   await confirmDeny.waitForExist({ timeout: 5_000 });
   // While the deny is armed, the title must say what Confirm will do.
-  const title = await browser.execute(() => document.querySelector(".agentic-chat-approval")?.closest(".modal")?.querySelector(".modal-title")?.textContent ?? "");
+  const title = await browser.execute(() => document.querySelector('[data-ac="approval"]')?.closest(".modal")?.querySelector(".modal-title")?.textContent ?? "");
   expect(title).toMatch(/^Deny "/);
   await confirmDeny.click();
   await modal.waitForExist({ reverse: true, timeout: 5_000 });
 }
 
 async function clickRememberApprovalChoice(): Promise<void> {
-  const modal = await $(".agentic-chat-approval");
+  const modal = await $('[data-ac="approval"]');
   await modal.waitForExist({ timeout: 10_000 });
   await browser.execute(() => {
-    const root = document.querySelector<HTMLElement>(".agentic-chat-approval");
+    const root = document.querySelector<HTMLElement>('[data-ac="approval"]');
     if (!root) throw new Error("approval modal not found");
     const setting = Array.from(root.querySelectorAll<HTMLElement>(".setting-item")).find(
       (item) => item.querySelector<HTMLElement>(".setting-item-name")?.innerText.trim() === "Don't ask again for this tool",
@@ -171,7 +171,7 @@ async function perToolApproval(toolName: string): Promise<string | undefined> {
 }
 
 async function dismissOpenApproval(): Promise<void> {
-  const modal = await $(".agentic-chat-approval");
+  const modal = await $('[data-ac="approval"]');
   if (!(await modal.isExisting())) return;
   const deny = await modal.$("button=Deny");
   if (await deny.isExisting()) {
@@ -199,7 +199,7 @@ describe("agentic-chat deterministic approvals", function () {
   });
 
   beforeEach(async function () {
-    expect(await $(".agentic-chat-approval").isExisting()).toBe(false);
+    expect(await $('[data-ac="approval"]').isExisting()).toBe(false);
     await releaseScriptedTurns(false);
   });
 
@@ -210,7 +210,7 @@ describe("agentic-chat deterministic approvals", function () {
     // next test fails on its own assertion, not on an intercepted click.
     await dismissOpenApproval();
     await browser
-      .waitUntil(async () => !(await $(".agentic-chat-stop").isDisplayed()), { timeout: 5_000 })
+      .waitUntil(async () => !(await $('[data-ac="stop"]').isDisplayed()), { timeout: 5_000 })
       .catch(() => {});
   });
 
@@ -304,7 +304,7 @@ describe("agentic-chat deterministic approvals", function () {
     await sendPrompt("scripted denied write");
     await denyApproval();
 
-    await expect($(".agentic-chat-messages")).toHaveText(/The denied write was not applied/);
+    await expect($('[data-ac="messages"]')).toHaveText(/The denied write was not applied/);
     expect(await noteExists(DENIED_NOTE_PATH)).toBe(false);
     expect(await scriptedCallLabels()).toEqual(["denied write call", "denied write final"]);
   });
@@ -320,7 +320,7 @@ describe("agentic-chat deterministic approvals", function () {
     await sendPrompt("# Prefer concise vault updates.");
     await allowApproval();
     await browser.waitUntil(
-      async () => (await $(".agentic-chat-messages").getText()).includes("Saved the standing instruction."),
+      async () => (await $('[data-ac="messages"]').getText()).includes("Saved the standing instruction."),
       { timeout: 8_000, timeoutMsg: "instruction capture final response did not render" },
     );
 
@@ -342,7 +342,7 @@ describe("agentic-chat deterministic approvals", function () {
     ]);
     await sendPrompt("scripted remember denied write");
     await clickRememberApprovalChoice();
-    expect(await $(".agentic-chat-approval").isExisting()).toBe(true);
+    expect(await $('[data-ac="approval"]').isExisting()).toBe(true);
     await denyApproval();
 
     await browser.waitUntil(async () => (await perToolApproval("write")) === "deny", {
@@ -353,8 +353,8 @@ describe("agentic-chat deterministic approvals", function () {
 
     await sendPrompt("scripted remember denied write again");
     // The remembered deny answers without a modal; wait for the final turn.
-    await expect($(".agentic-chat-messages")).toHaveText(/Still denied without asking/);
-    expect(await $(".agentic-chat-approval").isExisting()).toBe(false);
+    await expect($('[data-ac="messages"]')).toHaveText(/Still denied without asking/);
+    expect(await $('[data-ac="approval"]').isExisting()).toBe(false);
     expect(await scriptedCallLabels()).toEqual([
       "remember deny write call",
       "remember deny final",
@@ -371,16 +371,16 @@ describe("agentic-chat deterministic approvals", function () {
     ]);
     await sendPrompt("scripted queue initial");
     await browser.waitUntil(
-      async () => (await $(".agentic-chat-send").getText()).trim() === "Queue",
+      async () => (await $('[data-ac="send"]').getText()).trim() === "Queue",
       { timeout: 5_000, timeoutMsg: "send button did not switch to queue mode" },
     );
 
     await sendPrompt("queued draft before edit");
     await browser.waitUntil(
-      async () => (await $(".agentic-chat-send").getText()).trim() === "Update",
+      async () => (await $('[data-ac="send"]').getText()).trim() === "Update",
       { timeout: 5_000, timeoutMsg: "send button did not switch to update mode" },
     );
-    const input = await $(".agentic-chat-input");
+    const input = await $('[data-ac="composer-input"]');
     await input.setValue("queued draft after edit");
     expect(await input.getValue()).toBe("queued draft after edit");
     await browser.execute(() => {
@@ -389,10 +389,10 @@ describe("agentic-chat deterministic approvals", function () {
     });
 
     await browser.waitUntil(
-      async () => (await $(".agentic-chat-messages").getText()).includes("Queued answer used the edited draft."),
+      async () => (await $('[data-ac="messages"]').getText()).includes("Queued answer used the edited draft."),
       { timeout: 8_000, timeoutMsg: "queued scripted answer did not render" },
     );
-    const transcript = await $(".agentic-chat-messages").getText();
+    const transcript = await $('[data-ac="messages"]').getText();
     const firstPrompt = transcript.indexOf("scripted queue initial");
     const firstAnswer = transcript.indexOf("Initial queued answer.");
     const originalDraft = transcript.indexOf("queued draft before edit");
@@ -420,7 +420,7 @@ describe("agentic-chat deterministic approvals", function () {
       timeout: 10_000,
       timeoutMsg: "approved empty-folder delete did not remove the folder",
     });
-    await expect($(".agentic-chat-messages")).toHaveText(/Deleted the empty folder/);
+    await expect($('[data-ac="messages"]')).toHaveText(/Deleted the empty folder/);
     expect(await scriptedCallLabels()).toEqual(["empty folder delete call", "empty folder delete final"]);
   });
 
@@ -435,7 +435,7 @@ describe("agentic-chat deterministic approvals", function () {
     await setApproval("ask");
     await sendPrompt("scripted write that will be stopped");
 
-    const modal = await $(".agentic-chat-approval");
+    const modal = await $('[data-ac="approval"]');
     await modal.waitForExist({ timeout: 10_000 });
     const stopTurn = await modal.$("button=Stop turn");
     await stopTurn.waitForDisplayed({ timeout: 5_000 });
@@ -443,7 +443,7 @@ describe("agentic-chat deterministic approvals", function () {
 
     await modal.waitForExist({ reverse: true, timeout: 5_000 });
     await browser.waitUntil(
-      async () => !(await $(".agentic-chat-stop").isDisplayed()),
+      async () => !(await $('[data-ac="stop"]').isDisplayed()),
       { timeout: 5_000, timeoutMsg: "the stopped turn never settled" },
     );
     await browser.waitUntil(async () => !(await noteExists(STOP_APPROVAL_NOTE_PATH)), {

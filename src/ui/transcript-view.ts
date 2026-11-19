@@ -18,6 +18,7 @@ import {
   type MessageImageLite,
   type ToolResultLite,
 } from "./message-content";
+import { acHook } from "./test-hooks";
 import { openSystemUrl } from "../platform/system-browser";
 import { isPinnedToBottom } from "./scroll-pinning";
 import { isSummaryMessage } from "../agent/compaction";
@@ -204,7 +205,7 @@ export class TranscriptView {
     editIndex?: number,
     options: { forceScroll?: boolean; historyImages?: MessageImageLite[] } = {},
   ): void {
-    const el = this.messagesEl.createDiv({ cls: ["agentic-chat-message", "agentic-chat-user"] });
+    const el = acHook(this.messagesEl.createDiv({ cls: ["agentic-chat-message", "agentic-chat-user"] }), "user-message");
     if (attachments.length > 0) {
       const labels = attachments.map((entry) =>
         typeof entry === "string" && entry.startsWith(FOLDER_PREFIX)

@@ -205,7 +205,7 @@ function collectWindow(windowNumber: number, limit: number): RawWindow {
     if (element.closest(".modal-container, .modal")) return "modal";
     if (element.closest(".menu")) return "menu";
     if (element.closest(".suggestion-container, .prompt, .agentic-chat-autocomplete")) return "suggest";
-    if (element.closest(".agentic-chat-view")) return "chat";
+    if (element.closest('[data-ac="view"]')) return "chat";
     if (element.closest(".vertical-tab-content-container, .vertical-tab-content")) return "settings";
     if (element.closest(".vertical-tab-header")) return "settings-nav";
     if (element.closest(".cm-editor, .markdown-source-view, .markdown-reading-view")) return "editor";
@@ -315,11 +315,11 @@ function collectWindow(windowNumber: number, limit: number): RawWindow {
   });
 
   let chat: ChatState | undefined;
-  const view = document.querySelector<HTMLElement>(".agentic-chat-view");
+  const view = document.querySelector<HTMLElement>('[data-ac="view"]');
   if (view) {
-    const stop = view.querySelector<HTMLElement>(".agentic-chat-stop");
-    const messagesEl = view.querySelector<HTMLElement>(".agentic-chat-messages");
-    const messages = Array.from(view.querySelectorAll<HTMLElement>(".agentic-chat-message, .agentic-chat-info"))
+    const stop = view.querySelector<HTMLElement>('[data-ac="stop"]');
+    const messagesEl = view.querySelector<HTMLElement>('[data-ac="messages"]');
+    const messages = Array.from(view.querySelectorAll<HTMLElement>('[data-ac="user-message"], [data-ac="assistant-message"], [data-ac="info"], [data-ac="error"], [data-ac="ask-user"]'))
       .slice(-4)
       .map((element) => ({
         role: (element.classList.contains("agentic-chat-user")
@@ -332,9 +332,9 @@ function collectWindow(windowNumber: number, limit: number): RawWindow {
     chat = {
       open: true,
       running: Boolean(stop && stop.offsetParent !== null),
-      composer: flat(view.querySelector<HTMLTextAreaElement>(".agentic-chat-input")?.value).slice(0, 200),
-      errorPanels: view.querySelectorAll(".agentic-chat-info-error, .agentic-chat-error").length,
-      approvalOpen: Boolean(document.querySelector(".agentic-chat-approval")),
+      composer: flat(view.querySelector<HTMLTextAreaElement>('[data-ac="composer-input"]')?.value).slice(0, 200),
+      errorPanels: view.querySelectorAll('[data-ac="error"], [data-ac="turn-error"]').length,
+      approvalOpen: Boolean(document.querySelector('[data-ac="approval"]')),
       overflowX: Boolean(messagesEl && messagesEl.scrollWidth > messagesEl.clientWidth + 2),
       lastMessages: messages,
     };
@@ -442,7 +442,7 @@ async function elementFor(ref: string): Promise<WebdriverIO.Element> {
 async function chatRunning(): Promise<boolean> {
   await focusMain();
   return await browser.execute(() => {
-    const stop = document.querySelector<HTMLElement>(".agentic-chat-stop");
+    const stop = document.querySelector<HTMLElement>('[data-ac="stop"]');
     return Boolean(stop && stop.offsetParent !== null);
   });
 }
@@ -452,7 +452,7 @@ async function waitForTurn(maxMs: number): Promise<string> {
   await browser.pause(400);
   while (Date.now() < deadline) {
     if (!(await chatRunning())) return "turn finished";
-    if (await $(".agentic-chat-approval").isExisting()) return "approval requested";
+    if (await $('[data-ac="approval"]').isExisting()) return "approval requested";
     await browser.pause(700);
   }
   return `turn still running after ${Math.round(maxMs / 1000)}s`;
@@ -589,8 +589,8 @@ async function perform(
     }
     case "send": {
       await focusMain();
-      if (!(await $(".agentic-chat-input").isExisting())) await openChat();
-      const input = $(".agentic-chat-input");
+      if (!(await $('[data-ac="composer-input"]').isExisting())) await openChat();
+      const input = $('[data-ac="composer-input"]');
       await input.click();
       await input.setValue(decision.text);
       await browser.keys("Enter");

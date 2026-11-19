@@ -122,12 +122,12 @@ describe("agentic-chat smoke", function () {
   });
 
   it("mounts the chat view with a reachable composer and its toolbar", async function () {
-    await expect($(".agentic-chat-field")).toExist();
-    await expect($(".agentic-chat-tabs .agentic-chat-tab")).toExist();
+    await expect($('[data-ac="composer-card"]')).toExist();
+    await expect($('[data-ac="tab"]')).toExist();
     expect((await composerHitTest()).hit).toBe(true);
-    await expect($(".agentic-chat-mode-toggle")).toBeDisplayed();
+    await expect($('[data-ac="mode-toggle"]')).toBeDisplayed();
     // The arc gauge exists from first render (hidden until a fill is known).
-    await expect($(".agentic-chat-toolbar-left .agentic-chat-ctx-bar")).toExist();
+    await expect($('[data-ac="context"]')).toExist();
     // Removed surfaces stay removed.
     await expect($(".agentic-chat-plan-tracker")).not.toExist();
     await expect($(".agentic-chat-plan-badge")).not.toExist();
@@ -135,9 +135,9 @@ describe("agentic-chat smoke", function () {
     // The effort knob only offers levels the model supports.
     const KNOWN_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh"];
     const readEffort = async (): Promise<string> =>
-      (await browser.execute(() => document.querySelector<HTMLElement>(".agentic-chat-effort-value")?.innerText.trim() ?? "")).toLowerCase();
+      (await browser.execute(() => document.querySelector<HTMLElement>('[data-ac="effort"]')?.innerText.trim() ?? "")).toLowerCase();
     expect(KNOWN_LEVELS).toContain(await readEffort());
-    await $(".agentic-chat-effort").click();
+    await $('[data-ac="effort"]').click();
     expect(KNOWN_LEVELS).toContain(await readEffort());
   });
 
@@ -154,7 +154,7 @@ describe("agentic-chat smoke", function () {
     await submitComposer("/init add e2e standing focus");
     await browser.waitUntil(
       async () =>
-        (await browser.execute(() => document.querySelector<HTMLTextAreaElement>(".agentic-chat-input")?.value ?? "")) === "" &&
+        (await browser.execute(() => document.querySelector<HTMLTextAreaElement>('[data-ac="composer-input"]')?.value ?? "")) === "" &&
         (await transcriptText()).includes("/init add e2e standing focus"),
       { timeout: 5_000, timeoutMsg: "/init did not clear the composer and render its full command text" },
     );
@@ -223,7 +223,7 @@ describe("agentic-chat smoke", function () {
     await browser.waitUntil(
       async () =>
         await browser.execute(() =>
-          Array.from(document.querySelectorAll<HTMLElement>(".agentic-chat-info")).some(
+          Array.from(document.querySelectorAll<HTMLElement>('[data-ac="info"], [data-ac="error"]')).some(
             (el) => el.querySelector("summary")?.innerText.trim() === "Skill" && el.innerText.includes("self-knowledge"),
           ),
         ),
@@ -234,7 +234,7 @@ describe("agentic-chat smoke", function () {
 
     // A held turn shows Stop; Stop ends the turn and clears the control.
     await submitComposer("hold this turn");
-    const stop = await $(".agentic-chat-stop");
+    const stop = await $('[data-ac="stop"]');
     await stop.waitForDisplayed({ timeout: 5_000 });
     await stop.click();
     await waitForIdle(5_000);
@@ -470,7 +470,7 @@ describe("agentic-chat smoke", function () {
   it("renders the /sta autocomplete menu above the input card, fully visible", async function () {
     await openChat();
     await browser.execute((text) => {
-      const textarea = document.querySelector<HTMLTextAreaElement>(".agentic-chat-input");
+      const textarea = document.querySelector<HTMLTextAreaElement>('[data-ac="composer-input"]');
       if (!textarea) throw new Error("agentic-chat composer is not mounted");
       textarea.focus();
       textarea.value = text;
@@ -482,7 +482,7 @@ describe("agentic-chat smoke", function () {
 
     const geometry = await browser.execute(() => {
       const menuEl = document.querySelector<HTMLElement>(".agentic-chat-autocomplete");
-      const fieldEl = document.querySelector<HTMLElement>(".agentic-chat-field");
+      const fieldEl = document.querySelector<HTMLElement>('[data-ac="composer-card"]');
       if (!menuEl || !fieldEl) throw new Error("autocomplete menu or input card is missing");
       const menuRect = menuEl.getBoundingClientRect();
       const fieldRect = fieldEl.getBoundingClientRect();
@@ -504,7 +504,7 @@ describe("agentic-chat smoke", function () {
     expect(geometry.menuBottom).toBeLessThanOrEqual(geometry.fieldTop + 2);
     expect(geometry.hitInsideMenu).toBe(true);
     await browser.execute(() => {
-      const textarea = document.querySelector<HTMLTextAreaElement>(".agentic-chat-input");
+      const textarea = document.querySelector<HTMLTextAreaElement>('[data-ac="composer-input"]');
       if (!textarea) return;
       textarea.value = "";
       textarea.dispatchEvent(new Event("input", { bubbles: true }));

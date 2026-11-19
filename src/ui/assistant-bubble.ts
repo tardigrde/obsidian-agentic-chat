@@ -26,6 +26,7 @@ import {
   subagentChildren,
   subagentResultForcesError,
 } from "./subagent-tree";
+import { acHook, type AcStepState } from "./test-hooks";
 
 /** Per-step DOM + identity kept on the bubble for live updates and settle. */
 interface StepEntry {
@@ -101,10 +102,10 @@ export class AssistantBubble {
     parent: HTMLElement,
     private readonly actions: BubbleActions = {},
   ) {
-    this.el = parent.createDiv({ cls: ["agentic-chat-message", "agentic-chat-assistant"] });
-    this.textEl = this.el.createDiv({ cls: ["agentic-chat-text", "is-streaming", "is-empty"] });
+    this.el = acHook(parent.createDiv({ cls: ["agentic-chat-message", "agentic-chat-assistant"] }), "assistant-message");
+    this.textEl = acHook(this.el.createDiv({ cls: ["agentic-chat-text", "is-streaming", "is-empty"] }), "assistant-text");
     this.stepsEl = this.el.createDiv({ cls: "agentic-chat-steps" });
-    this.actionsEl = this.el.createDiv({ cls: "agentic-chat-actions" });
+    this.actionsEl = acHook(this.el.createDiv({ cls: "agentic-chat-actions" }), "turn-actions");
   }
 
   /** Where this turn's reasoning pill is in its lifecycle. */
@@ -227,7 +228,7 @@ export class AssistantBubble {
    */
   private ensureTimeline(): void {
     if (!this.timelineEl) {
-      const timeline = this.el.createDiv({ cls: "agentic-chat-timeline" });
+      const timeline = acHook(this.el.createDiv({ cls: "agentic-chat-timeline" }), "activity");
       this.railEl = timeline.createDiv({ cls: "agentic-chat-timeline-rail" });
       this.el.insertBefore(timeline, this.textEl);
       // Move the transcript node inside the timeline, ahead of the steps node,
@@ -302,7 +303,8 @@ export class AssistantBubble {
     // pill: [‹ chevron] [card]. Only the outside chevron toggles the body — so a
     // clickable path inside the header navigates without collapsing the step.
     // Raw arg JSON is never shown inline.
-    const row = this.stepsEl.createDiv({ cls: "agentic-chat-step-row" });
+    const row = acHook(this.stepsEl.createDiv({ cls: "agentic-chat-step-row" }), "step");
+    row.setAttribute("data-ac-state", "running" satisfies AcStepState);
     const toggle = row.createSpan({
       cls: "agentic-chat-step-toggle",
       attr: { role: "button", tabindex: "0", "aria-expanded": "false", "aria-label": "Toggle details" },
@@ -411,6 +413,7 @@ export class AssistantBubble {
   private markStepSettled(step: StepEntry, isError: boolean): void {
     step.card.removeClass("is-running");
     step.card.addClass(isError ? "is-error" : "is-done");
+    step.card.parentElement?.setAttribute("data-ac-state", (isError ? "error" : "done") satisfies AcStepState);
     setIcon(step.icon, isError ? "x-circle" : "check-circle-2");
     // Per-step elapsed time, surfaced once the step settles.
     step.card.querySelector(".agentic-chat-step-header")?.createSpan({
@@ -537,7 +540,7 @@ export class AssistantBubble {
     this.dropEmptyReasoning();
     const existing = this.el.querySelector(".agentic-chat-error");
     if (existing?.getAttr("data-error-text") === text) return;
-    const banner = this.el.createDiv({ cls: "agentic-chat-error" });
+    const banner = acHook(this.el.createDiv({ cls: "agentic-chat-error" }), "turn-error");
     banner.setAttr("data-error-text", text);
     if (text.includes("\n")) {
       const details = banner.createEl("details", { cls: "agentic-chat-error-details" });
