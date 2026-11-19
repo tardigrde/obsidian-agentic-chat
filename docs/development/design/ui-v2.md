@@ -9,6 +9,9 @@ this is approved. The plan at the end turns it into PRs.
   frames (sidebar with an approval pending, sidebar with a finished turn, phone) in
   light, dark or auto. Tab rename, `/rename`, the overflow menu, activity
   expand/collapse and the approval buttons all work.
+- **Screenshots** (readable on a phone, straight from GitHub):
+  [light](https://github.com/tardigrde/obsidian-agentic-chat/blob/claude/great-rubin-r97pij/docs/public/design/ui-v2-mock-light.png),
+  [dark](https://github.com/tardigrde/obsidian-agentic-chat/blob/claude/great-rubin-r97pij/docs/public/design/ui-v2-mock-dark.png).
 
 ## The brief (from the owner interview, 2026-11-19)
 
