@@ -1132,14 +1132,16 @@ body.is-mobile,
   font-weight: var(--ac-weight-medium);
 }
 
-.agentic-chat-approval-deny {
-  border-color: transparent;
+/* Beats Obsidian's `button:not(.clickable-icon)` (0,1,1), so Deny stays
+   plain text, as in the design. */
+.agentic-chat-approval-actions button.agentic-chat-approval-deny {
+  border: 0;
   background: none;
   box-shadow: none;
   color: var(--ac-text-muted);
 }
 
-.agentic-chat-approval-deny:hover {
+.agentic-chat-approval-actions button.agentic-chat-approval-deny:hover {
   color: var(--ac-status-error);
 }
 
@@ -2270,7 +2272,8 @@ body.is-mobile,
 
 .agentic-chat-approval-diff-line.is-remove,
 .agentic-chat-quick-ask-diff-line.is-remove {
-  color: var(--ac-status-error);
+  /* Normal text on the tint, like added lines: red on its own tint fails contrast. */
+  color: var(--ac-text);
   background-color: var(--ac-tint-remove);
 }
 

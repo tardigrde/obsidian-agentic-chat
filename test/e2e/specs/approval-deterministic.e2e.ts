@@ -221,7 +221,9 @@ describe("agentic-chat deterministic approvals", function () {
         removeBackground: removeStyle.backgroundColor,
       };
     });
-    expect(diffStyles.addColor).not.toBe(diffStyles.removeColor);
+    // As in the design: normal text on both tints (status-coloured text on its
+    // own tint fails contrast); the tint and the +/- carry the meaning.
+    expect(diffStyles.addColor).toBe(diffStyles.removeColor);
     expect(diffStyles.addBackground).not.toBe(diffStyles.removeBackground);
     await allowApproval();
 

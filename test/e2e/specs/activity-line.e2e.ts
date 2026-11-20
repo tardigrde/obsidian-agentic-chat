@@ -173,6 +173,29 @@ describe("activity line and inline approval", function () {
       };
     }, PENDING_APPROVAL);
     expect(card).toEqual({ desc: false, diffOverflow: 0 });
+    // As in the design: Allow is the solid accent, Deny is plain text (no
+    // border, no fill). Obsidian's own button chrome must not win.
+    const buttons = await browser.execute((selector) => {
+      const el = document.querySelector<HTMLElement>(selector);
+      const allow = el?.querySelector<HTMLElement>('[data-ac="approval-allow"]');
+      const deny = el?.querySelector<HTMLElement>('[data-ac="approval-deny"]');
+      if (!allow || !deny) return null;
+      const probe = document.createElement("span");
+      probe.style.color = "var(--interactive-accent)";
+      el?.appendChild(probe);
+      const accent = getComputedStyle(probe).color;
+      probe.remove();
+      const a = getComputedStyle(allow);
+      const d = getComputedStyle(deny);
+      return {
+        allowIsAccent: a.backgroundColor === accent,
+        allowOpacity: a.opacity,
+        denyBackground: d.backgroundColor,
+        denyBorder: d.borderTopWidth,
+        denyShadow: d.boxShadow,
+      };
+    }, PENDING_APPROVAL);
+    expect(buttons).toEqual({ allowIsAccent: true, allowOpacity: "1", denyBackground: "rgba(0, 0, 0, 0)", denyBorder: "0px", denyShadow: "none" });
     if (process.env.AGENTIC_CHAT_SCREENSHOT_DIR) {
       await browser.saveScreenshot(`${process.env.AGENTIC_CHAT_SCREENSHOT_DIR}/approval-card.png`);
     }
