@@ -34,6 +34,35 @@ describe("ask_user card", () => {
     expect(ui.$(".agentic-chat-assistant:last-child .agentic-chat-text")?.textContent).toContain("Using the folder you chose.");
   });
 
+  it("U3 #15: the answered question stays after the text written before it", async () => {
+    ui = await mountChatView({
+      turns: [
+        {
+          stopReason: "toolUse",
+          content: [
+            { type: "text", text: "TEXT-BEFORE-ASK let me check." },
+            { type: "toolCall", id: "call-1", name: "ask_user", arguments: { question: "Which plan?", choices: ["Plan A", "Plan B"] } },
+          ],
+        },
+        replayTextTurn("TEXT-AFTER-ASK done."),
+      ],
+    });
+    await ui.send("ask me");
+    await settle();
+    ui.$$<HTMLButtonElement>(".agentic-chat-ask-choice")[0].click();
+    await ui.idle();
+
+    const items = Array.from(ui.$('[data-ac="messages"]')?.children ?? []);
+    const before = items.findIndex((el) => el.textContent?.includes("TEXT-BEFORE-ASK"));
+    const record = items.findIndex((el) => el.getAttribute("data-ac") === "ask-record");
+    const after = items.findIndex((el) => el.textContent?.includes("TEXT-AFTER-ASK"));
+    expect(before).toBeGreaterThanOrEqual(0);
+    expect(record).toBe(before + 1);
+    expect(after).toBeGreaterThan(record);
+    expect(items[record].textContent).toContain("Which plan?");
+    expect(items[record].textContent).toContain("Plan A");
+  });
+
   it("Ctrl+Enter sends a typed answer; an empty answer is not sent", async () => {
     await askFolder();
     const input = ui.$<HTMLTextAreaElement>(".agentic-chat-ask-input")!;

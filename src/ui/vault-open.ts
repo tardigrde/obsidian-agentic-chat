@@ -46,4 +46,5 @@ function revealFolder(app: App, folder: TFolder): void {
   }).internalPlugins;
   const explorer = plugins?.getPluginById?.("file-explorer")?.instance;
   if (explorer?.revealInFolder) explorer.revealInFolder(folder);
+  else new Notice(`${folder.path} is a folder.`);
 }

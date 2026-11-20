@@ -114,8 +114,8 @@ export class ChatView extends ItemView {
     if (Platform.isMacOS) return;
     const scope = new Scope(this.app.scope);
     scope.register(["Ctrl"], "w", (event) => {
-      if (event.isComposing) return true;
-      deletePreviousWord(input);
+      // Mid-composition (IME) the key belongs to the IME: neither delete nor close.
+      if (!event.isComposing) deletePreviousWord(input);
       return false;
     });
     let pushed = false;
@@ -131,6 +131,11 @@ export class ChatView extends ItemView {
       this.app.keymap.pushScope(scope);
     });
     this.registerDomEvent(input, "blur", pop);
+    // A popout window that loses OS focus keeps its DOM focus (no blur), and
+    // the keymap is one stack for all windows: pop on window blur too. The
+    // composer's focus event fires again when its window comes back.
+    const win = input.ownerDocument.defaultView;
+    if (win) this.registerDomEvent(win, "blur", pop);
     this.register(pop);
   }
 
@@ -419,7 +424,8 @@ export class ChatView extends ItemView {
     });
     // A drag that ends without a click must not leave the flag set: clear it
     // after the click (if any) had its turn.
-    this.registerDomEvent(this.contentEl, "pointerup", () => {
+    // On the document, so a press released outside the view clears it too.
+    this.registerDomEvent(this.contentEl.ownerDocument, "pointerup", () => {
       window.setTimeout(() => (this.pointerActivation = false), 0);
     });
     this.registerDomEvent(this.contentEl, "pointercancel", () => {

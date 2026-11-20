@@ -238,6 +238,28 @@ describe("chat view state machine", () => {
     expect(ui.$(".agentic-chat-assistant:last-child .agentic-chat-text")?.textContent).toContain("recovered");
   });
 
+  it("U3 #15: an approval card mounts after the text the turn already wrote", async () => {
+    await mount([
+      {
+        stopReason: "toolUse",
+        content: [
+          { type: "text", text: "TEXT-BEFORE-WRITE here is the plan." },
+          { type: "toolCall", id: "call-1", name: "write", arguments: { path: "Notes/new.md", content: "hello" } },
+        ],
+      },
+      replayTextTurn("written"),
+    ]);
+    await ui.send("create a note");
+    await settle();
+    const card = ui.$('[data-ac="approval"]');
+    const text = Array.from(ui.$$('[data-ac="assistant-message"]')).find((el) => el.textContent?.includes("TEXT-BEFORE-WRITE"));
+    expect(card).not.toBeNull();
+    expect(text).toBeDefined();
+    expect(text!.compareDocumentPosition(card!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    card?.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+    await ui.idle();
+  });
+
   it("streaming -> approval pending -> Allow -> idle: the inline card blocks the tool until allowed", async () => {
     await mount([
       replayToolCallTurn("call-1", "write", { path: "Notes/new.md", content: "hello" }),
