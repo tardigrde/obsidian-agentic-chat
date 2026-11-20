@@ -414,6 +414,9 @@ export class ChatView extends ItemView {
   /** Re-render the transcript + chrome for the active tab (after a switch/close). */
   private renderActiveTab(): void {
     this.createSessionActivationCoordinator().renderActiveTab();
+    // Cards that settled while this tab was in the background: show them once.
+    for (const card of this.activeTab.unseenApprovals ?? []) this.transcript.mountApproval(card);
+    this.activeTab.unseenApprovals = [];
     // Pending approvals wait in their tab's transcript: put every card back.
     const pending = (this.activeTab.pendingApprovals ?? []).filter((card) => !card.settled);
     for (const card of pending) this.transcript.mountApproval(card);
@@ -464,6 +467,8 @@ export class ChatView extends ItemView {
       return choice;
     } finally {
       tab.pendingApprovals = (tab.pendingApprovals ?? []).filter((pending) => pending !== card);
+      // Settled out of sight: keep it for the switch-back (shown once).
+      if (tab !== this.activeTab && this.tabs.includes(tab)) tab.unseenApprovals = [...(tab.unseenApprovals ?? []), card];
       // Another card in this tab may still wait: keep the needs-you state until the last one settles.
       if (tab.pendingApprovals.length === 0 && tab === this.activeTab && !this.closed) {
         this.transcript.approvalSettled();

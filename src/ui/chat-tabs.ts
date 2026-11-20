@@ -22,6 +22,12 @@ export interface ChatTab {
    * tools run in parallel) can ask at once, so this is a list, not one slot.
    */
   pendingApprovals?: ApprovalCard[];
+  /**
+   * Approval cards that settled while this tab was in the background (a Stop,
+   * an abort, the spend cap): shown once on switch-back, so the user sees
+   * that an approval was asked and how it ended.
+   */
+  unseenApprovals?: ApprovalCard[];
 }
 
 /** Maximum independent sessions ("tabs") in one chat leaf. Each tab owns an AgentService. */

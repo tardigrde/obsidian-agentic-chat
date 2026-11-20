@@ -298,6 +298,33 @@ describe("chat view state machine", () => {
     await ui.idle();
   });
 
+  it("an approval that settles while its tab is in the background still shows its outcome on switch-back", async () => {
+    const held = gate();
+    await mount([replayTextTurn("working", { hold: true })], held);
+    await ui.send("do it");
+    const view = ui.view as unknown as {
+      activeTab: unknown;
+      confirmToolCallForTab(tab: unknown, request: { toolName: string; label: string; args: unknown }, signal?: AbortSignal): Promise<{ approved: boolean }>;
+    };
+    const tab1 = view.activeTab;
+    // Open a second tab: tab 1 is now in the background.
+    ui.$<HTMLButtonElement>('[data-ac="tab-add"]')?.click();
+    await settle();
+    const abort = new AbortController();
+    const choice = view.confirmToolCallForTab(tab1, { toolName: "mcp__a__x", label: "Run x", args: {} }, abort.signal);
+    await settle();
+    abort.abort();
+    expect((await choice).approved).toBe(false);
+    // Back to tab 1: the user sees that an approval was asked and how it ended.
+    ui.$$<HTMLElement>('[data-ac="tab"]')[0]?.click();
+    await settle();
+    const card = ui.$('[data-ac="approval"]');
+    expect(card?.getAttribute("data-ac-state")).toBe("stopped");
+    expect(card?.textContent).toContain("Stopped");
+    held.release();
+    await ui.idle();
+  });
+
   it("approval pending -> Deny twice with a reason: the tool does not run and the reason reaches the model", async () => {
     await mount([
       replayToolCallTurn("call-1", "write", { path: "Notes/new.md", content: "hello" }),
