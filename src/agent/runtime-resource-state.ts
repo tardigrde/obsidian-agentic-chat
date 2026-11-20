@@ -1,7 +1,8 @@
 import type { App } from "obsidian";
 import type { AgentMessage, AgentTool } from "@earendil-works/pi-agent-core";
 import type { ToolResultMessage } from "@earendil-works/pi-ai";
-import type { Skill } from "../skills/skill-prompt";
+import { formatSkillsForSystemPrompt, type Skill } from "../skills/skill-prompt";
+import type { ContextLoadParts } from "./readouts";
 import type { AgenticChatSettings } from "../settings-schema";
 import type { WebFetcher } from "../tools/web-fetch";
 import type { AskUserHandler } from "../tools/ask-user-tool";
@@ -103,6 +104,18 @@ export class AgentRuntimeResourceState {
       // when search_tools loads a tool, or every load would break the prompt cache.
       this.build(settings).all.filter((tool) => isDeferredToolName(tool.name)),
     );
+  }
+
+  /** What the system prompt and tool catalog hold, for the context breakdown. */
+  contextParts(settings: AgenticChatSettings, activeTools: readonly AgentTool[]): ContextLoadParts {
+    const active = new Set(activeTools.map((tool) => tool.name));
+    // Only MCP tools count here; the tooltip labels them "MCP deferred".
+    const deferred = (this.lastBuild ?? this.build(settings)).all.filter((tool) => isDeferredToolName(tool.name) && tool.name.startsWith("mcp__"));
+    return {
+      instructions: this.resources.instructionsOverlay,
+      skills: this.resources.skills.length > 0 ? formatSkillsForSystemPrompt(this.resources.skills) : "",
+      deferredNotLoaded: deferred.filter((tool) => !active.has(tool.name)).length,
+    };
   }
 
   buildParentTools(settings: AgenticChatSettings, subagentTool?: AgentTool): AgentTool[] {

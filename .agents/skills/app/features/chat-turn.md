@@ -86,7 +86,7 @@ await browser.waitUntil(async () =>
 | User bubble image thumbnails; click opens the vault image | `src/ui/transcript-view.ts#renderUserMessage` | `test/ui/chat-render.test.ts#shows one openable thumbnail per attached image and does not echo the sent user turn`, `test/ui/chat-render.test.ts#renders a replayed vision block as a data-URL thumbnail` | `covered` |
 | Error banner Retry | `src/ui/assistant-bubble.ts#showError` | `test/ui/chat-view-states.test.ts#streaming -> error -> idle: the error shows once in the bubble with Ask again` (happy-dom) | `partial` |
 | Edit and resend a user turn | `src/ui/chat-turn.ts#editAndResend` | `test/prompt-edit-state.test.ts#starts editing a prompt and restores the original draft on cancel` (state only) | `partial` |
-| Context-window bar | `src/ui/chat-view.ts#buildLayout` | `test/context-bar.test.ts#is high at 90% and above` (levels only; the recorded probe was deleted in #393 T23) | `partial` |
+| Context ring and breakdown tooltip | `src/ui/chat-chrome.ts#syncContextRing` | `test/context-bar.test.ts#is high at 90% and above` (levels); `test/context-breakdown.test.ts#splits the system prompt, tools, and conversation; deferred tools count as 0 tokens` (breakdown) | `partial` |
 | Usage readout | `src/ui/slash/info.ts#showUsage` | no committed check | `NONE` |
 | Background-tab completion notice | `src/ui/chat-tabs.ts#handleTabEvent` | no committed check | `NONE` |
 

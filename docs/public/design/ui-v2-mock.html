@@ -101,6 +101,11 @@
 
     --ac-hit: 28px;          /* desktop min target */
     --ac-motion: 160ms cubic-bezier(.2,.7,.2,1);
+
+    /* The view itself */
+    height: 100%; display: flex; flex-direction: column;
+    background: var(--ac-surface); color: var(--ac-text);
+    font-size: var(--ac-font-ui); position: relative;
   }
   .ac.is-mobile { --ac-hit: 44px; --ac-font-body: 16px; }
 
@@ -148,11 +153,6 @@
   }
 
   /* ---------- The view ---------- */
-  .ac {
-    height: 100%; display: flex; flex-direction: column;
-    background: var(--ac-surface); color: var(--ac-text);
-    font-size: var(--ac-font-ui); position: relative;
-  }
   .ac svg { width: 16px; height: 16px; flex: none; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
   .ac button { font: inherit; color: inherit; }
   .icon-btn {
@@ -322,13 +322,6 @@
   .empty { margin: auto 0; display: flex; flex-direction: column; gap: var(--ac-space-4); padding: 0 var(--ac-space-2); }
   .empty h2 { margin: 0; font-size: 20px; font-weight: 600; letter-spacing: -.01em; }
   .empty p { margin: 0; color: var(--ac-text-muted); }
-  .suggestions { display: flex; flex-direction: column; gap: 6px; }
-  .suggestion {
-    display: flex; align-items: center; gap: 10px; text-align: left; min-height: var(--ac-hit); padding: 8px 12px;
-    border: 1px solid var(--ac-border); border-radius: var(--ac-radius-m); background: var(--ac-surface); cursor: pointer; color: var(--ac-text);
-  }
-  .suggestion:hover { background: var(--ac-hover); }
-  .suggestion svg { color: var(--ac-text-muted); }
 
   /* Composer */
   .ac-composer { flex: none; padding: 0 var(--ac-space-3) var(--ac-space-3); }
@@ -417,7 +410,7 @@
   <div class="page-head">
     <div>
       <h1>Agentic Chat: UI v2 mock</h1>
-      <p>Three frames of the same view. Things you can try: double-click a tab to rename it, long-press a tab in the phone frame, type <code>/rename Weekly review</code> in a composer and press Enter, click an activity line to expand it, click Allow or Deny on the approval card, or open the <code>+3</code> overflow menu.</p>
+      <p>Three frames of the same view. Things you can try: double-click a tab to rename it, long-press a tab in the phone frame, click an activity line to expand it, click Allow or Deny on the approval card, or open the <code>+3</code> overflow menu.</p>
     </div>
     <div class="theme-switch" role="group" aria-label="Theme">
       <button data-theme-set="auto" aria-pressed="true">Auto</button>
@@ -486,7 +479,7 @@
                 </div>
                 <div class="approval-actions">
                   <button class="btn primary" data-approve>Allow</button>
-                  <button class="btn" data-approve-always>Always for this note</button>
+                  <button class="btn" data-approve-always>Always allow edit</button>
                   <button class="btn ghost" data-deny>Deny</button>
                   <span class="kbd">⏎ allow · Esc deny</span>
                 </div>
@@ -500,7 +493,7 @@
               <div class="chips">
                 <span class="chip is-active-note" title="Active note, attached automatically"><svg><use href="#i-file"/></svg>Project plan<button class="x" title="Remove"><svg><use href="#i-x"/></svg></button></span>
               </div>
-              <textarea rows="1" placeholder="Reply, or queue a follow-up…"></textarea>
+              <textarea rows="1" aria-label="Message" placeholder="Reply, or queue a follow-up…"></textarea>
               <div class="toolbar">
                 <button class="icon-btn" title="Attach (@)"><svg><use href="#i-clip"/></svg></button>
                 <button class="pill-btn" title="Model · effort">Sonnet 5.5 <span class="effort">· high</span><svg><use href="#i-chev-down"/></svg></button>
@@ -590,7 +583,7 @@
           <footer class="ac-composer">
             <div class="queued"><svg><use href="#i-history"/></svg>Queued: "make it more formal"</div>
             <div class="card">
-              <textarea rows="1" placeholder="Ask about your vault…  / commands · @ notes"></textarea>
+              <textarea rows="1" aria-label="Message" placeholder="Ask about your vault…"></textarea>
               <div class="toolbar">
                 <button class="icon-btn" title="Attach (@)"><svg><use href="#i-clip"/></svg></button>
                 <button class="pill-btn">Sonnet 5.5 <span class="effort">· high</span><svg><use href="#i-chev-down"/></svg></button>
@@ -637,18 +630,13 @@
               <span style="color:var(--ac-accent)"><svg style="width:28px;height:28px"><use href="#i-sparkle"/></svg></span>
               <h2>What should we work on?</h2>
               <p>I can search, read, and edit your vault. You approve every change.</p>
-              <div class="suggestions">
-                <button class="suggestion"><svg><use href="#i-file"/></svg>Summarize <b>Project plan</b></button>
-                <button class="suggestion"><svg><use href="#i-search"/></svg>Find notes I haven't linked yet</button>
-                <button class="suggestion"><svg><use href="#i-pencil"/></svg>Draft today's daily note</button>
-              </div>
             </div>
           </main>
 
           <footer class="ac-composer">
             <div class="card">
               <div class="chips"><span class="chip is-active-note"><svg><use href="#i-file"/></svg>Project plan<button class="x" title="Remove"><svg><use href="#i-x"/></svg></button></span></div>
-              <textarea rows="1" placeholder="Ask about your vault…"></textarea>
+              <textarea rows="1" aria-label="Message" placeholder="Ask about your vault…"></textarea>
               <div class="toolbar">
                 <button class="icon-btn" title="Attach"><svg><use href="#i-clip"/></svg></button>
                 <button class="pill-btn">Sonnet 5.5<svg><use href="#i-chev-down"/></svg></button>
@@ -661,7 +649,7 @@
           <div class="hint"></div>
         </div>
       </div>
-      <p class="frame-note">The layout is the same as on desktop, with 44px touch targets and 16px body text so iOS doesn't zoom in. Long-press a tab to rename it. The empty state suggests things to do with the active note.</p>
+      <p class="frame-note">The layout is the same as on desktop, with 44px touch targets and 16px body text so iOS doesn't zoom in. Long-press a tab to rename it.</p>
     </div>
   </div>
 
@@ -684,8 +672,8 @@
       <h2>Tabs</h2>
       <ul>
         <li>Numbered by default. A renamed tab shows its name.</li>
-        <li>Rename by double-clicking, long-pressing on touch, or typing <code>/rename &lt;name&gt;</code>. Enter saves, Esc cancels, and an empty name brings the number back.</li>
-        <li>Up to 8 tabs. Tabs that don't fit go into the <b>+N</b> menu.</li>
+        <li>Rename by double-clicking, long-pressing on touch, or "Rename current tab" in the tab menu. Enter saves, Esc cancels, and an empty name brings the number back.</li>
+        <li>Up to 5 tabs. Tabs that don't fit go into the <b>+N</b> menu.</li>
       </ul>
     </section>
     <section>
@@ -804,19 +792,12 @@
       head.setAttribute("aria-expanded", String(open));
     }));
 
-    // Composer: /rename <name>
+    // Composer: the mock does not send; Enter only clears the input.
     const ta = view.querySelector("textarea");
     ta.addEventListener("keydown", (e) => {
       if (e.key !== "Enter" || e.shiftKey) return;
       e.preventDefault();
-      const m = ta.value.match(/^\/rename(?:\s+(.*))?$/);
-      if (m) {
-        const active = view.querySelector('.ac-tab[aria-selected="true"]');
-        if (active) setLabel(active, m[1] || "");
-        hint(view, m[1] ? 'Tab renamed to "' + m[1].trim() + '"' : "Tab name cleared");
-      } else if (ta.value.trim()) {
-        hint(view, "Mock only: try /rename <name>");
-      }
+      if (ta.value.trim()) hint(view, "Mock only: messages are not sent");
       ta.value = "";
     });
 
@@ -842,7 +823,7 @@
         if (status) status.innerHTML = '<span class="spinner"></span>Writing the plan…';
       };
       card.querySelector("[data-approve]").addEventListener("click", () => resolve("Allowed once", true));
-      card.querySelector("[data-approve-always]").addEventListener("click", () => resolve("Allowed: always for this note", true));
+      card.querySelector("[data-approve-always]").addEventListener("click", () => resolve("Allowed: always for edit", true));
       card.querySelector("[data-deny]").addEventListener("click", () => resolve("Denied", false));
     }
   });

@@ -7,7 +7,7 @@ import type { ChatTabWorkingState } from "./chat-tab-state";
 import { setIcon } from "obsidian";
 import { buildModelPillState } from "./chrome-state";
 import { CONTEXT_RING_LENGTH } from "./chat-layout";
-import { contextLevel, contextPercent, formatContextReadoutTitle } from "./context-bar";
+import { contextLevel, contextPercent, formatContextBreakdown, lastPromptTokens } from "./context-bar";
 import { highestUnnotifiedThreshold, type Notifier } from "./notifications";
 import type { TranscriptView } from "./transcript-view";
 
@@ -123,7 +123,7 @@ export class ChatChrome {
     const level = contextLevel(readout.fraction);
     el.show();
     el.setAttr("aria-label", `Context window ${percent}% used`);
-    el.setAttr("title", formatContextReadoutTitle(readout));
+    el.setAttr("title", formatContextBreakdown(readout, lastPromptTokens(this.deps.service().getMessages())));
     el.removeClasses(["is-ok", "is-warn", "is-high"]);
     el.addClass(`is-${level}`);
     const offset = CONTEXT_RING_LENGTH * (1 - Math.min(100, Math.max(0, percent)) / 100);

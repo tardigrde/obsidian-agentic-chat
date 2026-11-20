@@ -64,7 +64,7 @@ await $(".agentic-chat-action-list").waitForExist();
 | Deferred tools: a direct call to an unloaded tool loads it | `src/agent/runtime-resource-state.ts#toolsForNextStep` | `test/runtime-resource-state.test.ts#loads a deferred tool after a direct call failed because it was not loaded` (unit only) | `partial` |
 | Deferred tools: reopened session keeps loaded tools | `src/agent/tool-loading.ts#restoreFromMessages` | `test/runtime-resource-state.test.ts#restores the loaded tools of a reopened session from its transcript` (unit only) | `partial` |
 | `current_time` tool always loaded; no date in the system prompt | `src/tools/current-time-tool.ts#createCurrentTimeTool` | `test/runtime-resource-state.test.ts#keeps the date out of the system prompt and always loads current_time` (unit only) | `partial` |
-| Context-window bar | `src/ui/chat-view.ts#buildLayout` | `test/context-bar.test.ts#is high at 90% and above` (levels only; the recorded probe was deleted in #393 T23) | `partial` |
+| Context ring and breakdown tooltip | `src/ui/chat-chrome.ts#syncContextRing` | `test/context-bar.test.ts#is high at 90% and above` (levels); `test/context-breakdown.test.ts#splits the system prompt, tools, and conversation; deferred tools count as 0 tokens` (breakdown) | `partial` |
 
 ## Gotchas
 

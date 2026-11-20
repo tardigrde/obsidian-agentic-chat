@@ -25,7 +25,7 @@ Read-only tools run without approval. An explicit per-tool ask or deny still app
 
 Mutating tools follow the approval policy. `/undo` reverts the latest undoable vault change, such as an edit, write, rename, single-file delete, or empty-folder delete. A recursive delete of a non-empty folder cannot be reverted.
 
-## Other tools you will see as step cards
+## Other tools you will see as steps
 
 These tools are always loaded:
 

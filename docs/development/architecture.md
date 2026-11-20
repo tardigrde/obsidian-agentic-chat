@@ -34,7 +34,7 @@ Use these terms:
 | Plugin install | `installPackage` transaction | vault folders |
 | Open chat tabs, active index, tab strip | `ChatTabs` | memory |
 | Composer text, autocomplete, attachments, queued prompt | `ChatComposer` | per-tab working state |
-| Model pill, usage line, context bar, one-shot notifications | `ChatChrome` | memory plus per-tab notification state |
+| Model pill, context ring and its breakdown tooltip, one-shot notifications | `ChatChrome` | memory plus per-tab notification state |
 | Prompt turn, retry, and the agent event switch | `ChatTurn` | memory |
 | Slash dispatch and session/model actions | `ChatActions` | memory |
 | Chat DOM layout | `buildLayout` in `chat-layout.ts` | DOM |
@@ -198,7 +198,7 @@ imports `chat-view.ts`.
 |---|---|---|
 | `ChatTabs` | Tab array, active index, parked drafts, tab strip | `src/ui/chat-tabs.ts` |
 | `ChatComposer` | Active autocomplete query, mention cache, editing target, attachments, queued prompt | `src/ui/composer-controller.ts` |
-| `ChatChrome` | Notifier, muted notifications, model pill, usage line, context bar, running state | `src/ui/chat-chrome.ts` |
+| `ChatChrome` | Notifier, muted notifications, model pill, context ring, running state | `src/ui/chat-chrome.ts` |
 | `ChatTurn` | Submit path, staged prompt context, send/steer, retry, edit-and-resend, agent event switch | `src/ui/chat-turn.ts` |
 | `ChatActions` | Slash dispatch and the session/model actions commands share | `src/ui/chat-actions.ts` |
 

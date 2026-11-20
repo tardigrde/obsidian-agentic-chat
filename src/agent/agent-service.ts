@@ -427,6 +427,7 @@ export class AgentService {
       settings,
       systemPrompt: this.runtimeResources.composeSystemPrompt(settings, this.getActiveModelId()),
       tools: this.agent?.state.tools ?? [],
+      parts: this.runtimeResources.contextParts(settings, this.agent?.state.tools ?? []),
     }, this.contextOverhead);
   }
 

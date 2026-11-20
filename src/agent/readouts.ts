@@ -20,6 +20,32 @@ export interface ContextLoadInput {
   tools?: readonly AgentTool[];
   /** Tokens held back for the model's response. */
   reserveTokens?: number;
+  /** Parts of the system prompt and tool catalog, for the breakdown. */
+  parts?: ContextLoadParts;
+}
+
+/** What the system prompt and the tool catalog hold, for the context breakdown. */
+export interface ContextLoadParts {
+  /** The vault's standing-instructions text (AGENTS.md) inside the system prompt. */
+  instructions?: string;
+  /** The loaded-skills section inside the system prompt. */
+  skills?: string;
+  /** Deferred tools in the catalog (MCP and others) that are not loaded, so not sent. */
+  deferredNotLoaded?: number;
+}
+
+/** The finer split of the estimate that the context tooltip shows. */
+export interface ContextBreakdown {
+  instructionsTokens: number;
+  skillsTokens: number;
+  builtinToolTokens: number;
+  mcpToolTokens: number;
+  /** MCP servers with at least one loaded (sent) tool. */
+  mcpServers: number;
+  /** Deferred tools that are not sent: a count, not tokens. */
+  deferredNotLoaded: number;
+  /** The share of the transcript that is tool results. */
+  toolResultTokens: number;
 }
 
 /** Section-by-section token accounting for the context the next request will send. */
@@ -36,6 +62,8 @@ export interface ContextLoadEstimate {
   inputTokens: number;
   /** Context-window load: input tokens + response reserve. */
   totalTokens: number;
+  /** The finer split, when the caller passed `parts`. */
+  breakdown?: ContextBreakdown;
 }
 
 export interface ContextReadout {
@@ -54,6 +82,14 @@ export function expectedOutputTokens(settings: Pick<AgenticChatSettings, "maxTok
 export interface ContextOverheadCounter {
   systemPromptTokens(systemPrompt: string | undefined): number;
   toolSchemaTokens(tools: readonly AgentTool[] | undefined): number;
+  /** Schema tokens of the MCP tools among `tools`; cached on the array like toolSchemaTokens. */
+  mcpToolSchemaTokens?(tools: readonly AgentTool[] | undefined): number;
+}
+
+const MCP_PREFIX = "mcp__";
+
+function mcpTools(tools: readonly AgentTool[] | undefined): AgentTool[] {
+  return (tools ?? []).filter((tool) => tool.name.startsWith(MCP_PREFIX));
 }
 
 const uncachedOverhead: ContextOverheadCounter = {
@@ -70,6 +106,7 @@ const uncachedOverhead: ContextOverheadCounter = {
 export class CachedContextOverheadCounter implements ContextOverheadCounter {
   private prompt: { key: string; tokens: number } | undefined;
   private tools: { key: readonly AgentTool[]; tokens: number } | undefined;
+  private mcp: { key: readonly AgentTool[]; tokens: number } | undefined;
 
   constructor(private readonly countToolTokens: (tools: readonly AgentTool[]) => number = estimateToolDefinitionTokens) {}
 
@@ -87,6 +124,15 @@ export class CachedContextOverheadCounter implements ContextOverheadCounter {
       this.tools = { key: tools, tokens: this.countToolTokens(tools) };
     }
     return this.tools.tokens;
+  }
+
+  mcpToolSchemaTokens(tools: readonly AgentTool[] | undefined): number {
+    if (!tools || tools.length === 0) return 0;
+    if (this.mcp?.key !== tools) {
+      const mcp = mcpTools(tools);
+      this.mcp = { key: tools, tokens: mcp.length > 0 ? this.countToolTokens(mcp) : 0 };
+    }
+    return this.mcp.tokens;
   }
 }
 
@@ -118,13 +164,38 @@ export function estimateContextLoad(
   const toolSchemaTokens = counter.toolSchemaTokens(input.tools);
   const reserveTokens = Math.max(0, Math.trunc(input.reserveTokens ?? 0));
   const inputTokens = transcriptTokens + systemPromptTokens + toolSchemaTokens;
-  return {
+  const load: ContextLoadEstimate = {
     transcriptTokens,
     systemPromptTokens,
     toolSchemaTokens,
     reserveTokens,
     inputTokens,
     totalTokens: inputTokens + reserveTokens,
+  };
+  if (input.parts) load.breakdown = contextBreakdown(input, load, counter);
+  return load;
+}
+
+/** Split the estimate finer: instructions and skills, built-in and MCP tools, tool results. */
+function contextBreakdown(input: ContextLoadInput, load: ContextLoadEstimate, counter: ContextOverheadCounter): ContextBreakdown {
+  const parts = input.parts ?? {};
+  const instructionsTokens = Math.min(parts.instructions ? estimateTextTokens(parts.instructions) : 0, load.systemPromptTokens);
+  const skillsTokens = Math.min(parts.skills ? estimateTextTokens(parts.skills) : 0, load.systemPromptTokens - instructionsTokens);
+  const mcp = mcpTools(input.tools);
+  const mcpToolTokens = Math.min(
+    counter.mcpToolSchemaTokens?.(input.tools) ?? (mcp.length > 0 ? estimateToolDefinitionTokens(mcp) : 0),
+    load.toolSchemaTokens,
+  );
+  const servers = new Set(mcp.map((tool) => tool.name.split("__")[1]).filter(Boolean));
+  const toolResults = input.messages.filter((message) => message.role === "toolResult");
+  return {
+    instructionsTokens,
+    skillsTokens,
+    builtinToolTokens: load.toolSchemaTokens - mcpToolTokens,
+    mcpToolTokens,
+    mcpServers: servers.size,
+    deferredNotLoaded: Math.max(0, Math.trunc(parts.deferredNotLoaded ?? 0)),
+    toolResultTokens: Math.min(estimateContextUsage(toolResults), load.transcriptTokens),
   };
 }
 

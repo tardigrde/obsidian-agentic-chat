@@ -15,7 +15,7 @@ OpenRouter is the default provider. The default model is `deepseek/deepseek-v4.1
 
 1. Click the ribbon icon or run **Agentic Chat: Open chat**.
 2. Open a note so it attaches automatically, then send a prompt such as `Summarize @Meeting-notes`.
-3. The inline step card shows which notes the agent read before it answered.
+3. The activity line above the answer shows which notes the agent read. Click it to see each step.
 4. Ask for a small edit, approve the diff, then run `/undo` to revert it.
 
 If the model list is empty, see [Troubleshoot](./troubleshoot.md#no-model-answers). For more prompts, see [Recipes](./recipes.md).
