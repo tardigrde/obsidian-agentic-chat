@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
+import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import { replayTextTurn } from "../../src/agent/replay-stream";
-import { mountChatView, settle, type MountedChatView } from "./support/mount-chat-view";
+import { mountChatView, seedFile, settle, type MountedChatView } from "./support/mount-chat-view";
 
 /** Session reload, history, and new chat through the real ChatView. */
 
@@ -81,5 +82,52 @@ describe("chat sessions", () => {
     expect(ui.$(".modal-container")).toBeNull();
     expect(ui.$$(".agentic-chat-user").map((el) => el.textContent)).toEqual([expect.stringContaining("first conversation")]);
     expect(ui.$(".agentic-chat-assistant .agentic-chat-text")?.textContent).toContain("first answer");
+  });
+  it("U3 #14: sends the active note body to the model once per session, across another note and a history reload", async () => {
+    ui = await mountChatView({
+      turns: [replayTextTurn("a1"), replayTextTurn("a2"), replayTextTurn("a3"), replayTextTurn("b1"), replayTextTurn("a4")],
+    });
+    const body = "PLAN-BODY-7f3a long working note";
+    const plan = await seedFile(ui.app, "Inbox/Plan.md", body);
+    const other = await seedFile(ui.app, "Other.md", "other note body");
+    const open = async (file: typeof plan) => {
+      ui.app.workspace.activeFile = file;
+      ui.app.workspace.trigger("file-open", file);
+      await settle();
+    };
+    const userTexts = () =>
+      (ui.view as unknown as { service: { getMessages(): AgentMessage[] } }).service.getMessages().flatMap((message) => {
+        if (message.role !== "user") return [];
+        const content = message.content;
+        return [typeof content === "string" ? content : content.map((part) => ("text" in part ? part.text : "")).join("")];
+      });
+
+    await open(plan);
+    await ui.send("turn one");
+    await ui.idle();
+    await open(other);
+    await ui.send("turn two");
+    await ui.idle();
+    await open(plan);
+    await ui.send("turn three");
+    await ui.idle();
+
+    // Load the same conversation again from history (as after a reload).
+    await ui.view.startNewConversation();
+    await settle();
+    await ui.send("other conversation");
+    await ui.idle();
+    ui.$<HTMLButtonElement>('[aria-label="Conversation history"]')?.click();
+    await settle();
+    const row = ui.$$(".agentic-chat-session-row").find((el) => el.textContent?.includes("Turn one"));
+    row?.querySelector<HTMLElement>(".agentic-chat-session-main")?.click();
+    await settle();
+    await ui.send("turn four");
+    await ui.idle();
+
+    const texts = userTexts();
+    expect(texts).toHaveLength(4);
+    expect(texts.filter((text) => text.includes(body))).toHaveLength(1);
+    expect(texts[3]).toContain('Active note "Inbox/Plan.md" is unchanged');
   });
 });
