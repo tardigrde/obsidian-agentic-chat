@@ -321,6 +321,37 @@ describe("createSubagentTool", () => {
     expect(summary).toContain("[Output truncated");
   });
 
+  it("U3 #11: keeps the full oversized report as an artifact and tells the parent how to read it", async () => {
+    const report = `${"Finding line with detail.\n".repeat(600)}THE-TAIL-MARKER end of report`;
+    const stored: Array<{ id: string; text: string; label: string }> = [];
+    const artifactStore = {
+      writeArtifact: async (input: { label: string; text: string; sourceToolName: string }) => {
+        const id = `art-${stored.length + 1}`;
+        stored.push({ id, text: input.text, label: input.label });
+        return { id, label: input.label, sourceToolName: input.sourceToolName, contentType: "text/markdown", createdAt: "", charLength: input.text.length };
+      },
+      readArtifact: async (id: string) => {
+        const hit = stored.find((entry) => entry.id === id);
+        if (!hit) throw new Error("missing");
+        return { metadata: { id, label: hit.label, sourceToolName: "subagent", contentType: "text/markdown", createdAt: "", charLength: hit.text.length }, text: hit.text };
+      },
+    };
+    const tool = createSubagentTool({
+      getProfiles: () => [RESEARCHER],
+      createChildAgent: () => makeChild(childStreamFn(report)),
+      artifactStore,
+    });
+    const result = await tool.execute("id", { agent: "researcher", task: "t" }, undefined);
+    const text = unwrapToolOutput(firstText(result.content));
+
+    expect(stored).toHaveLength(1);
+    expect(stored[0].text).toBe(report);
+    expect(text.length).toBeLessThan(8_600);
+    expect(text).not.toContain("THE-TAIL-MARKER");
+    expect(text).toContain('artifact "art-1"');
+    expect(text).toMatch(/artifact tool.*"read"/);
+  });
+
   it("aborts in-flight children when the dispatch signal aborts", async () => {
     const controller = new AbortController();
     const tool = createSubagentTool({

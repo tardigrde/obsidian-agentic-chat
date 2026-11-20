@@ -8,6 +8,7 @@ import { truncateToolOutput } from "../vault/truncate";
 import { wrapToolOutputTruncated } from "./tool-output-wrapper";
 import { toolResult, untrustedToolResult } from "./result";
 import { errorMessage } from "../utils/errors";
+import type { ToolArtifactStoreLike } from "../artifacts/tool-artifact-store";
 
 export const SUBAGENT_TOOL_NAME = "subagent";
 
@@ -15,6 +16,8 @@ export const SUBAGENT_TOOL_NAME = "subagent";
 const MAX_CONCURRENCY = 10;
 /** Per-child summary cap (characters) fed into the parent's context. */
 const PER_CHILD_SUMMARY_CHARS = 8_000;
+/** Inline preview of a report that is kept in full as an artifact. */
+const REPORT_PREVIEW_CHARS = 7_000;
 
 /** Single line in a child's live transcript. */
 export type SubagentTranscriptEntry =
@@ -132,6 +135,8 @@ export interface SubagentToolDeps {
   maxRuntimeSeconds?: () => number;
   /** Per-service registry. Omit only for standalone tools that need no external stop. */
   registry?: SubagentRegistry;
+  /** Keeps a report longer than the inline cap in full, readable with the artifact tool. */
+  artifactStore?: ToolArtifactStoreLike;
 }
 
 export interface SubagentTask {
@@ -217,8 +222,9 @@ export function createSubagentTool(
 
       status.status = "running";
       emit();
+      let fullReport: string | undefined;
       try {
-        await runSingleChild(deps, registry, status, profile, task, toolCallId, signal, scheduleEmit);
+        fullReport = await runSingleChild(deps, registry, status, profile, task, toolCallId, signal, scheduleEmit);
       } catch (error) {
         if (signal?.aborted) {
           status.status = "aborted";
@@ -232,6 +238,9 @@ export function createSubagentTool(
         }
       } finally {
         releaseSlot(slots);
+      }
+      if (fullReport !== undefined && fullReport.length > PER_CHILD_SUMMARY_CHARS) {
+        status.summary = await keepFullReport(deps.artifactStore, agent, fullReport, status.summary);
       }
       flushEmit();
 
@@ -329,7 +338,7 @@ async function runSingleChild(
   parentToolCallId: string,
   signal: AbortSignal | undefined,
   scheduleEmit: () => void,
-): Promise<void> {
+): Promise<string | undefined> {
   const child = deps.createChildAgent(profile);
   const startedAt = Date.now();
 
@@ -423,10 +432,42 @@ async function runSingleChild(
     });
   } else {
     status.status = "done";
-    status.summary = redactText(
-      truncateToolOutput(lastAssistantText(child.state.messages) || "(no output)", PER_CHILD_SUMMARY_CHARS),
-      { redactHighEntropy: true, maxLength: 9000 },
+    const report = lastAssistantText(child.state.messages) || "(no output)";
+    status.summary = redactText(truncateToolOutput(report, PER_CHILD_SUMMARY_CHARS), {
+      redactHighEntropy: true,
+      maxLength: 9000,
+    });
+    return redactText(report, { redactHighEntropy: true, maxLength: Number.MAX_SAFE_INTEGER });
+  }
+  return undefined;
+}
+
+/**
+ * A report longer than the inline cap: store it whole as an artifact and give
+ * the parent a preview plus the id to read the rest. Without a store (or when
+ * the write fails) the truncated summary stays.
+ */
+async function keepFullReport(
+  store: ToolArtifactStoreLike | undefined,
+  agent: string,
+  report: string,
+  truncated: string | undefined,
+): Promise<string | undefined> {
+  if (!store) return truncated;
+  try {
+    const artifact = await store.writeArtifact({
+      label: `${agent} subagent report`,
+      sourceToolName: SUBAGENT_TOOL_NAME,
+      text: report,
+      contentType: "text/markdown",
+    });
+    const preview = report.slice(0, REPORT_PREVIEW_CHARS);
+    return (
+      `${preview}\n\n[Report cut at ${preview.length.toLocaleString("en-US")} of ${report.length.toLocaleString("en-US")} characters. ` +
+      `The full report is artifact "${artifact.id}": use the artifact tool, action "read", with this id and offset ${preview.length} to read the rest.]`
     );
+  } catch {
+    return truncated;
   }
 }
 

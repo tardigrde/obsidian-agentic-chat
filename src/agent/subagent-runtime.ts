@@ -76,6 +76,7 @@ export class AgentSubagentRuntime {
       recordUsage: this.recordUsage,
       maxRuntimeSeconds: () => this.getSettings().subagentTimeoutSeconds,
       registry: this.registry,
+      artifactStore: this.artifactStore,
     });
   }
 
