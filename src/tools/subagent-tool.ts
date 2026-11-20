@@ -17,11 +17,10 @@ const MAX_CONCURRENCY = 10;
 /** Per-child summary cap (characters) fed into the parent's context. */
 const PER_CHILD_SUMMARY_CHARS = 8_000;
 /**
- * Inline head of a report that is kept in full as an artifact. Small on
- * purpose: when the parent re-reads the artifact from 0 anyway, it pays for
- * this preview twice. Reports start with their summary, which fits in 4k.
+ * How much of a long report the chat shows the user. The model gets none of
+ * it, only the artifact pointer, so it never pays for the same text twice.
  */
-const REPORT_PREVIEW_CHARS = 4_000;
+const REPORT_PREVIEW_CHARS = 3_500; // under the row's 4,000-char cut (subagent-tree.ts), so the note shows
 
 /** Single line in a child's live transcript. */
 export type SubagentTranscriptEntry =
@@ -243,8 +242,13 @@ export function createSubagentTool(
       } finally {
         releaseSlot(slots);
       }
+      let modelText: string | undefined;
       if (fullReport !== undefined && fullReport.length > PER_CHILD_SUMMARY_CHARS) {
-        status.summary = await keepFullReport(deps.artifactStore, agent, fullReport, status.summary);
+        const kept = await keepFullReport(deps.artifactStore, agent, fullReport);
+        if (kept) {
+          status.summary = kept.userPreview;
+          modelText = kept.modelText;
+        }
       }
       flushEmit();
 
@@ -262,7 +266,7 @@ export function createSubagentTool(
         );
       }
 
-      return untrustedToolResult(mergeSummaries([status]), snapshot([status]), "subagent");
+      return untrustedToolResult(modelText ?? mergeSummaries([status]), snapshot([status]), "subagent");
     },
   };
 }
@@ -447,17 +451,18 @@ async function runSingleChild(
 }
 
 /**
- * A report longer than the inline cap: store it whole as an artifact and give
- * the parent a preview plus the id to read the rest. Without a store (or when
- * the write fails) the truncated summary stays.
+ * A report longer than the inline cap is stored whole as an artifact. The
+ * model gets only a pointer (owner, 2026-11-20: no partial text, so a read of
+ * the artifact never repeats what it already saw); the user's subagent row
+ * shows the head of the report. Null without a store or when the write fails:
+ * the truncated summary then stays for both.
  */
 async function keepFullReport(
   store: ToolArtifactStoreLike | undefined,
   agent: string,
   report: string,
-  truncated: string | undefined,
-): Promise<string | undefined> {
-  if (!store) return truncated;
+): Promise<{ modelText: string; userPreview: string } | null> {
+  if (!store) return null;
   try {
     const artifact = await store.writeArtifact({
       label: `${agent} subagent report`,
@@ -465,19 +470,17 @@ async function keepFullReport(
       text: report,
       contentType: "text/markdown",
     });
-    const preview = report.slice(0, REPORT_PREVIEW_CHARS);
     const total = report.length.toLocaleString("en-US");
-    const shown = preview.length.toLocaleString("en-US");
-    // The first line says the text is partial before the model reads it; the
-    // last line, at the cut, says where to continue (no re-read from 0).
-    return (
-      `[Report: ${total} characters. Below are characters 0-${shown} only. The full report is artifact "${artifact.id}".]\n\n` +
-      `${preview}\n\n` +
-      `[Report cut here. To read the rest, call the artifact tool: action "read", id "${artifact.id}", offset ${preview.length}. ` +
-      `Do not read it again from offset 0.]`
-    );
+    return {
+      modelText:
+        `Subagent "${agent}" finished. Its report is ${total} characters, too long to inline, and is stored in full as artifact "${artifact.id}". ` +
+        `Read it with the artifact tool: action "read", id "${artifact.id}" (it returns chunks; continue with the offset it gives).`,
+      userPreview:
+        `${report.slice(0, REPORT_PREVIEW_CHARS)}\n\n[Showing the first ${REPORT_PREVIEW_CHARS.toLocaleString("en-US")} of ${total} characters. ` +
+        `The full report is artifact "${artifact.id}".]`,
+    };
   } catch {
-    return truncated;
+    return null;
   }
 }
 

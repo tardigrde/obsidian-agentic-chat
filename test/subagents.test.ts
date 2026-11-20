@@ -346,13 +346,17 @@ describe("createSubagentTool", () => {
 
     expect(stored).toHaveLength(1);
     expect(stored[0].text).toBe(report);
-    // A 4k head: a re-read from 0 costs at most that much again.
-    expect(text.length).toBeLessThan(4_600);
+    // Owner, 2026-11-20: the model gets the pointer only, no part of the report.
+    expect(text).not.toContain("Finding line with detail.");
     expect(text).not.toContain("THE-TAIL-MARKER");
-    const lines = text.trim().split("\n");
-    // First line: partial, and where the whole is. Last line: where to continue.
-    expect(lines[0]).toMatch(/^\[Report: [\d,]+ characters\. Below are characters 0-4,000 only\. The full report is artifact "art-1"\.\]$/);
-    expect(lines.at(-1)).toMatch(/action "read", id "art-1", offset 4000\. Do not read it again from offset 0\.\]$/);
+    expect(text).toMatch(/artifact "art-1"/);
+    expect(text).toMatch(/artifact tool: action "read", id "art-1"/);
+    expect(text.length).toBeLessThan(400);
+    // The user's subagent row still shows the head of the report.
+    const shown = result.details.children[0].summary ?? "";
+    expect(shown.startsWith("Finding line with detail.")).toBe(true);
+    expect(shown).toContain('The full report is artifact "art-1".');
+    expect(shown).not.toContain("THE-TAIL-MARKER");
   });
 
   it("aborts in-flight children when the dispatch signal aborts", async () => {
