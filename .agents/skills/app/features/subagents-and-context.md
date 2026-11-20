@@ -49,6 +49,7 @@ await $(".agentic-chat-action-list").waitForExist();
 | Built-in Explorer role | `src/agent/subagents.ts#BUILTIN_AGENT_ROLES` | `test/subagent-runtime.test.ts#makeRuntime` (unit only) | `partial` |
 | Parallel cap of ten and queueing | `src/tools/subagent-tool.ts#MAX_CONCURRENCY` | `test/subagents.test.ts#caps concurrent dispatches at 10 and queues the rest, promoting on stop` (unit only) | `partial` |
 | Live child status tree | `src/ui/assistant-bubble.ts#updateStep` | `test/ui/chat-render.test.ts#labels a stopped child as stopped, not failed, and never shows a green check` | `partial` |
+| A subagent row starts collapsed, names the task once, opens its log on a row click | `src/ui/subagent-tree.ts#renderHeadStop`; `src/ui/activity-line.ts#syncSubagentOpen` | `test/e2e/specs/chat-ui-u3.e2e.ts#U3 #10: a subagent row starts collapsed, names the task once, and opens its log on a row click` | `covered` |
 | Per-child Stop button | `src/ui/subagent-tree.ts#renderSubagentHeader` | `test/subagents.test.ts#lets a caller abort one dispatch without stopping its siblings` (abort path only, no button click) | `partial` |
 | Replay a done dispatch | `src/ui/assistant-bubble.ts#endStep` | `test/ui/chat-render.test.ts#rehydrates a done dispatch from tool_execution_end alone, collapsed with its summary` | `covered` |
 | Replay a stopped dispatch | `src/ui/assistant-bubble.ts#endStep` | `test/ui/chat-render.test.ts#rehydrates an aborted dispatch as stopped (red) and an error dispatch as failed` | `covered` |

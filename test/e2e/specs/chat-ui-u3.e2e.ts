@@ -1,3 +1,4 @@
+import { mkdirSync } from "node:fs";
 import { browser, expect, $ } from "@wdio/globals";
 import { after, before, describe, it } from "mocha";
 import {
@@ -224,6 +225,9 @@ describe("chat view U3-B", function () {
         callLines: row?.querySelectorAll(".agentic-chat-step-call-args").length ?? -1,
       };
     });
+    // One screenshot for the PR (logs/ is git-ignored): the open activity line of this session.
+    mkdirSync("logs/pr-u3b-shots", { recursive: true });
+    await browser.saveScreenshot("logs/pr-u3b-shots/u3b-activity.png");
     expect(done.head).toBe("explorer: Critique the plan for gaps");
     expect(done).toMatchObject({ childOpen: true, report: true, callLines: 0 });
     expect(done.taskCount).toBeLessThanOrEqual(2);
