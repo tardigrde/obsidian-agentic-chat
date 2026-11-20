@@ -124,7 +124,7 @@ describe("activity line and inline approval", function () {
     const sources = await browser.execute(() =>
       Array.from(document.querySelectorAll(".agentic-chat-source-chip-name")).map((el) => el.textContent),
     );
-    expect(sources).toEqual(["A.md", "B.md", "C.md"]);
+    expect(sources).toEqual(["A", "B", "C"]);
   });
 
   it("renders an approval as an inline card below the activity line, never a modal", async function () {
@@ -139,17 +139,20 @@ describe("activity line and inline approval", function () {
         belowActivity: activity?.getAttribute("data-ac"),
         activityState: activity?.getAttribute("data-ac-state"),
         summary: activity?.querySelector(".agentic-chat-activity-summary")?.textContent,
+        // "needs you" is its own span outside the ellipsis, so a long path never cuts it.
+        needsYou: activity?.querySelector(".agentic-chat-activity-state")?.textContent,
         status: document.querySelector('[data-ac="status"]')?.textContent,
         hint: card?.querySelector(".agentic-chat-approval-kbd")?.textContent,
       };
     }, PENDING_APPROVAL);
-    expect(state.summary).toMatch(/ · needs you$/);
+    expect(state.summary).toMatch(/^Writing /);
     expect(state).toEqual({
       modal: 0,
       inTranscript: true,
       belowActivity: "activity",
       activityState: "needs-you",
       summary: state.summary,
+      needsYou: "· needs you",
       status: "Waiting for your approval",
       hint: "⏎ allow · Esc deny",
     });

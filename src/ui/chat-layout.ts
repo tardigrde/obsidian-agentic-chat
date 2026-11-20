@@ -44,7 +44,6 @@ export interface ChatLayoutDeps {
 export interface ChatLayoutElements {
   messagesEl: HTMLElement;
   transcript: TranscriptView;
-  tabsEl: HTMLElement;
   tabHeader: TabHeaderElements;
   chipsEl: HTMLElement;
   fieldEl: HTMLElement;
@@ -321,7 +320,6 @@ export function buildLayout(deps: ChatLayoutDeps): ChatLayoutElements {
   return {
     messagesEl,
     transcript,
-    tabsEl,
     tabHeader,
     chipsEl,
     fieldEl,

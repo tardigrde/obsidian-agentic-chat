@@ -63,7 +63,6 @@ export class ChatView extends ItemView {
   private chromeOwner?: ChatChrome;
   private turnOwner?: ChatTurn;
   private actionsOwner?: ChatActions;
-  private tabsEl!: HTMLElement;
   private tabHeader?: TabHeaderElements;
   // The current active note's path. View-level: it follows the focused leaf,
   // not the conversation; each tab decides whether it is suppressed.
@@ -392,11 +391,6 @@ export class ChatView extends ItemView {
     this.chatTabs.clear();
   }
 
-  /** Rename the active chat tab inline (palette command and tests). */
-  renameActiveTab(): void {
-    this.chatTabs.beginRenameActiveTab();
-  }
-
   /** Add a vault file/folder from an Obsidian context menu to the next prompt. */
   attachVaultEntryFromMenu(entry: TFile | TFolder): void {
     const attachment = entry instanceof TFolder ? `${FOLDER_PREFIX}${entry.path}` : entry.path;
@@ -592,7 +586,6 @@ export class ChatView extends ItemView {
     // The empty state renders into messagesEl, so it needs the field set first.
     this.renderEmptyState();
     this.transcript = layout.transcript;
-    this.tabsEl = layout.tabsEl;
     this.tabHeader = layout.tabHeader;
     this.chipsEl = layout.chipsEl;
     this.fieldEl = layout.fieldEl;

@@ -190,14 +190,6 @@ export function formatDetailedUsage(usage: Usage, options: DetailedUsageOptions 
   ];
 }
 
-export function formatUsage(usage: Usage): string {
-  const total = usage.cost?.total ?? 0;
-  const cost = total > 0 ? ` · ${formatCost(total)}` : "";
-  const hit = cacheHitPercent(usage);
-  const cache = hit === null ? "" : ` · ${hit}% cache`;
-  return `${formatTokenInteger(usage.totalTokens)} tokens${cache}${cost}`;
-}
-
 /**
  * Full integer token count with thousands separators (e.g. `3,327,418`). Used for
  * the cumulative footer so the raw number stops reads as anxiety-inducing noise.

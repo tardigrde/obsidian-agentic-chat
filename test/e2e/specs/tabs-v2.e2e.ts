@@ -193,6 +193,26 @@ describe("tabs v2", function () {
     await waitForTabLabel(active, label);
   });
 
+  it("keyboard focus on a tab shows its ring inside the strip, not clipped", async function () {
+    await $('[data-ac="tab"][aria-selected="true"]').click();
+    await browser.keys("ArrowLeft");
+    const ring = await browser.execute(() => {
+      const el = document.activeElement as HTMLElement | null;
+      const strip = el?.closest('[data-ac="tab-strip"]');
+      if (!el || !strip) return null;
+      const style = getComputedStyle(el);
+      const tab = el.getBoundingClientRect();
+      const box = strip.getBoundingClientRect();
+      const reach = Number.parseFloat(style.outlineOffset) + Number.parseFloat(style.outlineWidth);
+      return {
+        visible: el.matches(":focus-visible"),
+        style: style.outlineStyle,
+        inside: tab.top - reach >= box.top - 0.5 && tab.bottom + reach <= box.bottom + 0.5,
+      };
+    });
+    expect(ring).toEqual({ visible: true, style: "solid", inside: true });
+  });
+
   it("long-press renames on touch, and the close button is only in the menu there", async function () {
     await browser.execute(() => {
       document.querySelector<HTMLElement>('[data-ac="view"]')?.parentElement?.classList.add("is-mobile");

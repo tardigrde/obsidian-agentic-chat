@@ -22,8 +22,8 @@ Summarize this note in 5 bullets. End with open questions.
 Compare @Meeting 2026-11-03 and @Meeting 2026-11-10. What changed, and what is still blocked?
 ```
 
-**Answer from the whole vault.** The agent searches on its own; the step cards
-show which notes it read.
+**Answer from the whole vault.** The agent searches on its own; click the activity
+line under the answer to see which notes it read.
 
 ```text
 What did I decide about the database migration? Cite the notes with [[links]].

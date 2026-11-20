@@ -365,14 +365,14 @@ async function answerAskUser(answer: string): Promise<void> {
 }
 
 /** The pending inline approval card (a resolved one stays as a record). */
-async function waitForApprovalModal() {
+async function waitForApprovalCard() {
   const modal = await $('[data-ac="approval"]:not(.is-resolved)');
   await modal.waitForExist({ timeout: 10_000 });
   return modal;
 }
 
 async function allowApproval(): Promise<void> {
-  const modal = await waitForApprovalModal();
+  const modal = await waitForApprovalCard();
   const allow = await modal.$('[data-ac="approval-allow"]');
   await allow.waitForExist({ timeout: 5_000 });
   await allow.click();
@@ -380,7 +380,7 @@ async function allowApproval(): Promise<void> {
 }
 
 async function denyApprovalAndWaitForNextTarget(path: string): Promise<void> {
-  const modal = await waitForApprovalModal();
+  const modal = await waitForApprovalCard();
   const deny = await modal.$('[data-ac="approval-deny"]');
   await deny.waitForExist({ timeout: 5_000 });
   await deny.click();
@@ -400,7 +400,7 @@ async function denyApprovalAndWaitForNextTarget(path: string): Promise<void> {
 
 /** Esc starts the two-step deny on the focused card; Enter in the reason confirms it. */
 async function closeApprovalWithEscape(): Promise<void> {
-  const card = await waitForApprovalModal();
+  const card = await waitForApprovalCard();
   await browser.waitUntil(
     async () => await browser.execute((selector) => document.activeElement === document.querySelector(selector), '[data-ac="approval"]:not(.is-resolved)'),
     { timeout: 3_000, timeoutMsg: "the approval card did not take focus" },
@@ -415,7 +415,7 @@ async function closeApprovalWithEscape(): Promise<void> {
 }
 
 async function doubleClickAllowApproval(): Promise<void> {
-  const modal = await waitForApprovalModal();
+  const modal = await waitForApprovalCard();
   await browser.execute(() => {
     const root = document.querySelector<HTMLElement>('[data-ac="approval"]:not(.is-resolved)');
     const allow = Array.from(root?.querySelectorAll<HTMLButtonElement>("button") ?? []).find(
@@ -594,7 +594,7 @@ describe("agentic-chat next-level dogfood", function () {
     try {
       await setWriteApproval("ask");
       await sendPrompt("Open an approval, change write approval to deny, then allow the in-flight write.");
-      await waitForApprovalModal();
+      await waitForApprovalCard();
       await setWriteApproval("deny");
       await allowApproval();
       await waitForTurnToFinish();

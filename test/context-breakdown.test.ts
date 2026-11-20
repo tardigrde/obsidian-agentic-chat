@@ -62,7 +62,8 @@ describe("context breakdown", () => {
     const lines = text.split("\n");
     expect(lines[0]).toMatch(/^\d+% · [\d.]+k \/ 128k tokens \(estimated\)$/);
     expect(text).toMatch(/^System prompt\s+[\d.]+k?\s+\d+%$/m);
-    expect(text).toMatch(/^ {2}Instructions\s+[\d.]+k?\s+\(AGENTS\.md\)$/m);
+    // Instructions can come from AGENTS.md, CLAUDE.md, or GEMINI.md: no file name.
+    expect(text).toMatch(/^ {2}Instructions\s+[\d.]+k?$/m);
     expect(text).toMatch(/^ {2}Skills loaded\s+[\d.]+k?$/m);
     expect(text).toMatch(/^Tools\s+[\d.]+k?\s+\d+%$/m);
     expect(text).toMatch(/^ {2}MCP\s+[\d.]+k?\s+\(2 servers\)$/m);

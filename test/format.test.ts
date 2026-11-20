@@ -9,7 +9,6 @@ import {
   formatCost,
   formatDetailedUsage,
   formatElapsed,
-  formatUsage,
   safeJson,
   shortModelLabel,
   truncateText,
@@ -196,29 +195,6 @@ describe("cacheHitPercent", () => {
   });
   it("rounds to a whole percent", () => {
     expect(cacheHitPercent(usage({ input: 0, cacheRead: 1, cacheWrite: 2 }))).toBe(33);
-  });
-});
-
-describe("formatUsage", () => {
-  const usage = (over: Partial<Usage>): Usage => ({ totalTokens: 0, ...over }) as Usage;
-
-  it("shows tokens only when there is no cost and no cache", () => {
-    expect(formatUsage(usage({ totalTokens: 120 }))).toBe("120 tokens");
-  });
-  it("group-thousands the token total so it stops reading as noise", () => {
-    expect(formatUsage(usage({ totalTokens: 3327418 }))).toBe("3,327,418 tokens");
-  });
-  it("appends cost when present", () => {
-    expect(formatUsage(usage({ totalTokens: 120, cost: { total: 0.5 } as Usage["cost"] }))).toBe(
-      "120 tokens · $0.50",
-    );
-  });
-  it("surfaces the prompt-cache hit ratio between tokens and cost", () => {
-    expect(
-      formatUsage(
-        usage({ totalTokens: 1000, input: 100, cacheRead: 900, cost: { total: 0.02 } as Usage["cost"] }),
-      ),
-    ).toBe("1,000 tokens · 90% cache · $0.02");
   });
 });
 

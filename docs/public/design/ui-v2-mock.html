@@ -763,7 +763,6 @@
       tab.addEventListener("touchend", () => clearTimeout(timer));
       tab.addEventListener("touchmove", () => clearTimeout(timer));
       tab.addEventListener("contextmenu", (e) => { if (view.classList.contains("is-mobile")) { e.preventDefault(); beginRename(tab); } });
-      tab.addEventListener("keydown", (e) => { if (e.key === "F2") beginRename(tab); });
     });
 
     // Overflow menu

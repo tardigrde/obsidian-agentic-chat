@@ -45,6 +45,20 @@ describe("AssistantBubble reasoning pill phases", () => {
     b.dispose();
   });
 
+  it("the folded reasoning opens from the keyboard, not only by click", () => {
+    const { bubble: b, parent } = bubble();
+    b.appendReasoning("a long trace");
+    const pill = parent.querySelector<HTMLElement>(".agentic-chat-thought");
+    expect(pill?.getAttribute("role")).toBe("button");
+    expect(pill?.getAttribute("tabindex")).toBe("0");
+    pill?.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+    expect(pill?.classList.contains("is-expanded")).toBe(true);
+    expect(pill?.getAttribute("aria-expanded")).toBe("true");
+    pill?.dispatchEvent(new KeyboardEvent("keydown", { key: " ", bubbles: true }));
+    expect(pill?.classList.contains("is-expanded")).toBe(false);
+    b.dispose();
+  });
+
   it("a first reasoning delta mounts the pill without beginThinking", () => {
     const { bubble: b, parent } = bubble();
     b.appendReasoning("hmm");

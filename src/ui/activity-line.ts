@@ -44,7 +44,21 @@ export class ReasoningEntry {
   constructor(readonly el: HTMLElement) {
     this.label = el.createSpan({ cls: "agentic-chat-thought-label", text: "Thinking…" });
     this.body = el.createSpan({ cls: "agentic-chat-thought-text" });
-    el.addEventListener("click", () => el.toggleClass("is-expanded", !el.hasClass("is-expanded")));
+    // A folded trace opens by click, Enter, or Space (keyboard users too).
+    el.setAttr("role", "button");
+    el.setAttr("tabindex", "0");
+    el.setAttr("aria-expanded", "false");
+    const toggle = () => {
+      const expanded = !el.hasClass("is-expanded");
+      el.toggleClass("is-expanded", expanded);
+      el.setAttr("aria-expanded", String(expanded));
+    };
+    el.addEventListener("click", toggle);
+    el.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter" && event.key !== " ") return;
+      event.preventDefault();
+      toggle();
+    });
     this.sync();
   }
 
@@ -99,6 +113,8 @@ export class ActivityLine {
   private stateValue: ActivityState = "running";
   private needsYou = false;
   private open = false;
+  /** Subagent steps already opened by their first progress tick. */
+  private readonly autoOpened = new Set<string>();
   private finished = false;
   private readonly startedAt = performance.now();
   private timer: number | null = null;
@@ -227,9 +243,13 @@ export class ActivityLine {
     const children = subagentChildren(details);
     if (children.length > 0) {
       renderSubagentChildren(step.detail, children, this.options.onStopSubagentChild);
-      // A running subagent needs its stop buttons in reach.
-      this.setStepOpen(step, true);
-      if (!this.open) this.setOpen(true);
+      // A running subagent needs its stop buttons in reach: open once, on the
+      // first tick. Later ticks keep what the user chose.
+      if (!this.autoOpened.has(id)) {
+        this.autoOpened.add(id);
+        this.setStepOpen(step, true);
+        if (!this.open) this.setOpen(true);
+      }
     } else if (isAskUserDetails(details)) {
       renderAskUserStep(step.detail, details);
       this.setStepOpen(step, true);

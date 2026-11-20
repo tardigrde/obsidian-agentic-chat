@@ -118,7 +118,7 @@ export async function waitForNewAssistantText(previous: string, timeout = 120_00
   await browser.waitUntil(
     async () => {
       const streaming = await browser.execute(
-        () => document.querySelectorAll(".agentic-chat-text.is-streaming").length > 0,
+        () => document.querySelectorAll('[data-ac="assistant-text"].is-streaming').length > 0,
       );
       if (streaming) return false;
 

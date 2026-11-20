@@ -2018,6 +2018,12 @@ body.is-mobile,
   outline-offset: var(--ac-line);
 }
 
+/* The strip clips its overflow and is as tall as a tab: draw the ring inside
+   the tab, or keyboard focus is invisible. */
+.agentic-chat-tab:focus-visible {
+  outline-offset: calc(var(--ac-line-strong) * -1);
+}
+
 /* Context ring + %: muted until the window fills up. No click action. */
 .agentic-chat-ctx {
   display: inline-flex;

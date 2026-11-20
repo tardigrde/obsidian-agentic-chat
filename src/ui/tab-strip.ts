@@ -49,6 +49,8 @@ export class TabStrip {
   private activeIndex = 0;
   private editingIndex: number | null = null;
   private menuOpen = false;
+  /** What the strip last drew; a re-render with the same state keeps the nodes. */
+  private renderedKey: string | null = null;
   private observer: ResizeObserver | null = null;
   private readonly cleanups: Array<() => void> = [];
 
@@ -101,9 +103,17 @@ export class TabStrip {
     this.el.add.setAttr("aria-disabled", String(!canAdd));
     this.el.add.setAttr("title", canAdd ? "New tab" : `Up to ${maxTabs} tabs. Close one to open another.`);
     if (this.isEditing) return;
+    // Background tabs re-render on every stream event. Rebuilding unchanged
+    // nodes would drop keyboard focus and lose a click between down and up.
+    const key = JSON.stringify([tabs, activeIndex]);
+    if (key === this.renderedKey) return;
+    this.renderedKey = key;
     const strip = this.el.strip;
+    const doc = strip.ownerDocument;
+    const focused = Array.from(strip.querySelectorAll<HTMLElement>('[data-ac="tab"]')).indexOf(doc.activeElement as HTMLElement);
     strip.empty();
     tabs.forEach((tab, index) => this.renderTab(strip, tab, index));
+    if (focused >= 0) strip.querySelectorAll<HTMLElement>('[data-ac="tab"]')[Math.min(focused, tabs.length - 1)]?.focus();
     this.layout();
     if (this.menuOpen) this.renderMenu();
   }
@@ -126,7 +136,6 @@ export class TabStrip {
     );
     el.toggleClass("is-active", active);
     el.toggleClass("is-number", !tab.label);
-    el.toggleClass("is-needs-approval", tab.status === "needs-you");
     acHook(el.createSpan({ cls: "agentic-chat-tab-label", text: tabDisplayLabel(index, tab.label) }), "tab-label");
     if (tab.status) {
       el.createSpan({ cls: ["agentic-chat-dot", `is-${tab.status}`], attr: { "aria-hidden": "true" } });
@@ -237,6 +246,8 @@ export class TabStrip {
       if (done) return;
       done = true;
       this.editingIndex = null;
+      // The input replaced the label: draw the tabs again even if the state is the same.
+      this.renderedKey = null;
       const value = input.value.trim();
       if (commit && value !== current) this.actions.rename(index, value || undefined);
       // Re-render either way so the label (or the number) comes back.
@@ -279,7 +290,6 @@ export class TabStrip {
     const button = this.el.overflow;
     button.empty();
     const status = mostUrgentStatus(hidden.map((index) => this.tabs[index]?.status ?? null));
-    button.toggleClass("has-hidden", hidden.length > 0);
     if (hidden.length > 0) {
       button.createSpan({ cls: "agentic-chat-tab-overflow-count", text: `+${hidden.length}` });
       if (status) button.createSpan({ cls: ["agentic-chat-dot", `is-${status}`], attr: { "aria-hidden": "true" } });

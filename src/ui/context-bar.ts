@@ -53,7 +53,7 @@ export function formatContextBreakdown(readout: ContextReadout, lastPromptTokens
   const parts = load.breakdown;
   lines.push(row("System prompt", k(load.systemPromptTokens), share(load.systemPromptTokens, contextWindow)));
   if (parts) {
-    if (parts.instructionsTokens > 0) lines.push(row("  Instructions", k(parts.instructionsTokens), "(AGENTS.md)"));
+    if (parts.instructionsTokens > 0) lines.push(row("  Instructions", k(parts.instructionsTokens)));
     if (parts.skillsTokens > 0) lines.push(row("  Skills loaded", k(parts.skillsTokens)));
   }
   lines.push(row("Tools", k(load.toolSchemaTokens), share(load.toolSchemaTokens, contextWindow)));
@@ -77,16 +77,17 @@ export function formatContextBreakdown(readout: ContextReadout, lastPromptTokens
 
 /**
  * The provider's prompt-token count for the last assistant reply (input plus
- * cache reads and writes), or undefined when no reply reported usage.
+ * cache reads and writes), or undefined when no reply reported usage. Replies
+ * with no count (a stop notice, an aborted reply) are skipped.
  */
 export function lastPromptTokens(messages: readonly AgentMessage[]): number | undefined {
   for (let i = messages.length - 1; i >= 0; i--) {
     const message = messages[i];
     if (message.role !== "assistant") continue;
     const usage = (message as { usage?: { input?: number; cacheRead?: number; cacheWrite?: number } }).usage;
-    if (!usage) return undefined;
-    const total = (usage.input ?? 0) + (usage.cacheRead ?? 0) + (usage.cacheWrite ?? 0);
-    return total > 0 ? total : undefined;
+    const total = (usage?.input ?? 0) + (usage?.cacheRead ?? 0) + (usage?.cacheWrite ?? 0);
+    // Stop notices and aborted or failed replies report no usage: look further back.
+    if (total > 0) return total;
   }
   return undefined;
 }

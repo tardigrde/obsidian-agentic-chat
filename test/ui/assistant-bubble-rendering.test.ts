@@ -19,8 +19,10 @@ afterEach(() => {
 
 describe("assistant markdown rendering helpers", () => {
   it("derives a compact source-chip name from a vault path", () => {
-    expect(sourceChipName("Notes/Plan.md")).toBe("Plan.md");
-    expect(sourceChipName("Projects/Alpha/Home.md")).toBe("Home.md");
+    // Notes drop ".md", as Obsidian shows them; other files keep their extension.
+    expect(sourceChipName("Notes/Plan.md")).toBe("Plan");
+    expect(sourceChipName("Projects/Alpha/Home.md")).toBe("Home");
+    expect(sourceChipName("Files/report.pdf")).toBe("report.pdf");
     expect(sourceChipName("readme")).toBe("readme");
     expect(sourceChipName("")).toBe("");
     expect(sourceChipName("   ")).toBe("");

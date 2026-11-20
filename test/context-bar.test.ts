@@ -45,4 +45,14 @@ describe("lastPromptTokens", () => {
     expect(lastPromptTokens([])).toBeUndefined();
     expect(lastPromptTokens([{ role: "assistant", content: [], timestamp: 1 }] as unknown as AgentMessage[])).toBeUndefined();
   });
+
+  it("skips a stop notice or an aborted reply (zero usage) and keeps the last real count", () => {
+    const messages = [
+      { role: "assistant", content: [], usage: { input: 700, output: 5, cacheRead: 0, cacheWrite: 0 }, timestamp: 1 },
+      { role: "user", content: "again", timestamp: 2 },
+      { role: "assistant", content: [], usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, stopReason: "aborted", timestamp: 3 },
+      { role: "assistant", content: [], timestamp: 4 },
+    ] as unknown as AgentMessage[];
+    expect(lastPromptTokens(messages)).toBe(700);
+  });
 });

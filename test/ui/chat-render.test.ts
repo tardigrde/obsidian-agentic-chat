@@ -160,7 +160,7 @@ describe("source chips", () => {
     ui.emit({ type: "agent_end" });
     await settle();
 
-    expect(ui.$$(".agentic-chat-source-chip-name").map(text)).toEqual(["SourceA.md", "SourceB.md", "SourceC.md"]);
+    expect(ui.$$(".agentic-chat-source-chip-name").map(text)).toEqual(["SourceA", "SourceB", "SourceC"]);
     ui.$<HTMLButtonElement>(".agentic-chat-source-chip")?.click();
     await settle();
     expect(ui.app.workspace.opened).toEqual(["Notes/SourceA.md"]);
@@ -190,7 +190,7 @@ describe("source chips", () => {
     expect(lastAll(".agentic-chat-sources")).toHaveLength(1);
     expect(activityState()).toBe("done");
     expect(head()).toBe("Read 1 note");
-    expect(text(last(".agentic-chat-source-chip-name"))).toBe("SourceA.md");
+    expect(text(last(".agentic-chat-source-chip-name"))).toBe("SourceA");
     expect(text(last(".agentic-chat-text"))).toBe("");
   });
 });
@@ -251,6 +251,30 @@ describe("subagent dispatch card", () => {
       expect(line).toMatch(/tok/);
       expect(line).toContain("$");
     }
+  });
+
+  it("a progress tick does not re-open a line or a child the user closed", async () => {
+    startAssistantTurn();
+    ui.emit(toolStart("t-tick", "subagent", { agent: "explorer", task: "map" }));
+    const tick = (summary: string) =>
+      ui.emit({
+        type: "tool_execution_update",
+        toolCallId: "t-tick",
+        partialResult: {
+          details: { kind: "subagent", children: [{ agent: "explorer", task: "task 1", status: "running", stopId: "s0", transcript: [], summary }] },
+        },
+      });
+    tick("");
+    const activity = last('[data-ac="activity"]');
+    const child = last(".agentic-chat-subagent") as HTMLDetailsElement;
+    expect(activity?.classList.contains("is-open")).toBe(true);
+    expect(child.open).toBe(true);
+    // The user collapses both to read the transcript.
+    (last('[data-ac="activity-head"]') as HTMLElement).click();
+    child.open = false;
+    tick("still going");
+    expect(last('[data-ac="activity"]')?.classList.contains("is-open")).toBe(false);
+    expect((last(".agentic-chat-subagent") as HTMLDetailsElement).open).toBe(false);
   });
 
   it("labels a stopped child as stopped, not failed, and never shows a green check", async () => {

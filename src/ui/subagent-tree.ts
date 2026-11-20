@@ -58,8 +58,13 @@ export function renderSubagentChildren(
   for (let i = 0; i < children.length; i++) {
     const child = children[i];
     const childRow = list.children[i] as HTMLDetailsElement;
+    // Open a running child, close a settled one, but only when its status
+    // changes: a progress tick keeps the user's own open/closed choice.
+    if (childRow.dataset.status !== child.status) {
+      childRow.dataset.status = child.status;
+      childRow.open = child.status === "running";
+    }
     childRow.className = `agentic-chat-subagent is-${child.status}`;
-    childRow.open = child.status === "running";
     renderSubagentHeader(childRow, child, onStopSubagentChild);
     renderSubagentBody(childRow, child);
   }

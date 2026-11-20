@@ -186,13 +186,15 @@ turn:
   ring** with its %, **Safe / YOLO** (a shield, orange while YOLO, icon only on
   touch), and the round **send / stop**. While a turn runs, Stop shows and send
   queues (`data-ac-state` `send`, `queue`, `update`).
-- **Context ring:** % only, no click action. The tooltip shows the estimated
-  breakdown, and the provider's count for the last reply when it reported one:
+- **Context ring:** % only, no click action. On desktop the tooltip shows the
+  estimated breakdown, and the provider's count for the last reply when it
+  reported one. Known limit: the tooltip is hover-only, so a phone shows the %
+  only. Sample (real output):
 
   ```
   38% · 48.6k / 128k tokens (estimated)
   System prompt       4.1k  3%
-    Instructions      1.2k  (AGENTS.md)
+    Instructions      1.2k
     Skills loaded     0.8k
   Tools               6.3k  5%
     Built-in          4.0k
@@ -200,7 +202,8 @@ turn:
     MCP deferred     14 tools, not loaded
   Conversation       35.2k  28%
     Tool results     21.0k
-  Kept for answer     3.0k
+  Kept for answer     3k
+  Last reply: 46.9k tokens sent (provider count)
   ```
 
   Deferred MCP tools are not sent, so they show as a count, not tokens.

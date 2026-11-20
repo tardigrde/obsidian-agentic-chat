@@ -125,15 +125,17 @@ describe("multi-tab background approval (effort + notify+label)", function () {
     });
     expect(await $(PENDING_APPROVAL).isExisting()).toBe(false);
     expect(await $(".modal-container").isExisting()).toBe(false);
-    const { tab1Class, tab1Label, activeIndex } = await browser.execute(() => {
+    const { tab1State, tab1Dot, tab1Label, activeIndex } = await browser.execute(() => {
       const pills = Array.from(document.querySelectorAll<HTMLElement>('[data-ac="tab"]'));
       return {
-        tab1Class: pills[0]?.className ?? "",
+        tab1State: pills[0]?.getAttribute("data-ac-state") ?? "",
+        // The visible signal is the orange dot, not a class.
+        tab1Dot: !!pills[0]?.querySelector(".agentic-chat-dot.is-needs-you"),
         tab1Label: pills[0]?.getAttribute("aria-label") ?? "",
         activeIndex: pills.findIndex((p) => p.classList.contains("is-active")),
       };
     });
-    expect(tab1Class).toContain("is-needs-approval");
+    expect({ tab1State, tab1Dot }).toEqual({ tab1State: "needs-you", tab1Dot: true });
     expect(tab1Label).toBe("Tab 1, needs approval");
     expect(activeIndex).toBe(1);
 

@@ -202,11 +202,6 @@ export class ChatTabs {
     this.syncTabStrip();
   }
 
-  /** Start an inline rename of the active tab (the "Rename current tab" path). */
-  beginRenameActiveTab(): void {
-    this.ensureStrip()?.beginRename(this.activeIndex);
-  }
-
   private ensureStrip(): TabStrip | null {
     const header = this.deps.header();
     if (!header) return null;

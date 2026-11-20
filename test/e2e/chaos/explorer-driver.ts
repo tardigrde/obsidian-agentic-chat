@@ -228,7 +228,7 @@ function collectWindow(windowNumber: number, limit: number): RawWindow {
   // Fallback: plugin and overlay elements that only show a pointer cursor are
   // clickable too (custom rows, chips, cards). Limit the scan to those roots.
   const pointerRoots =
-    ".agentic-chat-view *, .modal-container *, .menu *, .agentic-chat-autocomplete *, .vertical-tab-content *";
+    '[data-ac="view"] *, .modal-container *, .menu *, .agentic-chat-autocomplete *, .vertical-tab-content *';
   const explicit = new Set(Array.from(document.querySelectorAll<HTMLElement>(selector)));
   for (const element of Array.from(document.querySelectorAll<HTMLElement>(pointerRoots))) {
     if (explicit.has(element) || element.closest(selector)) continue;

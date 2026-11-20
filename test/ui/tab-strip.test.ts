@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { mountChatView, settle, type MountedChatView } from "./support/mount-chat-view";
+import { TabStrip, type TabView } from "../../src/ui/tab-strip";
 
 /** The tab header in the real ChatView (happy-dom: no layout, so every tab fits). */
 let ui: MountedChatView;
@@ -53,5 +54,47 @@ describe("tab strip", () => {
     input.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
     await settle();
     expect(labels()).toEqual(["1"]);
+  });
+});
+
+describe("TabStrip re-render", () => {
+  function strip() {
+    const header = document.body.createDiv();
+    const el = {
+      header,
+      strip: header.createDiv(),
+      overflow: header.createEl("button"),
+      menu: header.createDiv(),
+      add: header.createEl("button"),
+    };
+    const activated: number[] = [];
+    const tabStrip = new TabStrip(el, { activate: (i) => activated.push(i), close: () => {}, rename: () => {}, openHistory: () => {} });
+    return { el, tabStrip, activated };
+  }
+  const views = (status: TabView["status"] = null): TabView[] => [
+    { label: undefined, sessionName: undefined, status: null },
+    { label: "Vendors", sessionName: undefined, status },
+  ];
+
+  it("keeps the tab nodes and focus when a background event re-renders the same state", () => {
+    const { el, tabStrip } = strip();
+    tabStrip.render(views("running"), 0, true, 5);
+    const first = el.strip.querySelector<HTMLElement>('[data-ac="tab"]');
+    first?.focus();
+    tabStrip.render(views("running"), 0, true, 5);
+    expect(el.strip.querySelector('[data-ac="tab"]')).toBe(first);
+    expect(document.activeElement).toBe(first);
+    tabStrip.dispose();
+  });
+
+  it("keeps keyboard focus on the same tab when a status change rebuilds the strip", () => {
+    const { el, tabStrip } = strip();
+    tabStrip.render(views("running"), 0, true, 5);
+    el.strip.querySelectorAll<HTMLElement>('[data-ac="tab"]')[1]?.focus();
+    tabStrip.render(views("unread"), 0, true, 5);
+    const tabs = el.strip.querySelectorAll<HTMLElement>('[data-ac="tab"]');
+    expect(tabs[1]?.getAttribute("data-ac-state")).toBe("unread");
+    expect(document.activeElement).toBe(tabs[1]);
+    tabStrip.dispose();
   });
 });
