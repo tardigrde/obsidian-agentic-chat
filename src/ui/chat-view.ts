@@ -122,10 +122,11 @@ export class ChatView extends ItemView {
     const pop = () => {
       if (!pushed) return;
       pushed = false;
-      this.app.keymap.popScope(scope);
+      this.app.keymap?.popScope(scope);
     };
     this.registerDomEvent(input, "focus", () => {
       if (pushed) return;
+      if (!this.app.keymap) return;
       pushed = true;
       this.app.keymap.pushScope(scope);
     });
@@ -449,7 +450,8 @@ export class ChatView extends ItemView {
   private focusComposerOnChromeClick(event: MouseEvent): void {
     this.pointerActivation = false;
     if (this.closed || Platform.isMobile || event.defaultPrevented || event.button !== 0) return;
-    const target = event.target instanceof Element ? event.target : null;
+    const node = event.target as Node | null;
+    const target = node?.instanceOf(Element) ? node : null;
     if (!target || target.closest(INTERACTIVE_SELECTOR)) return;
     const selection = this.contentEl.ownerDocument.getSelection();
     if (selection && !selection.isCollapsed) return;
