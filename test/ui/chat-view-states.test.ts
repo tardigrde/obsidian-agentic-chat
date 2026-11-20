@@ -125,6 +125,18 @@ describe("chat view state machine", () => {
     expect(panel?.style.display).not.toBe("none");
   });
 
+  it("streaming: 'Working…' is real text in the live region (screen readers hear it), gone when idle", async () => {
+    const held = gate();
+    await mount([replayTextTurn("the answer", { hold: true })], held);
+    await ui.send("hi");
+    const line = ui.$('.agentic-chat-status-line');
+    expect(line?.getAttribute("aria-live")).toBe("polite");
+    expect(line?.textContent).toContain("Working…");
+    held.release();
+    await ui.idle();
+    expect(line?.textContent).not.toContain("Working…");
+  });
+
   it("streaming: the Queue button holds the draft as a chip and sends it after the turn", async () => {
     const held = gate();
     await mount([replayTextTurn("first", { hold: true }), replayTextTurn("second")], held);

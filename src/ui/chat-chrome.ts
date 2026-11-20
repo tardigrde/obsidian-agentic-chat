@@ -180,6 +180,8 @@ export class ChatChrome {
     }
     const working = this.deps.elements.workingEl();
     working.parentElement?.toggleClass("is-running", running);
+    const workingText = working.parentElement?.querySelector(".agentic-chat-working-text");
+    if (workingText && workingText.textContent !== (running ? "Working…" : "")) workingText.textContent = running ? "Working…" : "";
     if (running) {
       this.deps.elements.stopButton().show();
       working.show();

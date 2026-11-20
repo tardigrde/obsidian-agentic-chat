@@ -147,6 +147,9 @@ export function buildLayout(deps: ChatLayoutDeps): ChatLayoutElements {
   const workingEl = statusLineEl.createSpan({ cls: "agentic-chat-working", attr: { "aria-hidden": "true" } });
   workingEl.hide();
   const statusEl = acHook(statusLineEl.createSpan({ cls: "agentic-chat-status" }), "status");
+  // "Working…" as real text in the live region (CSS content is not reliably
+  // announced). CSS shows it only while running and the status is empty.
+  statusLineEl.createSpan({ cls: "agentic-chat-working-text" });
 
   // The composer card: chips row, an auto-growing textarea, and the toolbar.
   const fieldEl = acHook(composer.createDiv({ cls: "agentic-chat-field" }), "composer-card");

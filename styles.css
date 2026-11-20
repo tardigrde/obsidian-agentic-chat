@@ -1403,12 +1403,12 @@ body.is-mobile,
   display: none;
 }
 
-.agentic-chat-status-line.is-running .agentic-chat-status:empty {
-  display: inline;
+.agentic-chat-working-text {
+  display: none;
 }
 
-.agentic-chat-status-line.is-running .agentic-chat-status:empty::before {
-  content: "Working…";
+.agentic-chat-status-line.is-running .agentic-chat-status:empty + .agentic-chat-working-text {
+  display: inline;
 }
 
 /* --- Header: tabs · overflow · new tab · history --- */
