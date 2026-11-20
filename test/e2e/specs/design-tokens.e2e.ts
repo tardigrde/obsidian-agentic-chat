@@ -135,6 +135,17 @@ describe("UI v2 design tokens and restyle", function () {
     expect(layout.statusAboveCard).toBe(true);
   });
 
+  it("sits the composer card one spacing step above the bottom of the view", async function () {
+    const gap = await browser.execute(() => {
+      const view = document.querySelector<HTMLElement>('[data-ac="view"]');
+      const card = view?.querySelector<HTMLElement>('[data-ac="composer-card"]');
+      if (!view || !card) return null;
+      return Math.round(view.getBoundingClientRect().bottom - card.getBoundingClientRect().bottom);
+    });
+    // 12 px (--ac-space-3), not 12 px plus Obsidian's own view padding.
+    expect(gap).toBe(12);
+  });
+
   it("keeps the context % readable in a 320px sidebar (the ring glyph goes first)", async function () {
     const narrow = await browser.execute(async () => {
       const view = document.querySelector<HTMLElement>('[data-ac="view"]');

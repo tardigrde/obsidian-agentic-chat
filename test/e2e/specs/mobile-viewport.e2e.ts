@@ -437,6 +437,21 @@ describe("agentic-chat mobile viewport", function () {
       const navbar = document.querySelector<HTMLElement>(".mobile-navbar")?.getBoundingClientRect();
       return { cardBottom: card?.bottom ?? 0, navbarTop: navbar && navbar.height > 0 ? navbar.top : null };
     });
+    // Close above the navbar, as in the design: no dead band between them.
+    if (layout.navbarTop !== null) expect(layout.navbarTop - layout.cardBottom).toBeLessThanOrEqual(16);
+    // Obsidian hides the navbar while scrolling ("auto full screen"): the
+    // composer takes the freed space back (CSS only, no redraw).
+    const hidden = await browser.execute(async () => {
+      document.body.classList.add("is-hidden-nav");
+      await new Promise((resolve) => setTimeout(resolve, 400));
+      const view = document.querySelector<HTMLElement>('.mod-root [data-ac="view"]');
+      const card = view?.querySelector<HTMLElement>('[data-ac="composer-card"]')?.getBoundingClientRect();
+      const safe = Number.parseFloat(getComputedStyle(document.body).getPropertyValue("--safe-area-inset-bottom")) || 0;
+      const room = (view?.getBoundingClientRect().bottom ?? 0) - (card?.bottom ?? 0) - safe;
+      document.body.classList.remove("is-hidden-nav");
+      return room;
+    });
+    expect(hidden).toBeLessThanOrEqual(16);
     if (layout.navbarTop !== null) expect(layout.cardBottom).toBeLessThanOrEqual(layout.navbarTop);
     await browser.executeObsidian(({ app }, viewType) => {
       const leaves = app.workspace.getLeavesOfType(viewType);

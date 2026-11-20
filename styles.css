@@ -136,6 +136,12 @@ body,
   --ac-safe-bottom: var(--view-bottom-spacing, var(--safe-area-inset-bottom, 0px));
 }
 
+/* Obsidian hides the navbar while the user scrolls ("auto full screen"). The
+   composer takes the freed space back; the class change alone does it. */
+.is-phone.is-hidden-nav .mod-root .agentic-chat-view {
+  --ac-safe-bottom: var(--safe-area-inset-bottom, 0px);
+}
+
 /* Touch: 44px targets and at least 16px body text (iOS zooms on smaller inputs). */
 body.is-mobile,
 .is-mobile .agentic-chat-view {
@@ -149,6 +155,9 @@ body.is-mobile,
 
 /* ===== Agentic Chat — sidebar view ===== */
 
+/* Beats Obsidian's `.workspace-leaf-content .view-content` padding (32px or
+   the safe area at the bottom): the composer owns the bottom space. */
+.workspace-leaf-content .view-content.agentic-chat-view,
 .agentic-chat-view {
   display: flex;
   flex-direction: column;
