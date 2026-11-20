@@ -85,6 +85,35 @@ describe("ApprovalCard rendering", () => {
     expect($(".agentic-chat-approval-title")?.textContent).toBe("Rename Notes/old.md → Archive/old.md");
   });
 
+  it("the head puts the path in its own accent span and wraps instead of cutting it", async () => {
+    const app = fakeApp();
+    const path = "Meetings/2026/11/Weekly sync notes with a very long name.md";
+    ask(app, { toolName: "write", args: { path, content: "a" } });
+    await settle();
+    expect($(".agentic-chat-approval-title .agentic-chat-approval-path")?.textContent).toBe(path);
+    expect($(".agentic-chat-approval-title")?.getAttribute("title")).toBe(`Create ${path}`);
+  });
+
+  it("Show more stops (and its buttons go) once the window is too large to diff", async () => {
+    const app = fakeApp();
+    const head = Array.from({ length: 100 }, (_, index) => `head ${index}`).join("\n");
+    const oldText = Array.from({ length: 490 }, (_, index) => `old ${index}`).join("\n");
+    const newText = Array.from({ length: 490 }, (_, index) => `new ${index}`).join("\n");
+    await seedFile(app, "Notes/wide.md", `${head}\n${oldText}`);
+    ask(app, { toolName: "edit", args: { path: "Notes/wide.md", edits: [{ oldText, newText }] } });
+    await settle();
+    const above = () => $$(".agentic-chat-diff-expand") as HTMLButtonElement[];
+    expect(above().length).toBeGreaterThan(0);
+    // Each click grows the window by 5 lines; soon a diff of it is too large.
+    for (let clicks = 0; clicks < 20 && above().length > 0; clicks += 1) {
+      above()[0]?.click();
+      await settle();
+    }
+    // The window hit the diff limit: no dead "Show more" is left.
+    expect(above()).toHaveLength(0);
+    expect(diffLines().length).toBeGreaterThan(0);
+  });
+
   it("an exact edit over a huge region shows the large-change summary instead of throwing", async () => {
     const app = fakeApp();
     const oldText = Array.from({ length: 600 }, (_, index) => `old ${index}`).join("\n");

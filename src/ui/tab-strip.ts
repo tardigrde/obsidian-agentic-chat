@@ -51,6 +51,8 @@ export class TabStrip {
   private menuOpen = false;
   /** What the strip last drew; a re-render with the same state keeps the nodes. */
   private renderedKey: string | null = null;
+  /** Cancels for pending long-press timers; a rebuild drops the old nodes, so it runs them. */
+  private readonly longPressCancels = new Set<() => void>();
   private observer: ResizeObserver | null = null;
   private readonly cleanups: Array<() => void> = [];
 
@@ -88,6 +90,7 @@ export class TabStrip {
   dispose(): void {
     this.observer?.disconnect();
     this.observer = null;
+    for (const cancel of this.longPressCancels) cancel();
     for (const cleanup of this.cleanups.splice(0)) cleanup();
   }
 
@@ -111,6 +114,9 @@ export class TabStrip {
     const strip = this.el.strip;
     const doc = strip.ownerDocument;
     const focused = Array.from(strip.querySelectorAll<HTMLElement>('[data-ac="tab"]')).indexOf(doc.activeElement as HTMLElement);
+    // A rebuild replaces the node a finger may be holding: its lift never
+    // arrives, so cancel the long-press here or a rename opens uninvited.
+    for (const cancel of this.longPressCancels) cancel();
     strip.empty();
     tabs.forEach((tab, index) => this.renderTab(strip, tab, index));
     if (focused >= 0) strip.querySelectorAll<HTMLElement>('[data-ac="tab"]')[Math.min(focused, tabs.length - 1)]?.focus();
@@ -198,12 +204,15 @@ export class TabStrip {
       if (timer !== null) window.clearTimeout(timer);
       timer = null;
       start = null;
+      this.longPressCancels.delete(cancel);
     };
     el.addEventListener("pointerdown", (event) => {
       if (event.pointerType !== "touch") return;
       start = { x: event.clientX, y: event.clientY };
+      this.longPressCancels.add(cancel);
       timer = window.setTimeout(() => {
         timer = null;
+        this.longPressCancels.delete(cancel);
         this.beginRename(index);
       }, LONG_PRESS_MS);
     });

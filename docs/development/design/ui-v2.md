@@ -145,11 +145,12 @@ turn:
 ### Inline approval card
 
 - Renders in the transcript of the tab that asked, below the turn's activity
-  line, with the orange border and tint: a title, a one-line description, the
+  line, with the orange border and tint: a title that names the action and the path (path in accent), the
   preview (diff via `compactDiffLines`, capped at 400 lines, expandable), and
   **Allow**, **Always allow &lt;tool&gt;**, **Deny**. `create_skill` has no
   Always.
-- **Keyboard.** The card takes focus unless the composer has text. Enter
+- **Keyboard.** The card takes focus unless the composer has text or another
+  approval card has focus. Enter
   allows. Esc starts the two-step deny (a reason field and "Confirm deny");
   Enter in the reason confirms, Esc there goes back.
 - **Background tabs.** The tab gets the orange dot and "needs approval" in its

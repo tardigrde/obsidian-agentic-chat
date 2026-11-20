@@ -170,8 +170,20 @@ export function runningLabel(name: string, rawArgs: string): string {
   }
 }
 
-/** The short verb and the argument for one compact row: `Read` + `Meetings/Kickoff.md`. */
+/** A vault path as Obsidian shows a note: without ".md". Other files keep their extension. */
+export function noteDisplayPath(path: string): string {
+  return path.replace(/\.md$/i, "") || path;
+}
+
+/** The short verb and the argument for one compact row: `Read` + `Meetings/Kickoff`. */
 export function stepRowParts(name: string, rawArgs: string): { verb: string; arg: string; path: string } {
+  const parts = stepRowPartsRaw(name, rawArgs);
+  // Display only: `path` (the link target) keeps the real file name.
+  if (!parts.path) return parts;
+  return { ...parts, arg: parts.arg.split(" → ").map(noteDisplayPath).join(" → ") };
+}
+
+function stepRowPartsRaw(name: string, rawArgs: string): { verb: string; arg: string; path: string } {
   const args = parseArgs(rawArgs);
   const path = text(args.path) || text(args.newPath);
   const server = mcpServerName(name);

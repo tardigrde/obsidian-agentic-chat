@@ -231,6 +231,35 @@ describe("chat view state machine", () => {
     await ui.idle();
   });
 
+  it("a second approval does not steal focus from the first card's deny reason", async () => {
+    const held = gate();
+    await mount([replayTextTurn("working", { hold: true })], held);
+    await ui.send("do two things");
+    const view = ui.view as unknown as {
+      activeTab: unknown;
+      confirmToolCallForTab(tab: unknown, request: { toolName: string; label: string; args: unknown }): Promise<{ approved: boolean }>;
+    };
+    const tab = view.activeTab;
+    const first = view.confirmToolCallForTab(tab, { toolName: "mcp__a__x", label: "Run x", args: {} });
+    await settle();
+    // The user starts the deny on card A and types a reason.
+    ui.$<HTMLButtonElement>('[data-ac="approval-deny"]')?.click();
+    await settle();
+    const reason = ui.$<HTMLTextAreaElement>(".agentic-chat-deny-reason-input");
+    expect(reason).not.toBeNull();
+    expect(reason?.ownerDocument.activeElement).toBe(reason);
+    const second = view.confirmToolCallForTab(tab, { toolName: "mcp__b__y", label: "Run y", args: {} });
+    await settle();
+    // Card B must not take focus: Enter still confirms the deny of card A.
+    expect(reason?.ownerDocument.activeElement).toBe(reason);
+    reason?.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+    expect((await first).approved).toBe(false);
+    ui.$$<HTMLButtonElement>('[data-ac="approval-allow"]').at(-1)?.click();
+    await second;
+    held.release();
+    await ui.idle();
+  });
+
   it("approval pending -> Deny twice with a reason: the tool does not run and the reason reaches the model", async () => {
     await mount([
       replayToolCallTurn("call-1", "write", { path: "Notes/new.md", content: "hello" }),

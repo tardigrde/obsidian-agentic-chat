@@ -135,6 +135,24 @@ describe("UI v2 design tokens and restyle", function () {
     expect(layout.statusAboveCard).toBe(true);
   });
 
+  it("keeps the context % readable in a 320px sidebar (the ring glyph goes first)", async function () {
+    const narrow = await browser.execute(async () => {
+      const view = document.querySelector<HTMLElement>('[data-ac="view"]');
+      if (!view) return null;
+      const old = view.style.width;
+      view.style.setProperty("width", "320px");
+      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      const shown = (selector: string) => {
+        const el = document.querySelector<HTMLElement>(`[data-ac="context"] ${selector}`);
+        return !!el && getComputedStyle(el).display !== "none";
+      };
+      const result = { percent: shown(".agentic-chat-ctx-percent"), ring: shown(".agentic-chat-ctx-ring") };
+      view.style.width = old;
+      return result;
+    });
+    expect(narrow).toEqual({ percent: true, ring: false });
+  });
+
   it("opens the @ note picker from the attach button", async function () {
     await $(".agentic-chat-attach").click();
     await browser.waitUntil(

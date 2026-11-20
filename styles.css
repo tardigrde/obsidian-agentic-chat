@@ -38,6 +38,7 @@ body,
   --ac-font-tiny: var(--font-smallest);
   --ac-font-body: var(--font-text-size);
   --ac-line-body: var(--line-height-normal);
+  --ac-weight-normal: var(--font-normal);
   --ac-weight-medium: var(--font-medium);
   --ac-weight-semibold: var(--font-semibold);
   --ac-weight-bold: var(--font-bold);
@@ -1028,11 +1029,15 @@ body.is-mobile,
   min-width: 0;
 }
 
+/* Wraps: the path of a mutating action must stay readable on a phone. */
 .agentic-chat-approval-title {
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
+}
+
+.agentic-chat-approval-path {
+  color: var(--ac-accent);
+  font-weight: var(--ac-weight-normal);
 }
 
 .agentic-chat-approval-body {
@@ -2568,9 +2573,11 @@ body.is-mobile,
   }
 }
 
+/* Narrow sidebar: drop the decoration, keep the meaning. The shield stays
+   for Safe/YOLO; the % stays for the context (the ring glyph goes). */
 @container agentic-chat (max-width: 320px) {
   .agentic-chat-mode-label,
-  .agentic-chat-ctx-percent {
+  .agentic-chat-ctx-ring {
     display: none;
   }
 }

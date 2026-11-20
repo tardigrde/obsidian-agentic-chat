@@ -193,9 +193,18 @@ describe("activity line and inline approval", function () {
         denyBackground: d.backgroundColor,
         denyBorder: d.borderTopWidth,
         denyShadow: d.boxShadow,
+        // The path is accented, and the head wraps instead of cutting it.
+        pathIsAccent: (() => {
+          const pathEl = el?.querySelector<HTMLElement>(".agentic-chat-approval-path");
+          return !!pathEl && getComputedStyle(pathEl).color === accent;
+        })(),
+        titleCut: (() => {
+          const title = el?.querySelector<HTMLElement>(".agentic-chat-approval-title");
+          return !title || title.scrollWidth > title.clientWidth;
+        })(),
       };
     }, PENDING_APPROVAL);
-    expect(buttons).toEqual({ allowIsAccent: true, allowOpacity: "1", denyBackground: "rgba(0, 0, 0, 0)", denyBorder: "0px", denyShadow: "none" });
+    expect(buttons).toEqual({ allowIsAccent: true, allowOpacity: "1", denyBackground: "rgba(0, 0, 0, 0)", denyBorder: "0px", denyShadow: "none", pathIsAccent: true, titleCut: false });
     if (process.env.AGENTIC_CHAT_SCREENSHOT_DIR) {
       await browser.saveScreenshot(`${process.env.AGENTIC_CHAT_SCREENSHOT_DIR}/approval-card.png`);
     }

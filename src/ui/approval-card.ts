@@ -82,9 +82,16 @@ export class ApprovalCard {
     return this.phaseValue === "settled";
   }
 
-  /** Take focus so Enter and Esc work, unless the user is typing in the composer. */
+  /**
+   * Take focus so Enter and Esc work, unless the user is typing in the
+   * composer or is inside another approval card (parallel tools can ask at
+   * once: an Enter meant for card A must never allow card B).
+   */
   focus(composerHasText: boolean): void {
     if (this.settled || composerHasText) return;
+    const active = this.el.ownerDocument.activeElement;
+    const otherCard = active?.closest?.('[data-ac="approval"]');
+    if (otherCard && otherCard !== this.el) return;
     this.el.focus({ preventScroll: true });
   }
 
@@ -153,10 +160,17 @@ export class ApprovalCard {
     this.el.addEventListener("keydown", (event) => this.onKey(event));
   }
 
-  /** The head names the concrete action once the preview knows it; the full text stays in the tooltip. */
-  private setTitle(text: string): void {
-    this.titleEl.setText(text);
-    this.titleEl.setAttr("title", text);
+  /**
+   * The head names the concrete action once the preview knows it: the verb,
+   * then the path in accent, as in the design. The head wraps, so a long path
+   * is never cut on a phone; the full text also stays in the tooltip.
+   */
+  private setTitle(verb: string, path: string, tail = ""): void {
+    this.titleEl.empty();
+    this.titleEl.appendText(`${verb} `);
+    this.titleEl.createSpan({ cls: "agentic-chat-approval-path", text: path });
+    if (tail) this.titleEl.appendText(tail);
+    this.titleEl.setAttr("title", `${verb} ${path}${tail}`);
   }
 
   private button(text: string, cls: string[]): HTMLButtonElement {
@@ -283,16 +297,16 @@ export class ApprovalCard {
 
   private renderPreviewBody(container: HTMLElement, preview: EditPreview): void {
     if (preview.kind === "rename") {
-      this.setTitle(`Rename ${preview.from} → ${preview.to}`);
+      this.setTitle("Rename", preview.from, ` → ${preview.to}`);
       return;
     }
     if (preview.kind === "delete") {
-      this.setTitle(`Move ${preview.path} to trash`);
+      this.setTitle("Move", preview.path, " to trash");
       this.renderDiff(container, preview.content, "");
       return;
     }
     if (preview.kind !== "diff") return;
-    this.setTitle(`${preview.isNew ? "Create" : "Edit"} ${preview.path}`);
+    this.setTitle(preview.isNew ? "Create" : "Edit", preview.path);
     this.renderDiff(container, preview.before, preview.after, preview.edits);
   }
 
@@ -341,8 +355,12 @@ export class ApprovalCard {
     const renderWindow = () => {
       const windowed = buildExactEditPreviewWindow(before, edits, { contextBefore, contextAfter });
       if (!windowed) return;
-      // "Show more" stops growing the window once a diff of it would be too large.
-      if (diffTooLarge(windowed.before, windowed.after)) return;
+      // The window grew too large to diff: keep what is shown and remove the
+      // "Show more" buttons, so no button is left that does nothing.
+      if (diffTooLarge(windowed.before, windowed.after)) {
+        diffEl.querySelectorAll(".agentic-chat-diff-expand").forEach((button) => button.remove());
+        return;
+      }
       const lines = diffLines(windowed.before, windowed.after);
       const next = diffStat(lines);
       summary.setText(`+${next.added} −${next.removed}`);

@@ -48,7 +48,10 @@ describe("activity line summary", () => {
   });
 
   it("splits a compact row into a short verb, the argument, and a clickable vault path", () => {
-    expect(stepRowParts("read", JSON.stringify({ path: "Meetings/Sync.md" }))).toEqual({ verb: "Read", arg: "Meetings/Sync.md", path: "Meetings/Sync.md" });
+    // A note shows without ".md", as in the design and the source pills; the link keeps the real path.
+    expect(stepRowParts("read", JSON.stringify({ path: "Meetings/Sync.md" }))).toEqual({ verb: "Read", arg: "Meetings/Sync", path: "Meetings/Sync.md" });
+    expect(stepRowParts("read", JSON.stringify({ path: "Files/report.pdf" }))).toEqual({ verb: "Read", arg: "Files/report.pdf", path: "Files/report.pdf" });
+    expect(stepRowParts("rename", JSON.stringify({ path: "A.md", newPath: "Archive/A.md" })).arg).toBe("A → Archive/A");
     expect(stepRowParts("vault_inspect", JSON.stringify({ action: "search", query: "tag:#meeting" }))).toEqual({ verb: "Search", arg: "tag:#meeting", path: "" });
     expect(stepRowParts("fetch_url", JSON.stringify({ url: "https://x.example/p" }))).toEqual({ verb: "Fetch", arg: "https://x.example/p", path: "" });
   });

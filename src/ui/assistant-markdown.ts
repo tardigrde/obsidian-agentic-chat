@@ -1,3 +1,4 @@
+import { noteDisplayPath } from "./activity-summary";
 import { type App, loadMermaid, Notice, setIcon, TFile } from "obsidian";
 import { openSystemUrl } from "../platform/system-browser";
 import type { AskUserDetails } from "../tools/ask-user-tool";
@@ -29,7 +30,7 @@ export function sourceChipName(path: string): string {
   if (!trimmed) return trimmed;
   const segments = trimmed.split("/");
   for (let i = segments.length - 1; i >= 0; i--) {
-    if (segments[i]) return segments[i].replace(/\.md$/i, "") || segments[i];
+    if (segments[i]) return noteDisplayPath(segments[i]);
   }
   return trimmed;
 }

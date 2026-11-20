@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { mountChatView, settle, type MountedChatView } from "./support/mount-chat-view";
 import { TabStrip, type TabView } from "../../src/ui/tab-strip";
 
@@ -85,6 +85,24 @@ describe("TabStrip re-render", () => {
     expect(el.strip.querySelector('[data-ac="tab"]')).toBe(first);
     expect(document.activeElement).toBe(first);
     tabStrip.dispose();
+  });
+
+  it("a rebuild during a touch long-press cancels it, so no rename opens after the finger lifts", () => {
+    vi.useFakeTimers();
+    try {
+      const { el, tabStrip } = strip();
+      tabStrip.render(views("running"), 0, true, 5);
+      const tab = el.strip.querySelectorAll<HTMLElement>('[data-ac="tab"]')[1];
+      const down = new MouseEvent("pointerdown", { bubbles: true, clientX: 5, clientY: 5 }) as MouseEvent & { pointerType: string };
+      Object.defineProperty(down, "pointerType", { value: "touch" });
+      tab?.dispatchEvent(down);
+      tabStrip.render(views("unread"), 0, true, 5);
+      vi.advanceTimersByTime(1_000);
+      expect(el.strip.querySelector('[data-ac="tab-input"]')).toBeNull();
+      tabStrip.dispose();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("keeps keyboard focus on the same tab when a status change rebuilds the strip", () => {
