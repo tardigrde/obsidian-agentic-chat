@@ -194,7 +194,8 @@ export class TabStrip {
     else if (event.key === "Delete" && this.tabs.length > 1) {
       event.preventDefault();
       this.actions.close(index);
-      this.focusTab(Math.min(index, this.tabs.length - 2));
+      // Close re-renders at once: `this.tabs` is already the shorter list.
+      this.focusTab(Math.max(0, Math.min(index, this.tabs.length - 1)));
       return;
     } else if (event.key === "Home") next = 0;
     else if (event.key === "End") next = last;

@@ -569,6 +569,7 @@ export class ChatView extends ItemView {
       component: this,
       contentEl: this.contentEl,
       registerDomEvent: (el, type, handler) => this.registerDomEvent(el, type, handler),
+      register: (cleanup) => this.register(cleanup),
       callbacks: {
         renderEmptyState: () => this.renderEmptyState(),
         beginEdit: (index, text, el) => this.beginEdit(index, text, el),

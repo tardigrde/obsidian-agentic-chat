@@ -233,6 +233,10 @@ export class ApprovalCard {
 
   /** The resolved card stays as one muted line, a record of the decision. */
   private collapse(outcome: ApprovalOutcome): void {
+    // A settled card gives focus up, so the view can hand it to the next
+    // waiting card (or the user's own place) instead of a dead record.
+    const active = this.el.ownerDocument.activeElement as HTMLElement | null;
+    if (active && this.el.contains(active)) active.blur();
     this.el.addClass("is-resolved");
     this.el.setAttribute("data-ac-state", outcome);
     this.el.removeAttribute("tabindex");
@@ -351,7 +355,10 @@ export class ApprovalCard {
     if (!initial || diffTooLarge(initial.before, initial.after)) return false;
     const stat = diffStat(diffLines(initial.before, initial.after));
     // Where the change lands, as in the design: `+6 −1 · in "Next steps"`.
-    const section = sectionAbove(before, edits[0]?.oldText);
+    // Only when every edit is in the same section; otherwise no hint.
+    const sections = new Set(edits.map((edit) => sectionAbove(before, edit.oldText)));
+    const [only] = sections;
+    const section = sections.size === 1 ? only : undefined;
     const statText = (added: number, removed: number) => `+${added} −${removed}${section ? ` · in "${section}"` : ""}`;
     const summary = container.createEl("p", { cls: "agentic-chat-approval-summary", text: statText(stat.added, stat.removed) });
     const diffEl = container.createDiv({ cls: "agentic-chat-diff-window" });

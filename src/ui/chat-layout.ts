@@ -40,6 +40,8 @@ export interface ChatLayoutDeps {
   contentEl: HTMLElement;
   callbacks: ChatLayoutCallbacks;
   registerDomEvent: (el: HTMLElement, type: keyof HTMLElementEventMap, handler: (event: Event) => void) => void;
+  /** Run `cleanup` when the view closes. */
+  register: (cleanup: () => void) => void;
 }
 
 export interface ChatLayoutElements {
@@ -272,7 +274,7 @@ export function buildLayout(deps: ChatLayoutDeps): ChatLayoutElements {
   });
   const contextPercentEl = contextEl.createSpan({ cls: "agentic-chat-ctx-percent" });
   contextEl.hide();
-  wireContextBreakdownPanel(contextEl, composer);
+  deps.register(wireContextBreakdownPanel(contextEl, composer));
 
   // Safe / YOLO: one shield button. Orange while YOLO; icon only on phones.
   const modeToggleEl = toolbar.createDiv({

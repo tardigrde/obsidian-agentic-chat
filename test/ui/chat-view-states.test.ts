@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { replayErrorTurn, replayTextTurn, replayToolCallTurn, type ReplayTurn } from "../../src/agent/replay-stream";
 import { mountChatView, seedFile, settle, type MountedChatView } from "./support/mount-chat-view";
 
@@ -135,6 +135,23 @@ describe("chat view state machine", () => {
     held.release();
     await ui.idle();
     expect(line?.textContent).not.toContain("Working…");
+  });
+
+  it("closing the view with the context breakdown open removes its document listeners", async () => {
+    await mount([replayTextTurn("the answer")]);
+    await ui.send("hello");
+    await ui.idle();
+    // The exact handlers the panel adds when it opens.
+    const added = vi.spyOn(document, "addEventListener");
+    ui.$<HTMLElement>('[data-ac="context"]')?.click();
+    const handlers = added.mock.calls.map(([, handler]) => handler);
+    added.mockRestore();
+    expect(handlers.length).toBe(2);
+    const removed = vi.spyOn(document, "removeEventListener");
+    await ui.close();
+    const gone = removed.mock.calls.map(([, handler]) => handler);
+    removed.mockRestore();
+    expect(handlers.every((handler) => gone.includes(handler))).toBe(true);
   });
 
   it("streaming: the Queue button holds the draft as a chip and sends it after the turn", async () => {
@@ -321,6 +338,31 @@ describe("chat view state machine", () => {
     const card = ui.$('[data-ac="approval"]');
     expect(card?.getAttribute("data-ac-state")).toBe("stopped");
     expect(card?.textContent).toContain("Stopped");
+    held.release();
+    await ui.idle();
+  });
+
+  it("allowing card A with Enter moves focus on to card B (parallel approvals)", async () => {
+    const held = gate();
+    await mount([replayTextTurn("working", { hold: true })], held);
+    await ui.send("do two things");
+    const view = ui.view as unknown as {
+      activeTab: unknown;
+      confirmToolCallForTab(tab: unknown, request: { toolName: string; label: string; args: unknown }): Promise<{ approved: boolean }>;
+    };
+    const tab = view.activeTab;
+    const first = view.confirmToolCallForTab(tab, { toolName: "mcp__a__x", label: "Run x", args: {} });
+    await settle();
+    const second = view.confirmToolCallForTab(tab, { toolName: "mcp__b__y", label: "Run y", args: {} });
+    await settle();
+    const [cardA, cardB] = ui.$$<HTMLElement>('[data-ac="approval"]');
+    expect(cardA?.ownerDocument.activeElement).toBe(cardA);
+    cardA?.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+    expect((await first).approved).toBe(true);
+    await settle();
+    expect(cardA?.ownerDocument.activeElement).toBe(cardB);
+    cardB?.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+    expect((await second).approved).toBe(true);
     held.release();
     await ui.idle();
   });

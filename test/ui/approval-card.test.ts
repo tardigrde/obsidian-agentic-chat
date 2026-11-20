@@ -94,6 +94,14 @@ describe("ApprovalCard rendering", () => {
     expect($(".agentic-chat-approval-title")?.getAttribute("title")).toBe(`Create ${path}`);
   });
 
+  it("a multi-edit names a section only when every edit is in it", async () => {
+    const app = fakeApp();
+    await seedFile(app, "Notes/two.md", "## Setup\n\nalpha\n\n## Notes\n\nbeta\n");
+    ask(app, { toolName: "edit", args: { path: "Notes/two.md", edits: [{ oldText: "alpha", newText: "ALPHA" }, { oldText: "beta", newText: "BETA" }] } });
+    await settle();
+    expect($$(".agentic-chat-approval-summary").map((el) => el.textContent)).toEqual(["+2 −2"]);
+  });
+
   it("an exact edit names the section it changes, from the nearest heading above", async () => {
     const app = fakeApp();
     await seedFile(app, "Notes/plan.md", "# Plan\n\nIntro\n\n## Next steps\n\nTBD\n");

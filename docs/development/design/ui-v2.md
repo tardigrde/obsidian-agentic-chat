@@ -156,7 +156,9 @@ turn:
   Enter in the reason confirms, Esc there goes back.
 - **Background tabs.** The tab gets the orange dot and "needs approval" in its
   `aria-label`, and a notice fires. The card waits in that tab and shows when
-  the user switches there. Nothing switches tabs on its own.
+  the user switches there. Nothing switches tabs on its own. A card that
+  settles out of sight (a Stop, an abort, the spend cap) shows its outcome
+  once on switch-back, so the user sees that an approval was asked.
 - **Stop, abort, or closing the tab** settles the card as stopped with
   `STOPPED_APPROVAL_REASON`.
 - **Resolved:** the card collapses to one muted line (`Allowed once`,

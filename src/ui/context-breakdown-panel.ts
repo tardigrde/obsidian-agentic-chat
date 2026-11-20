@@ -5,8 +5,9 @@ import { acHook } from "./test-hooks";
  * Desktop also shows it as the ring's hover tooltip; touch has no hover, so a
  * tap (or Enter / Space) opens this panel. Esc or a tap outside closes it.
  * The text is the ring's `title`, which the chrome keeps current: one source.
+ * Returns a dispose: it closes the panel and removes its document listeners.
  */
-export function wireContextBreakdownPanel(ringEl: HTMLElement, composerEl: HTMLElement): void {
+export function wireContextBreakdownPanel(ringEl: HTMLElement, composerEl: HTMLElement): () => void {
   const panel = acHook(
     composerEl.createEl("pre", { cls: "agentic-chat-ctx-panel", attr: { role: "status", "aria-live": "polite" } }),
     "context-breakdown",
@@ -54,4 +55,5 @@ export function wireContextBreakdownPanel(ringEl: HTMLElement, composerEl: HTMLE
     event.preventDefault();
     toggle();
   });
+  return close;
 }

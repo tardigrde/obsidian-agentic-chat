@@ -198,6 +198,30 @@ describe("TabStrip re-render", () => {
     tabStrip.dispose();
   });
 
+  it("after Delete, focus lands on the tab that took the closed one's place", () => {
+    const header = document.body.createDiv();
+    const el = { header, strip: header.createDiv(), overflow: header.createEl("button"), menu: header.createDiv(), add: header.createEl("button") };
+    let tabs: TabView[] = [...views(), { key: "c", label: undefined, sessionName: undefined, status: null }];
+    // Like ChatTabs: close re-renders the strip at once, with one tab fewer.
+    const tabStrip: TabStrip = new TabStrip(el, {
+      activate: () => {},
+      close: (i) => {
+        tabs = tabs.filter((_, index) => index !== i);
+        tabStrip.render(tabs, Math.min(i, tabs.length - 1), true, 5);
+      },
+      rename: () => {},
+      openHistory: () => {},
+    });
+    tabStrip.render(tabs, 2, true, 5);
+    const nodes = () => el.strip.querySelectorAll<HTMLElement>('[data-ac="tab"]');
+    nodes()[2]?.focus();
+    nodes()[2]?.dispatchEvent(new KeyboardEvent("keydown", { key: "Delete", bubbles: true }));
+    expect(document.activeElement).toBe(nodes()[1]);
+    nodes()[1]?.dispatchEvent(new KeyboardEvent("keydown", { key: "Delete", bubbles: true }));
+    expect(document.activeElement).toBe(nodes()[0]);
+    tabStrip.dispose();
+  });
+
   it("keeps keyboard focus on the same tab when a status change rebuilds the strip", () => {
     const { el, tabStrip } = strip();
     tabStrip.render(views("running"), 0, true, 5);
