@@ -215,8 +215,12 @@ function stepRowPartsRaw(name: string, rawArgs: string): { verb: string; arg: st
       const label = action === "search" ? "Search" : action === "list" ? "List" : action === "properties" ? "Properties" : action === "local_graph" ? "Links" : "Inspect";
       return { verb: label, arg: text(args.query) || path, path: action === "search" ? "" : path };
     }
-    case "subagent":
-      return { verb: "Subagents", arg: "", path: "" };
+    case "subagent": {
+      // One row per dispatch: "Subagent  explorer: critique the plan".
+      const agent = text(args.agent);
+      const task = text(args.task).replace(/\s+/g, " ");
+      return { verb: "Subagent", arg: agent && task ? `${agent}: ${task}` : agent || task, path: "" };
+    }
     case "ask_user":
       return { verb: "Ask", arg: text(args.question), path: "" };
     case "skill":

@@ -58,12 +58,9 @@ export function renderSubagentChildren(
   for (let i = 0; i < children.length; i++) {
     const child = children[i];
     const childRow = list.children[i] as HTMLDetailsElement;
-    // Open a running child, close a settled one, but only when its status
-    // changes: a progress tick keeps the user's own open/closed choice.
-    if (childRow.dataset.status !== child.status) {
-      childRow.dataset.status = child.status;
-      childRow.open = child.status === "running";
-    }
+    // The row follows its step (collapsed until the user opens it, U3 #10);
+    // a progress tick keeps the user's own open/closed choice.
+    childRow.dataset.status = child.status;
     childRow.className = `agentic-chat-subagent is-${child.status}`;
     renderSubagentHeader(childRow, child, onStopSubagentChild);
     renderSubagentBody(childRow, child);
@@ -71,10 +68,14 @@ export function renderSubagentChildren(
   // Aggregate child state into ONE status pill on the step header so a card
   // never reads "stoppable" and "done" at the same time (Stop only ever
   // accompanies a still-running aggregate; done/failed have none).
-  renderSubagentAggregate(card, children);
+  renderSubagentAggregate(card, children, onStopSubagentChild);
 }
 
-function renderSubagentAggregate(card: HTMLElement, children: SubagentChildStatus[]): void {
+function renderSubagentAggregate(
+  card: HTMLElement,
+  children: SubagentChildStatus[],
+  onStopSubagentChild?: (stopId: string) => void,
+): void {
   // `card` is the row's detail; the status pill lives in the row's head (a
   // sibling of the detail), before the time.
   const header = card.parentElement?.querySelector<HTMLElement>(".agentic-chat-step-head");
@@ -107,11 +108,36 @@ function renderSubagentAggregate(card: HTMLElement, children: SubagentChildStatu
     stateClass = "is-done";
   }
   pill.setText(text);
+  renderHeadStop(header, children, onStopSubagentChild);
   pill.removeClass("is-running");
   pill.removeClass("is-done");
   pill.removeClass("is-error");
   pill.removeClass("is-queued");
   pill.addClass(stateClass);
+}
+
+/** Stop on the collapsed row head while the child runs; gone once it settles. */
+function renderHeadStop(
+  header: HTMLElement,
+  children: SubagentChildStatus[],
+  onStopSubagentChild?: (stopId: string) => void,
+): void {
+  const running = children.find((child) => child.status === "running" && child.stopId);
+  let stop = header.querySelector<HTMLButtonElement>(".agentic-chat-subagent-head-stop");
+  if (!running || !onStopSubagentChild) {
+    stop?.remove();
+    return;
+  }
+  if (stop) return;
+  stop = header.createEl("button", { cls: ["agentic-chat-subagent-stop", "agentic-chat-subagent-head-stop"], text: "Stop" });
+  stop.setAttr("aria-label", `Stop subagent ${running.agent}`);
+  header.insertBefore(stop, header.querySelector(".agentic-chat-step-time"));
+  const id = running.stopId as string;
+  stop.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    onStopSubagentChild(id);
+  });
 }
 
 function renderSubagentHeader(

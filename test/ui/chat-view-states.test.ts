@@ -52,13 +52,15 @@ function chrome() {
   return {
     send: ui.$<HTMLButtonElement>('[data-ac="send"]')?.getAttribute("data-ac-state") ?? "",
     stop: shown(ui.$(".agentic-chat-stop")),
-    working: shown(ui.$(".agentic-chat-working")),
+    working: ui.$(".agentic-chat-status-line")?.classList.contains("is-running") ?? false,
+    // U3 #5: the activity line owns the spinner; the status line never adds a second one.
+    statusSpinner: shown(ui.$(".agentic-chat-working")),
     modeDisabled: ui.$(".agentic-chat-mode-toggle")?.classList.contains("is-disabled") ?? false,
   };
 }
 
-const IDLE = { send: "send", stop: false, working: false, modeDisabled: false };
-const STREAMING = { send: "queue", stop: true, working: true, modeDisabled: true };
+const IDLE = { send: "send", stop: false, working: false, statusSpinner: false, modeDisabled: false };
+const STREAMING = { send: "queue", stop: true, working: true, statusSpinner: false, modeDisabled: true };
 
 async function mount(turns: ReplayTurn[], held?: Gate, settings = {}): Promise<void> {
   ui = await mountChatView({ turns, waitForRelease: held?.wait, settings });

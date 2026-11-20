@@ -5,12 +5,14 @@ import {
   enhanceCallouts,
   fixupRenderedAssistantImages,
   installRenderedLinkHandlers,
+  isAskUserDetails,
   renderMermaidBlocks,
   rewriteAssistantMarkdownImages,
   sourceChipName,
 } from "./assistant-markdown";
 import type { ActivityLine, ReasoningEntry } from "./activity-line";
 import { acHook } from "./test-hooks";
+import type { AskUserDetails } from "../tools/ask-user-tool";
 
 export interface BubbleActions {
   /** Re-run the conversation's last user turn. */
@@ -187,6 +189,26 @@ export class AssistantBubble {
 
   endStep(id: string, result: string, isError: boolean, resultObject?: unknown): void {
     this.activity.endStep(id, result, isError, resultObject);
+    const details = (resultObject as { details?: unknown } | undefined)?.details;
+    if (isAskUserDetails(details) && details.status === "answered") this.renderAnsweredQuestion(details);
+  }
+
+  /**
+   * An answered ask_user stays in the transcript where it happened: right
+   * after the text this message wrote before the call, not only in the turn's
+   * activity line above that text (U3 #15).
+   */
+  private renderAnsweredQuestion(details: AskUserDetails): void {
+    let anchor: Element = this.el;
+    while (anchor.nextElementSibling?.classList.contains("agentic-chat-ask-record")) anchor = anchor.nextElementSibling;
+    const record = acHook(createDiv({ cls: ["agentic-chat-message", "agentic-chat-ask-record"] }), "ask-record");
+    record.createSpan({ cls: "agentic-chat-ask-record-label", text: "Asked you" });
+    record.createSpan({ cls: "agentic-chat-ask-record-question", text: details.question });
+    if (details.answer) {
+      record.createSpan({ cls: "agentic-chat-ask-record-label", text: "You answered" });
+      record.createSpan({ cls: "agentic-chat-ask-record-answer", text: details.answer });
+    }
+    anchor.after(record);
   }
 
   async finalizeText(markdown: string, app: App, component: Component): Promise<void> {

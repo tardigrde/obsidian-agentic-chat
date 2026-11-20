@@ -182,12 +182,13 @@ export class ChatChrome {
     working.parentElement?.toggleClass("is-running", running);
     const workingText = working.parentElement?.querySelector(".agentic-chat-working-text");
     if (workingText && workingText.textContent !== (running ? "Working…" : "")) workingText.textContent = running ? "Working…" : "";
+    // One spinner per turn: the activity line spins while the turn runs, so the
+    // status line says "Working…" without a second ring (U3 #5).
+    working.hide();
     if (running) {
       this.deps.elements.stopButton().show();
-      working.show();
     } else {
       this.deps.elements.stopButton().hide();
-      working.hide();
       this.deps.elements.statusEl().setText("");
     }
   }

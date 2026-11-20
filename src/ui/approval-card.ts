@@ -7,6 +7,7 @@ import { approvalPreviewNeedsContent, toolApprovalDescription } from "../tools/t
 import { compactDiffLines, diffLines, diffPrefix, diffStat, diffTooLarge, type CompactDiffWindow, type DiffLine } from "../vault/diff";
 import { normalizeVaultPath } from "../vault/path";
 import { acHook } from "./test-hooks";
+import { isVaultFolder } from "./vault-open";
 
 /** Cap diff lines rendered in the card so a huge change cannot bloat the transcript. */
 export const MAX_DIFF_DISPLAY_LINES = 400;
@@ -168,7 +169,14 @@ export class ApprovalCard {
   private setTitle(verb: string, path: string, tail = ""): void {
     this.titleEl.empty();
     this.titleEl.appendText(`${verb} `);
-    this.titleEl.createSpan({ cls: "agentic-chat-approval-path", text: path });
+    const pathEl = this.titleEl.createSpan({ cls: "agentic-chat-approval-path", text: path });
+    if (isVaultFolder(this.app, path)) {
+      // A folder is not a note: plain text with a folder icon (U3 #4).
+      pathEl.addClass("is-folder");
+      const icon = createSpan({ cls: "agentic-chat-approval-path-icon", attr: { "aria-hidden": "true" } });
+      setIcon(icon, "folder");
+      pathEl.prepend(icon);
+    }
     if (tail) this.titleEl.appendText(tail);
     this.titleEl.setAttr("title", `${verb} ${path}${tail}`);
   }

@@ -26,6 +26,7 @@ import { formatTurnMeta } from "./format";
 import { openSystemUrl } from "../platform/system-browser";
 import { isPinnedToBottom } from "./scroll-pinning";
 import { isSummaryMessage } from "../agent/compaction";
+import { isVaultFolder, openVaultPath } from "./vault-open";
 
 /** Cap inline image thumbnails per user bubble so a turn can't flood the pane. */
 const MAX_USER_IMAGE_THUMBS = 8;
@@ -91,7 +92,8 @@ export class TranscriptView {
     this.turnError = false;
     this.activity = new ActivityLine(this.messagesEl, {
       live,
-      onOpenNote: (path) => void this.host.app.workspace.openLinkText(path, "", false),
+      onOpenNote: (path) => openVaultPath(this.host.app, path),
+      isFolder: (path) => isVaultFolder(this.host.app, path),
       onStopSubagentChild: (id) => this.host.abortSubagentChild(id),
       onChange: () => this.scrollToBottom(),
     });
@@ -117,6 +119,12 @@ export class TranscriptView {
   /** Show an approval below the current turn's activity line. */
   mountApproval(card: ApprovalCard): void {
     const slot = this.activity?.approvalSlot ?? this.messagesEl;
+    // The card follows the text this turn already wrote, so the screen keeps
+    // the order of events (U3 #15). With no text yet it stays under the line.
+    if (slot !== this.messagesEl) {
+      const written = Array.from(this.messagesEl.querySelectorAll(":scope > .agentic-chat-assistant:not(.is-empty)")).at(-1);
+      if (written && slot.compareDocumentPosition(written) & Node.DOCUMENT_POSITION_FOLLOWING) written.after(slot);
+    }
     if (card.el.parentElement !== slot) slot.appendChild(card.el);
     this.activity?.setNeedsYou(!card.settled);
     this.scrollToBottom({ force: true });
@@ -308,7 +316,7 @@ export class TranscriptView {
             // History bubbles are editable: don't let a thumbnail click fall
             // through to the bubble's click-to-edit handler.
             event.stopPropagation();
-            void this.host.app.workspace.openLinkText(path, "", false);
+            openVaultPath(this.host.app, path);
           };
           img.setAttrs({ role: "button", tabindex: "0", "aria-label": `Open ${thumb.alt}` });
           img.addEventListener("click", open);
@@ -387,7 +395,7 @@ export class TranscriptView {
     return new AssistantBubble(this.messagesEl, activity, {
       onRetry: () => this.host.retryLast(),
       onOpenExternalLink: (target) => void this.openRenderedExternalLink(target),
-      onOpenNote: (path) => void this.host.app.workspace.openLinkText(path, "", false),
+      onOpenNote: (path) => openVaultPath(this.host.app, path),
       onContentChange: () => this.scrollToBottom(),
     });
   }

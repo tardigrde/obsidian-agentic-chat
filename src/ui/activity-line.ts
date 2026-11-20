@@ -14,6 +14,8 @@ export interface ActivityLineOptions {
   /** A live turn runs a timer; a replayed one shows no time. */
   live: boolean;
   onOpenNote?: (path: string) => void;
+  /** A folder path renders as plain text with a folder icon, never as a note link. */
+  isFolder?: (path: string) => boolean;
   onStopSubagentChild?: (stopId: string) => void;
   /** Called after the line changes height (scroll pinning). */
   onChange?: () => void;
@@ -33,8 +35,9 @@ interface StepEntry {
 }
 
 /**
- * The reasoning of one assistant message, shown as the first entries of the
- * activity body: `Thought for 3s: …`, folded to three lines.
+ * The reasoning of one assistant message: its own row in the activity body,
+ * in event order between the tool rows of its model call (U3 #3), folded to
+ * one line: `Thought for 3s: …`.
  */
 export class ReasoningEntry {
   private readonly label: HTMLElement;
@@ -103,7 +106,6 @@ export class ActivityLine {
   private readonly failEl: HTMLElement;
   private readonly timeEl: HTMLElement;
   private readonly body: HTMLElement;
-  private readonly reasoningEl: HTMLElement;
   private readonly stepsEl: HTMLElement;
   private readonly steps = new Map<string, StepEntry>();
   private readonly order: StepEntry[] = [];
@@ -113,8 +115,6 @@ export class ActivityLine {
   private stateValue: ActivityState = "running";
   private needsYou = false;
   private open = false;
-  /** Subagent steps already opened by their first progress tick. */
-  private readonly autoOpened = new Set<string>();
   private finished = false;
   private readonly startedAt = performance.now();
   private timer: number | null = null;
@@ -139,7 +139,6 @@ export class ActivityLine {
     setIcon(chevron, "chevron-right");
     this.head.addEventListener("click", () => this.setOpen(!this.open));
     this.body = acHook(this.el.createDiv({ cls: "agentic-chat-activity-body" }), "activity-body");
-    this.reasoningEl = this.body.createDiv({ cls: "agentic-chat-activity-thoughts" });
     this.stepsEl = this.body.createDiv({ cls: "agentic-chat-activity-steps" });
     this.approvalSlot = parent.createDiv({ cls: "agentic-chat-approval-slot" });
     if (options.live) {
@@ -173,7 +172,7 @@ export class ActivityLine {
   }
 
   addReasoning(): ReasoningEntry {
-    const entry = new ReasoningEntry(this.reasoningEl.createDiv({ cls: "agentic-chat-thought" }));
+    const entry = new ReasoningEntry(this.stepsEl.createDiv({ cls: "agentic-chat-thought" }));
     this.reasoning.push(entry);
     this.refresh();
     return entry;
@@ -195,7 +194,11 @@ export class ActivityLine {
     if (parts.arg) {
       const arg = head.createSpan({ cls: "agentic-chat-step-arg", text: parts.arg.length > 48 ? middleEllipsis(parts.arg, 48) : parts.arg });
       arg.setAttr("title", parts.arg);
-      if (parts.path && this.options.onOpenNote) {
+      if (parts.path && this.options.isFolder?.(parts.path)) {
+        arg.addClass("is-folder");
+        setIcon(arg.createSpan({ cls: "agentic-chat-step-arg-icon", attr: { "aria-hidden": "true" } }), "folder");
+        arg.prepend(arg.lastChild as Node);
+      } else if (parts.path && this.options.onOpenNote) {
         arg.addClass("is-link");
         arg.setAttrs({ role: "link", tabindex: "0" });
         const open = (event: Event) => {
@@ -211,7 +214,9 @@ export class ActivityLine {
     }
     const time = head.createSpan({ cls: "agentic-chat-step-time" });
     const detail = row.createDiv({ cls: "agentic-chat-step-detail" });
-    renderCallSection(detail, name, rawArgs);
+    // A subagent row already names its agent and task; its child entry holds
+    // the log, so the call section would repeat both lines (U3 #10).
+    if (name !== SUBAGENT_TOOL_NAME) renderCallSection(detail, name, rawArgs);
     const toggle = () => this.toggleStep(entry);
     head.addEventListener("click", toggle);
     head.addEventListener("keydown", (event) => {
@@ -243,16 +248,12 @@ export class ActivityLine {
     const children = subagentChildren(details);
     if (children.length > 0) {
       renderSubagentChildren(step.detail, children, this.options.onStopSubagentChild);
-      // A running subagent needs its stop buttons in reach: open once, on the
-      // first tick. Later ticks keep what the user chose.
-      if (!this.autoOpened.has(id)) {
-        this.autoOpened.add(id);
-        this.setStepOpen(step, true);
-        if (!this.open) this.setOpen(true);
-      }
+      // A subagent row starts collapsed like any tool row (U3 #10); its Stop
+      // sits on the row head. A tick keeps whatever the user opened or closed.
     } else if (isAskUserDetails(details)) {
+      // The question card waits at the end of the transcript; the step stays a
+      // collapsed row, so the turn's top line never shows it above earlier text (U3 #15).
       renderAskUserStep(step.detail, details);
-      this.setStepOpen(step, true);
     }
     this.syncExpandable(step);
     this.options.onChange?.();
@@ -337,6 +338,16 @@ export class ActivityLine {
   private setStepOpen(step: StepEntry, open: boolean): void {
     step.row.toggleClass("is-open", open);
     step.head.setAttr("aria-expanded", String(open));
+    this.syncSubagentOpen(step);
+  }
+
+  /** A subagent row is one dispatch: opening the row opens its child's log too. */
+  private syncSubagentOpen(step: StepEntry): void {
+    if (step.name !== SUBAGENT_TOOL_NAME) return;
+    const open = step.row.hasClass("is-open");
+    for (const child of Array.from(step.detail.querySelectorAll<HTMLDetailsElement>("details.agentic-chat-subagent"))) {
+      child.open = open;
+    }
   }
 
   private syncExpandable(step: StepEntry): void {

@@ -1,6 +1,7 @@
 import {
   ItemView,
   Notice,
+  Platform,
   TFile,
   TFolder,
   type WorkspaceLeaf,
@@ -52,6 +53,10 @@ import type { SlashContext } from "./slash/context";
 import { persistEffortLevel } from "./slash/model";
 import { acHook } from "./test-hooks";
 
+/** What a click must leave alone: controls, links, fields, and the approval card. */
+const INTERACTIVE_SELECTOR =
+  'a, button, input, textarea, select, summary, label, [role="button"], [role="link"], [role="menuitem"], [role="tab"], [contenteditable="true"], .agentic-chat-approval, .agentic-chat-ask-user';
+
 export { VIEW_TYPE_AGENT_CHAT };
 
 /** Status line text while an approval card waits in the active tab. */
@@ -86,6 +91,8 @@ export class ChatView extends ItemView {
   private contextRingEl!: SVGCircleElement;
   private contextPercentEl!: HTMLElement;
   private workingEl!: HTMLElement;
+  /** When the last pointer press inside this view happened (focus-on-return). */
+  private lastPointerDownAt = 0;
   private closed = true;
 
   constructor(
@@ -368,12 +375,50 @@ export class ChatView extends ItemView {
     this.registerEvent(this.app.vault.on("rename", invalidate));
     this.registerEvent(this.app.vault.on("modify", invalidate));
     // Keep the auto-attached active note in sync as the focused leaf/file changes.
-    this.registerEvent(this.app.workspace.on("active-leaf-change", () => this.syncActiveNote()));
+    this.registerEvent(
+      this.app.workspace.on("active-leaf-change", (leaf) => {
+        this.syncActiveNote();
+        this.focusComposerOnReturn(leaf);
+      }),
+    );
+    this.registerDomEvent(this.contentEl, "pointerdown", () => {
+      this.lastPointerDownAt = Date.now();
+    });
+    this.registerDomEvent(this.contentEl, "click", (event) => this.focusComposerOnChromeClick(event));
     this.registerEvent(this.app.workspace.on("file-open", () => this.syncActiveNote()));
     await this.createSessionActivationCoordinator().initializeActiveSession(
       () => this.service.initialize(),
       (error) => new Notice(`Agentic chat: ${errorMessage(error)}`),
     );
+  }
+
+  /**
+   * Back to this pane by keyboard or command (Ctrl+Tab, a hotkey): the
+   * composer takes focus. A pointer activation is left to the click handler,
+   * which knows what was clicked (U3 #6).
+   */
+  private focusComposerOnReturn(leaf: WorkspaceLeaf | null): void {
+    if (leaf !== this.leaf || this.closed || Platform.isMobile) return;
+    if (Date.now() - this.lastPointerDownAt < 500) return;
+    this.focusComposerIfFree();
+  }
+
+  /** A click on plain chat chrome (not a control, not a text selection) focuses the composer. */
+  private focusComposerOnChromeClick(event: MouseEvent): void {
+    if (this.closed || Platform.isMobile || event.defaultPrevented || event.button !== 0) return;
+    const target = event.target instanceof Element ? event.target : null;
+    if (!target || target.closest(INTERACTIVE_SELECTOR)) return;
+    const selection = this.contentEl.ownerDocument.getSelection();
+    if (selection && !selection.isCollapsed) return;
+    this.focusComposerIfFree();
+  }
+
+  private focusComposerIfFree(): void {
+    // A waiting approval owns Enter and Esc; never pull focus away from it.
+    if ((this.activeTab?.pendingApprovals ?? []).some((card) => !card.settled)) return;
+    const active = this.contentEl.ownerDocument.activeElement;
+    if (active && active !== this.inputEl && this.contentEl.contains(active) && active.matches(INTERACTIVE_SELECTOR)) return;
+    this.inputEl?.focus();
   }
 
   async onClose(): Promise<void> {
