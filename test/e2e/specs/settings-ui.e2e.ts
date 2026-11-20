@@ -333,6 +333,14 @@ describe("agentic-chat settings UI", function () {
     );
     expect(await readSettingText("Max response tokens")).toBe("1000000");
 
+    // A fraction is rounded, and the note does not call it out of range.
+    await setSettingText("Max response tokens", "4.5");
+    await waitForAgenticChatSetting(
+      (settings) => (settings as unknown as { maxTokens: number }).maxTokens === 5,
+      "A fractional max response tokens value was not rounded",
+    );
+    expect(await readSettingsBodyText()).toContain("Whole numbers only. Saved 5.");
+
     // Back in range: the note goes away.
     await setSettingText("Max response tokens", "0");
     await waitForAgenticChatSetting(

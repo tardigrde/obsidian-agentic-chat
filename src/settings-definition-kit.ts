@@ -53,7 +53,10 @@ export function boundedNumberRow(options: {
         }
         const next = Math.min(max, Math.max(min, Math.round(parsed)));
         text.setValue(String(next));
-        note.setText(next === parsed ? "" : `${raw} is outside ${range}. Saved ${next.toLocaleString("en-US")}.`);
+        const saved = next.toLocaleString("en-US");
+        if (next === parsed) note.setText("");
+        else if (parsed < min || parsed > max) note.setText(`${raw} is outside ${range}. Saved ${saved}.`);
+        else note.setText(`Whole numbers only. Saved ${saved}.`);
         void options.set(next);
       });
     });

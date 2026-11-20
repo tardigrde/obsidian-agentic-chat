@@ -317,7 +317,9 @@ describe("UI v2 empty state and chat type in a wide pane", function () {
     await openChat();
     const original = await browser.execute(() => ({ windowWidth: window.outerWidth, windowHeight: window.outerHeight }));
     if ((await browser.execute(() => window.innerWidth)) < 1300) {
-      await resizeWindow(1400, Math.max(original.windowHeight, 800));
+      if (!(await resizeWindow(1400, Math.max(original.windowHeight, 800)))) {
+        throw new Error("this runtime cannot resize its window; the wide-pane cases cannot run");
+      }
       await browser.waitUntil(async () => (await browser.execute(() => window.innerWidth)) >= 1300, {
         timeout: 5_000,
         timeoutMsg: "the window did not widen to 1400 px",
