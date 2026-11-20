@@ -346,10 +346,13 @@ describe("createSubagentTool", () => {
 
     expect(stored).toHaveLength(1);
     expect(stored[0].text).toBe(report);
-    expect(text.length).toBeLessThan(8_600);
+    // A 4k head: a re-read from 0 costs at most that much again.
+    expect(text.length).toBeLessThan(4_600);
     expect(text).not.toContain("THE-TAIL-MARKER");
-    expect(text).toContain('artifact "art-1"');
-    expect(text).toMatch(/artifact tool.*"read"/);
+    const lines = text.trim().split("\n");
+    // First line: partial, and where the whole is. Last line: where to continue.
+    expect(lines[0]).toMatch(/^\[Report: [\d,]+ characters\. Below are characters 0-4,000 only\. The full report is artifact "art-1"\.\]$/);
+    expect(lines.at(-1)).toMatch(/action "read", id "art-1", offset 4000\. Do not read it again from offset 0\.\]$/);
   });
 
   it("aborts in-flight children when the dispatch signal aborts", async () => {

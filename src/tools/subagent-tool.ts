@@ -16,8 +16,12 @@ export const SUBAGENT_TOOL_NAME = "subagent";
 const MAX_CONCURRENCY = 10;
 /** Per-child summary cap (characters) fed into the parent's context. */
 const PER_CHILD_SUMMARY_CHARS = 8_000;
-/** Inline preview of a report that is kept in full as an artifact. */
-const REPORT_PREVIEW_CHARS = 7_000;
+/**
+ * Inline head of a report that is kept in full as an artifact. Small on
+ * purpose: when the parent re-reads the artifact from 0 anyway, it pays for
+ * this preview twice. Reports start with their summary, which fits in 4k.
+ */
+const REPORT_PREVIEW_CHARS = 4_000;
 
 /** Single line in a child's live transcript. */
 export type SubagentTranscriptEntry =
@@ -462,9 +466,15 @@ async function keepFullReport(
       contentType: "text/markdown",
     });
     const preview = report.slice(0, REPORT_PREVIEW_CHARS);
+    const total = report.length.toLocaleString("en-US");
+    const shown = preview.length.toLocaleString("en-US");
+    // The first line says the text is partial before the model reads it; the
+    // last line, at the cut, says where to continue (no re-read from 0).
     return (
-      `${preview}\n\n[Report cut at ${preview.length.toLocaleString("en-US")} of ${report.length.toLocaleString("en-US")} characters. ` +
-      `The full report is artifact "${artifact.id}": use the artifact tool, action "read", with this id and offset ${preview.length} to read the rest.]`
+      `[Report: ${total} characters. Below are characters 0-${shown} only. The full report is artifact "${artifact.id}".]\n\n` +
+      `${preview}\n\n` +
+      `[Report cut here. To read the rest, call the artifact tool: action "read", id "${artifact.id}", offset ${preview.length}. ` +
+      `Do not read it again from offset 0.]`
     );
   } catch {
     return truncated;
