@@ -146,8 +146,10 @@ turn:
 ### Inline approval card
 
 - Renders in the transcript of the tab that asked, below the turn's activity
-  line, with the orange border and tint: a title that names the action and the path (path in accent), the
-  preview (diff via `compactDiffLines`, capped at 400 lines, expandable), and
+  line, with the orange border and tint: a title that names the action and the
+  path (path in accent), a stat line that also names the section when every
+  edit is under the same heading (`+6 −1 · in "Next steps"`), the preview
+  (diff via `compactDiffLines`, capped at 400 lines, expandable), and
   **Allow**, **Always allow &lt;tool&gt;**, **Deny**. `create_skill` has no
   Always.
 - **Keyboard.** The card takes focus unless the composer has text or another

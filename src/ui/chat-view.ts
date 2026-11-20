@@ -469,16 +469,19 @@ export class ChatView extends ItemView {
       tab.pendingApprovals = (tab.pendingApprovals ?? []).filter((pending) => pending !== card);
       // Settled out of sight: keep it for the switch-back (shown once).
       if (tab !== this.activeTab && this.tabs.includes(tab)) tab.unseenApprovals = [...(tab.unseenApprovals ?? []), card];
+      // A settled card gives up focus; when nothing else holds it, hand it on.
+      const active = this.containerEl.ownerDocument.activeElement;
+      const lost = !active || active === this.containerEl.ownerDocument.body || !active.isConnected;
       // Another card in this tab may still wait: keep the needs-you state until the last one settles.
       if (tab.pendingApprovals.length === 0 && tab === this.activeTab && !this.closed) {
         this.transcript.approvalSettled();
         if (this.statusEl.textContent === APPROVAL_STATUS) this.statusEl.setText("");
+        // The last card is done: back to the composer, the natural next step.
+        if (lost) this.inputEl.focus();
       } else if (tab === this.activeTab && !this.closed) {
         // Hand focus on to the next waiting card, so Enter and Esc keep working.
         // `focus` itself leaves the composer and another card's focus alone.
         const next = tab.pendingApprovals.find((pending) => !pending.settled);
-        const active = this.containerEl.ownerDocument.activeElement;
-        const lost = !active || active === this.containerEl.ownerDocument.body || !active.isConnected;
         if (next && lost) next.focus(this.inputEl.value.trim().length > 0);
       }
       this.syncTabStrip();

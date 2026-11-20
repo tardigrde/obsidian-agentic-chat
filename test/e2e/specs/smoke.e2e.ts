@@ -183,13 +183,6 @@ describe("agentic-chat smoke", function () {
         timeoutMsg: "the active note did not render as a context chip",
       });
 
-      // A real click on the chip's × removes it (chaos run 2026-11-20 reported it did not).
-      await $(".agentic-chat-chip.is-active-note .agentic-chat-chip-remove").click();
-      await browser.waitUntil(async () => (await activeChipText()) === null, {
-        timeout: 5_000,
-        timeoutMsg: "clicking the active-note chip's x did not remove the chip",
-      });
-
       await openNote(PRIVATE_NOTE, "# Secret\nNever attach.");
       await browser.waitUntil(async () => (await activeChipText()) === null, {
         timeout: 5_000,
@@ -200,6 +193,19 @@ describe("agentic-chat smoke", function () {
       await browser.waitUntil(async () => (await activeChipText()) === null, {
         timeout: 5_000,
         timeoutMsg: "the standing-instructions file rendered as an active-note chip",
+      });
+
+      // Last, because the × suppresses the active note for this tab: a real
+      // click removes the chip (a chaos run of 2026-11-20 reported it did not).
+      await openNote("Welcome.md", "# Welcome\nSmoke context.");
+      await browser.waitUntil(async () => /Welcome/.test((await activeChipText()) ?? ""), {
+        timeout: 5_000,
+        timeoutMsg: "the active note did not come back as a chip",
+      });
+      await $(".agentic-chat-chip.is-active-note .agentic-chat-chip-remove").click();
+      await browser.waitUntil(async () => (await activeChipText()) === null, {
+        timeout: 5_000,
+        timeoutMsg: "clicking the active-note chip's x did not remove the chip",
       });
     } finally {
       await trashPaths([PRIVATE_NOTE, "Private", "AGENTS.md"]);

@@ -243,7 +243,12 @@ describe("chat view state machine", () => {
     expect(chrome()).toEqual(STREAMING);
     expect(ui.app.vault.contentOf("Notes/new.md")).toBeUndefined();
 
-    ui.$<HTMLButtonElement>('[data-ac="approval-allow"]')?.click();
+    // The keyboard path: Enter on the focused card allows it.
+    expect(card?.ownerDocument.activeElement).toBe(card);
+    card?.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+    await settle();
+    // The last card is done: focus goes back to the composer, not to <body>.
+    expect(card?.ownerDocument.activeElement).toBe(ui.$('[data-ac="composer-input"]'));
     await ui.idle();
     expect(ui.$('[data-ac="approval"]')?.getAttribute("data-ac-state")).toBe("allowed");
     expect(ui.$(".agentic-chat-approval-outcome")?.textContent).toBe("Allowed once");
