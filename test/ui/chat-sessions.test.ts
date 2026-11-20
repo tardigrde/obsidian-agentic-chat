@@ -51,7 +51,8 @@ describe("chat sessions", () => {
     await settle();
     expect(ui.$(".agentic-chat-user")?.textContent).toContain("hello");
     expect(ui.$(".agentic-chat-subagent pre")?.textContent).toContain("file summary");
-    expect(ui.$(".agentic-chat-step-toggle")?.getAttribute("aria-expanded")).toBe("false");
+    // A replayed turn's activity line starts collapsed.
+    expect(ui.$('[data-ac="activity-head"]')?.getAttribute("aria-expanded")).toBe("false");
     expect(ui.$$(".agentic-chat-subagent-stop")).toHaveLength(0);
     expect(ui.calls()).toBe(0);
   });
@@ -61,7 +62,7 @@ describe("chat sessions", () => {
     await ui.send("first conversation");
     await ui.idle();
 
-    ui.$<HTMLButtonElement>('[aria-label="New chat"]')?.click();
+    await ui.view.startNewConversation();
     await settle();
     expect(ui.$$(".agentic-chat-user")).toHaveLength(0);
     expect(ui.$(".agentic-chat-empty")).not.toBeNull();

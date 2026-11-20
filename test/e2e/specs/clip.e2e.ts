@@ -7,11 +7,11 @@ import { waitWithinWindow } from "../support/layout";
 /** What a user must reach in a narrow window, plus the containers that explain a failure. */
 const NARROW_PARTS = [
   ".workspace-split.mod-left-split",
-  ".agentic-chat-view",
-  ".agentic-chat-field",
+  '[data-ac="view"]',
+  '[data-ac="composer-card"]',
   ".agentic-chat-toolbar",
-  ".agentic-chat-input",
-  ".agentic-chat-send",
+  '[data-ac="composer-input"]',
+  '[data-ac="send"]',
 ];
 
 /**
@@ -36,7 +36,7 @@ async function settleLayout(width?: number): Promise<void> {
 
 async function openChat(): Promise<void> {
   await browser.executeObsidianCommand("agentic-chat:open-chat");
-  await $(".agentic-chat-view").waitForExist({ timeout: 5000 });
+  await $('[data-ac="view"]').waitForExist({ timeout: 5000 });
 }
 
 async function emitUser(text: string): Promise<void> {
@@ -72,10 +72,10 @@ async function emitAssistant(text: string): Promise<void> {
 
 async function checkNoClip(label: string): Promise<{ ok: boolean; details: string }> {
   return await browser.execute((lbl) => {
-    const view = document.querySelector<HTMLElement>(".agentic-chat-view");
-    const messages = document.querySelector<HTMLElement>(".agentic-chat-messages");
-    const field = document.querySelector<HTMLElement>(".agentic-chat-field");
-    const composer = document.querySelector<HTMLElement>(".agentic-chat-composer");
+    const view = document.querySelector<HTMLElement>('[data-ac="view"]');
+    const messages = document.querySelector<HTMLElement>('[data-ac="messages"]');
+    const field = document.querySelector<HTMLElement>('[data-ac="composer-card"]');
+    const composer = document.querySelector<HTMLElement>('[data-ac="composer"]');
     const leaf = view?.closest<HTMLElement>(".workspace-leaf");
     if (!view || !leaf) return { ok: false, details: `${lbl}: view/leaf missing` };
     const leafRect = leaf.getBoundingClientRect();
@@ -141,7 +141,7 @@ describe("agentic-chat clip regression", function () {
     // Capture original inline styles so the forced 340px leaf does not leak
     // into the final recovery check or later tests.
     const originalLeafStyles = await browser.execute(() => {
-      const view = document.querySelector<HTMLElement>(".agentic-chat-view");
+      const view = document.querySelector<HTMLElement>('[data-ac="view"]');
       const leaf = view?.closest<HTMLElement>(".workspace-leaf") as HTMLElement | null;
       const split = leaf?.closest<HTMLElement>(".workspace-split") as HTMLElement | null;
       return {
@@ -170,7 +170,7 @@ describe("agentic-chat clip regression", function () {
         // force leaf sizer to be narrow like user's "editor + chat" state: shrink chat leaf to ~300px
         if (name.includes("760") || name.includes("860")) {
           await browser.execute(() => {
-            const view = document.querySelector<HTMLElement>(".agentic-chat-view");
+            const view = document.querySelector<HTMLElement>('[data-ac="view"]');
             const leaf = view?.closest<HTMLElement>(".workspace-leaf");
             const split = leaf?.closest<HTMLElement>(".workspace-split");
             if (leaf) {
@@ -187,7 +187,7 @@ describe("agentic-chat clip regression", function () {
         // eslint-disable-next-line no-console
         console.log(`[clip-debug] ${res.details} ok=${res.ok}`);
 
-        const view = await $(".agentic-chat-view");
+        const view = await $('[data-ac="view"]');
         if (await view.isExisting()) await view.saveScreenshot(path.join(dir, `${name}.view.png`));
         await browser.saveScreenshot(path.join(dir, `${name}.full.png`));
 
@@ -197,7 +197,7 @@ describe("agentic-chat clip regression", function () {
       // Restore original leaf styles before widening so the final check
       // actually tests recovery, not a still-forced narrow leaf.
       await browser.execute((orig) => {
-        const view = document.querySelector<HTMLElement>(".agentic-chat-view");
+        const view = document.querySelector<HTMLElement>('[data-ac="view"]');
         const leaf = view?.closest<HTMLElement>(".workspace-leaf") as HTMLElement | null;
         const split = leaf?.closest<HTMLElement>(".workspace-split") as HTMLElement | null;
         if (leaf) {
@@ -223,7 +223,7 @@ describe("agentic-chat clip regression", function () {
     } finally {
       // Always restore even if an assertion fails so later specs inherit clean state.
       await browser.execute((orig) => {
-        const view = document.querySelector<HTMLElement>(".agentic-chat-view");
+        const view = document.querySelector<HTMLElement>('[data-ac="view"]');
         const leaf = view?.closest<HTMLElement>(".workspace-leaf") as HTMLElement | null;
         const split = leaf?.closest<HTMLElement>(".workspace-split") as HTMLElement | null;
         if (leaf) {

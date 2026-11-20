@@ -24,14 +24,14 @@ export type ProbeSettings = {
 
 export async function openChat(): Promise<void> {
   await browser.executeObsidianCommand("agentic-chat:open-chat");
-  await $(".agentic-chat-view").waitForExist();
+  await $('[data-ac="view"]').waitForExist();
 }
 
 export async function sendPrompt(prompt: string): Promise<void> {
-  const input = await $(".agentic-chat-input");
+  const input = await $('[data-ac="composer-input"]');
   await input.click();
   await input.setValue(prompt);
-  await $(".agentic-chat-send").click();
+  await $('[data-ac="send"]').click();
 }
 
 export async function configurePlugin(patch: ProbeSettings): Promise<void> {
@@ -107,7 +107,7 @@ export async function trashNotes(paths: string[]): Promise<void> {
 }
 
 export async function renderedAssistantText(): Promise<string> {
-  const elements = await browser.$$(".agentic-chat-assistant .agentic-chat-text");
+  const elements = await browser.$$('[data-ac="assistant-text"]');
   const parts: string[] = [];
   for (const element of elements) parts.push(await element.getText());
   return parts.join("\n");
@@ -118,7 +118,7 @@ export async function waitForNewAssistantText(previous: string, timeout = 120_00
   await browser.waitUntil(
     async () => {
       const streaming = await browser.execute(
-        () => document.querySelectorAll(".agentic-chat-text.is-streaming").length > 0,
+        () => document.querySelectorAll('[data-ac="assistant-text"].is-streaming').length > 0,
       );
       if (streaming) return false;
 

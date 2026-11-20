@@ -10,7 +10,7 @@ import {
 
 async function openChat(): Promise<void> {
   await browser.executeObsidianCommand("agentic-chat:open-chat");
-  await $(".agentic-chat-view").waitForExist();
+  await $('[data-ac="view"]').waitForExist();
 }
 
 async function configurePlugin(): Promise<boolean> {
@@ -45,10 +45,10 @@ async function waitForCall(label: string): Promise<void> {
 }
 
 async function sendWithButton(text: string): Promise<void> {
-  const input = await $(".agentic-chat-input");
+  const input = await $('[data-ac="composer-input"]');
   await input.click();
   await input.setValue(text);
-  await $(".agentic-chat-send").click();
+  await $('[data-ac="send"]').click();
 }
 
 async function pressEnter(): Promise<void> {
@@ -56,7 +56,7 @@ async function pressEnter(): Promise<void> {
 }
 
 async function transcriptText(): Promise<string> {
-  return await $(".agentic-chat-messages").getText();
+  return await $('[data-ac="messages"]').getText();
 }
 
 function assertOrdered(transcript: string, parts: string[]): void {
@@ -104,7 +104,7 @@ describe("agentic-chat composer paths", function () {
   });
 
   it("sends with Enter while the agent is idle", async function () {
-    const input = await $(".agentic-chat-input");
+    const input = await $('[data-ac="composer-input"]');
     await input.click();
     await input.setValue("idle send prompt");
     await pressEnter();
@@ -122,7 +122,7 @@ describe("agentic-chat composer paths", function () {
     await sendWithButton("steer start prompt");
     await waitForCall("steer tool");
 
-    const input = await $(".agentic-chat-input");
+    const input = await $('[data-ac="composer-input"]');
     await input.click();
     await input.setValue("keep the answer concise");
     await pressEnter();
@@ -132,7 +132,7 @@ describe("agentic-chat composer paths", function () {
       timeoutMsg: "steering text was not cleared from the composer",
     });
     await browser.waitUntil(
-      async () => (await $(".agentic-chat-status").getText()).includes("Queued for the active turn."),
+      async () => (await $('[data-ac="status"]').getText()).includes("Queued for the active turn."),
       { timeout: 5_000, timeoutMsg: "steering status was not reported" },
     );
     expect(await scriptedCallLabels()).toEqual(["idle send", "steer tool"]);
@@ -145,7 +145,7 @@ describe("agentic-chat composer paths", function () {
     });
     assertOrdered(await transcriptText(), [
       "steer start prompt",
-      "Read: Welcome.md",
+      "Read 1 note",
       "keep the answer concise",
       "Steered answer used the added constraint.",
     ]);
@@ -158,11 +158,11 @@ describe("agentic-chat composer paths", function () {
 
     await sendWithButton("queued draft before edit");
     await browser.waitUntil(
-      async () => (await $(".agentic-chat-send").getText()).trim() === "Update",
+      async () => (await $('[data-ac="send"]').getAttribute("data-ac-state")) === "update",
       { timeout: 5_000, timeoutMsg: "send button did not switch to update mode" },
     );
 
-    const input = await $(".agentic-chat-input");
+    const input = await $('[data-ac="composer-input"]');
     await input.setValue("queued draft after edit");
     expect(await input.getValue()).toBe("queued draft after edit");
 
@@ -184,22 +184,22 @@ describe("agentic-chat composer paths", function () {
 
     // Arm the Queue action first, then stop. The held draft must not auto-send.
     await sendWithButton("replacement after stop");
-    const stopButton = await $(".agentic-chat-stop");
+    const stopButton = await $('[data-ac="stop"]');
     await stopButton.waitForDisplayed({ timeout: 5_000 });
     await stopButton.click();
 
     await browser.waitUntil(
-      async () => !(await $(".agentic-chat-stop").isDisplayed()),
+      async () => !(await $('[data-ac="stop"]').isDisplayed()),
       { timeout: 5_000, timeoutMsg: "the stopped turn never settled" },
     );
-    const input = await $(".agentic-chat-input");
+    const input = await $('[data-ac="composer-input"]');
     expect(await input.getValue()).toBe("replacement after stop");
     await browser.waitUntil(
-      async () => (await $(".agentic-chat-send").getText()).trim() === "Send",
+      async () => (await $('[data-ac="send"]').getAttribute("data-ac-state")) === "send",
       { timeout: 5_000, timeoutMsg: "stop did not disarm the queued draft" },
     );
 
-    await $(".agentic-chat-send").click();
+    await $('[data-ac="send"]').click();
 
     await browser.waitUntil(async () => (await transcriptText()).includes("Replacement answer after stop."), {
       timeout: 10_000,
@@ -220,7 +220,7 @@ describe("agentic-chat composer paths", function () {
   });
 
   it("inserts a newline with Shift+Enter without sending", async function () {
-    const input = await $(".agentic-chat-input");
+    const input = await $('[data-ac="composer-input"]');
     await input.click();
     await input.setValue("line one");
     await browser.keys(["Shift", "Enter"]);
@@ -240,11 +240,15 @@ describe("agentic-chat composer paths", function () {
       async () => (await transcriptText()).includes("Provider connection lost mid-stream."),
       { timeout: 10_000, timeoutMsg: "the scripted error never rendered" },
     );
+    // The turn's reasoning lives in its activity line, above the message.
     const readTrace = async () =>
       await browser.execute(() => {
-        const banner = Array.from(document.querySelectorAll(".agentic-chat-assistant .agentic-chat-error")).pop();
-        const turn = banner?.closest(".agentic-chat-assistant");
-        return Array.from(turn?.querySelectorAll(".agentic-chat-reasoning-body") ?? []).map((body) => (body.textContent ?? "").trim());
+        const banner = Array.from(document.querySelectorAll('[data-ac="turn-error"]')).pop();
+        let node = banner?.closest('[data-ac="assistant-message"]')?.previousElementSibling ?? null;
+        while (node && node.getAttribute("data-ac") !== "activity") node = node.previousElementSibling;
+        return Array.from(node?.querySelectorAll(".agentic-chat-thought:not(.is-empty) .agentic-chat-thought-text") ?? []).map(
+          (body) => (body.textContent ?? "").trim(),
+        );
       });
     await browser.waitUntil(async () => JSON.stringify(await readTrace()) === JSON.stringify(["I should check the config first."]), {
       timeout: 3_000,
@@ -262,15 +266,17 @@ describe("agentic-chat composer paths", function () {
   it("shows a failed turn's error without an empty green Thought pill", async function () {
     // Every scripted turn is used, so the next request fails at the provider.
     await sendWithButton("no scripted turn is left for this prompt");
-    const error = await $(".agentic-chat-assistant .agentic-chat-error");
+    const error = await $('[data-ac="turn-error"]');
     await error.waitForExist({ timeout: 10_000 });
     const bubble = await browser.execute(() => {
-      const banner = Array.from(document.querySelectorAll(".agentic-chat-assistant .agentic-chat-error")).pop();
-      const turn = banner?.closest(".agentic-chat-assistant");
-      const pills = Array.from(turn?.querySelectorAll(".agentic-chat-reasoning") ?? []);
+      const banner = Array.from(document.querySelectorAll('[data-ac="turn-error"]')).pop();
+      let node = banner?.closest('[data-ac="assistant-message"]')?.previousElementSibling ?? null;
+      while (node && node.getAttribute("data-ac") !== "activity") node = node.previousElementSibling;
+      // A shown (not .is-empty) entry with no text would be an empty "Thought".
+      const shown = Array.from(node?.querySelectorAll<HTMLElement>(".agentic-chat-thought:not(.is-empty)") ?? []);
       return {
         bannerText: banner?.textContent ?? "",
-        emptyPills: pills.filter((pill) => !pill.querySelector(".agentic-chat-reasoning-body")?.textContent?.trim()).length,
+        emptyPills: shown.filter((entry) => !entry.querySelector(".agentic-chat-thought-text")?.textContent?.trim()).length,
       };
     });
     expect(bubble.bannerText.length).toBeGreaterThan(0);

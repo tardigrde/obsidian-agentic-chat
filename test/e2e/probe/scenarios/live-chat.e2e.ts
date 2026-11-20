@@ -73,13 +73,13 @@ describe("probe: live chat", function () {
 
     await sendPrompt(`Create a note named ${NOTE} containing exactly: hello from probe`);
 
-    const approval = await $(".agentic-chat-approval");
+    const approval = await $('[data-ac="approval"]:not(.is-resolved)');
     await approval.waitForExist({ timeout: 120_000 });
     await browser.pause(500);
     await mark("approval prompt visible");
     await browser.pause(1_500);
 
-    const allow = await approval.$("button=Allow");
+    const allow = await approval.$('[data-ac="approval-allow"]');
     await allow.waitForExist({ timeout: 5_000 });
     await allow.click();
     await browser.pause(800);
@@ -93,7 +93,7 @@ describe("probe: live chat", function () {
     await browser.pause(800);
     await mark("live tool call wrote the note");
 
-    await expectNoHorizontalOverflow(".agentic-chat-view");
+    await expectNoHorizontalOverflow('[data-ac="view"]');
     await writeMetrics({ note: NOTE, noteContent: await readNote(NOTE), mode: "live", model });
 
     // Hold the final state so the recording does not end on a closing window.

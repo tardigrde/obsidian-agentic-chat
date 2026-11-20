@@ -13,7 +13,7 @@ import type { AgentService } from "../agent/agent-service";
 import type { AskUserRequest } from "../tools/ask-user-tool";
 import type { ToolApprovalRequest, UserApprovalChoice } from "../agent/tool-call-controller";
 import { applyRememberedApprovalChoice } from "../agent/approval-memory";
-import { ApprovalModal } from "./approval-modal";
+import { ApprovalCard } from "./approval-card";
 import { VIEW_TYPE_AGENT_CHAT } from "../constants";
 import { errorMessage } from "../utils/errors";
 import { Notifier } from "./notifications";
@@ -25,6 +25,7 @@ import {
   type ChatTabWorkingState,
 } from "./chat-tab-state";
 import { ChatTabs, type ChatTab } from "./chat-tabs";
+import type { TabHeaderElements } from "./tab-strip";
 import { ChatComposer } from "./composer-controller";
 import { ChatChrome } from "./chat-chrome";
 import { ChatTurn } from "./chat-turn";
@@ -49,8 +50,12 @@ import type { ActionRow } from "./workflow-renderer";
 import { TranscriptView } from "./transcript-view";
 import type { SlashContext } from "./slash/context";
 import { persistEffortLevel } from "./slash/model";
+import { acHook } from "./test-hooks";
 
 export { VIEW_TYPE_AGENT_CHAT };
+
+/** Status line text while an approval card waits in the active tab. */
+const APPROVAL_STATUS = "Waiting for your approval";
 
 export class ChatView extends ItemView {
   private chatTabsOwner?: ChatTabs;
@@ -58,7 +63,7 @@ export class ChatView extends ItemView {
   private chromeOwner?: ChatChrome;
   private turnOwner?: ChatTurn;
   private actionsOwner?: ChatActions;
-  private tabsEl!: HTMLElement;
+  private tabHeader?: TabHeaderElements;
   // The current active note's path. View-level: it follows the focused leaf,
   // not the conversation; each tab decides whether it is suppressed.
   private activeNotePath: string | null = null;
@@ -70,14 +75,15 @@ export class ChatView extends ItemView {
   private fieldEl!: HTMLElement;
   private inputEl!: HTMLTextAreaElement;
   private modeToggleEl!: HTMLElement;
+  private modeLabelEl?: HTMLElement;
   private menu!: AutocompleteMenu;
   private sendButton!: HTMLButtonElement;
   private stopButton!: HTMLButtonElement;
   private statusEl!: HTMLElement;
   private modelPillEl!: HTMLElement;
   private effortKnobEl!: HTMLElement;
-  private usageEl!: HTMLElement;
-  private contextBarEl!: HTMLProgressElement;
+  private contextEl!: HTMLElement;
+  private contextRingEl!: SVGCircleElement;
   private contextPercentEl!: HTMLElement;
   private workingEl!: HTMLElement;
   private closed = true;
@@ -111,7 +117,8 @@ export class ChatView extends ItemView {
         this.notifier.notify("agentFinished", `Tab ${tabNumber} finished responding.`);
       },
       isViewClosed: () => this.closed,
-      container: () => this.tabsEl,
+      header: () => this.tabHeader,
+      openHistory: () => void this.actions.createSessionWorkflow().run(""),
       composerValue: () => this.inputEl.value,
       setComposerValueQuiet: (value) => this.setComposerValueQuiet(value),
       setStatus: (text) => this.statusEl.setText(text),
@@ -158,8 +165,8 @@ export class ChatView extends ItemView {
       elements: {
         effortKnobEl: () => this.effortKnobEl,
         modelPillEl: () => this.modelPillEl,
-        usageEl: () => this.usageEl,
-        contextBarEl: () => this.contextBarEl,
+        contextEl: () => this.contextEl,
+        contextRingEl: () => this.contextRingEl,
         contextPercentEl: () => this.contextPercentEl,
         sendButton: () => this.sendButton,
         stopButton: () => this.stopButton,
@@ -377,10 +384,11 @@ export class ChatView extends ItemView {
     // The view owns its tab services; dispose them so no detached agent keeps running.
     for (const tab of this.tabs) {
       tab.unsubscribe();
-      tab.pendingApprovalModal?.close();
+      for (const card of tab.pendingApprovals ?? []) card.stop();
       tab.service.dispose();
     }
     this.tabs = [];
+    this.chatTabs.clear();
   }
 
   /** Add a vault file/folder from an Obsidian context menu to the next prompt. */
@@ -406,6 +414,16 @@ export class ChatView extends ItemView {
   /** Re-render the transcript + chrome for the active tab (after a switch/close). */
   private renderActiveTab(): void {
     this.createSessionActivationCoordinator().renderActiveTab();
+    // Cards that settled while this tab was in the background: show them once.
+    for (const card of this.activeTab.unseenApprovals ?? []) this.transcript.mountApproval(card);
+    this.activeTab.unseenApprovals = [];
+    // Pending approvals wait in their tab's transcript: put every card back.
+    const pending = (this.activeTab.pendingApprovals ?? []).filter((card) => !card.settled);
+    for (const card of pending) this.transcript.mountApproval(card);
+    if (pending.length > 0) {
+      this.statusEl.setText(APPROVAL_STATUS);
+      pending[0].focus(this.inputEl.value.trim().length > 0);
+    }
     // Chips depend on the newly active tab's state; the
     // coordinator only syncs chrome, so re-render them here or a queued-prompt
     // chip (and context chips) would stay stale/invisible after a tab switch.
@@ -419,7 +437,11 @@ export class ChatView extends ItemView {
     return await this.renderAskUserPrompt(request, signal);
   }
 
-  /** Notify + label for background tool approvals (no auto-switch). */
+  /**
+   * An inline approval card in the tab's transcript, below the turn's activity
+   * line. A background tab gets the orange dot and a notice; its card waits in
+   * that tab and shows when the user switches to it (no auto-switch).
+   */
   private async confirmToolCallForTab(
     tab: ChatTab,
     request: ToolApprovalRequest,
@@ -427,34 +449,48 @@ export class ChatView extends ItemView {
   ): Promise<UserApprovalChoice> {
     const index = this.tabs.indexOf(tab);
     if (index === -1) throw new Error("The chat tab that requested approval is no longer open.");
-    const isBackground = tab !== this.activeTab;
-    const sessionLabel = `Tab ${index + 1} • ${this.tabLabel(tab)}`;
-    const labeledRequest: ToolApprovalRequest = isBackground ? { ...request, sessionLabel } : request;
-    if (isBackground) {
-      tab.needsApproval = true;
-      this.syncTabStrip();
-      this.notifier.notify("approval", `${sessionLabel} needs approval: ${request.label}`);
+    const card = new ApprovalCard({ app: this.app, request, signal });
+    tab.pendingApprovals = [...(tab.pendingApprovals ?? []), card];
+    this.syncTabStrip();
+    if (tab === this.activeTab) {
+      this.transcript.mountApproval(card);
+      this.statusEl.setText(APPROVAL_STATUS);
+      card.focus(this.inputEl.value.trim().length > 0);
+    } else {
+      this.notifier.notify("approval", `Tab ${index + 1} • ${this.tabLabel(tab)} needs approval: ${request.label}`);
     }
-    const modal = new ApprovalModal(this.app, labeledRequest, () => tab.service.abort());
-    tab.pendingApprovalModal = modal;
     try {
-      const choice = await modal.ask(signal);
+      const choice = await card.choice;
       await this.plugin.settingsStore.update((settings) =>
         applyRememberedApprovalChoice(settings, request.toolName, choice),
       );
       return choice;
     } finally {
-      tab.pendingApprovalModal = undefined;
-      if (tab.needsApproval) {
-        tab.needsApproval = false;
-        this.syncTabStrip();
+      tab.pendingApprovals = (tab.pendingApprovals ?? []).filter((pending) => pending !== card);
+      // Settled out of sight: keep it for the switch-back (shown once).
+      if (tab !== this.activeTab && this.tabs.includes(tab)) tab.unseenApprovals = [...(tab.unseenApprovals ?? []), card];
+      // A settled card gives up focus; when nothing else holds it, hand it on.
+      const active = this.containerEl.ownerDocument.activeElement;
+      const lost = !active || active === this.containerEl.ownerDocument.body || !active.isConnected;
+      // Another card in this tab may still wait: keep the needs-you state until the last one settles.
+      if (tab.pendingApprovals.length === 0 && tab === this.activeTab && !this.closed) {
+        this.transcript.approvalSettled();
+        if (this.statusEl.textContent === APPROVAL_STATUS) this.statusEl.setText("");
+        // The last card is done: back to the composer, the natural next step.
+        if (lost) this.inputEl.focus();
+      } else if (tab === this.activeTab && !this.closed) {
+        // Hand focus on to the next waiting card, so Enter and Esc keep working.
+        // `focus` itself leaves the composer and another card's focus alone.
+        const next = tab.pendingApprovals.find((pending) => !pending.settled);
+        if (next && lost) next.focus(this.inputEl.value.trim().length > 0);
       }
+      this.syncTabStrip();
     }
   }
 
   private async renderAskUserPrompt(request: AskUserRequest, signal?: AbortSignal): Promise<string> {
     this.clearEmptyState();
-    const el = this.messagesEl.createDiv({ cls: ["agentic-chat-message", "agentic-chat-info", "agentic-chat-ask-user"] });
+    const el = acHook(this.messagesEl.createDiv({ cls: ["agentic-chat-message", "agentic-chat-info", "agentic-chat-ask-user"] }), "ask-user");
     const details = el.createEl("details", { cls: "agentic-chat-info-details" });
     details.open = true;
     details.createEl("summary", { text: "Question from agent" });
@@ -463,11 +499,11 @@ export class ChatView extends ItemView {
     const answerState = body.createDiv({ cls: "agentic-chat-ask-state", text: "Waiting for your answer." });
     const controls = body.createDiv({ cls: "agentic-chat-ask-controls" });
     const choices = request.choices.length ? controls.createDiv({ cls: "agentic-chat-ask-choices" }) : null;
-    const textarea = controls.createEl("textarea", {
+    const textarea = acHook(controls.createEl("textarea", {
       cls: "agentic-chat-ask-input",
       attr: { rows: "3", placeholder: "Type an answer..." },
-    });
-    const submit = controls.createEl("button", { cls: ["mod-cta", "agentic-chat-ask-submit"], text: "Send answer" });
+    }), "ask-input");
+    const submit = acHook(controls.createEl("button", { cls: ["mod-cta", "agentic-chat-ask-submit"], text: "Send answer" }), "ask-submit");
 
     this.scrollToBottom({ force: true });
     textarea.focus();
@@ -536,6 +572,7 @@ export class ChatView extends ItemView {
       component: this,
       contentEl: this.contentEl,
       registerDomEvent: (el, type, handler) => this.registerDomEvent(el, type, handler),
+      register: (cleanup) => this.register(cleanup),
       callbacks: {
         renderEmptyState: () => this.renderEmptyState(),
         beginEdit: (index, text, el) => this.beginEdit(index, text, el),
@@ -551,11 +588,13 @@ export class ChatView extends ItemView {
         cancelAutocomplete: () => this.cancelAutocomplete(),
         handleDrop: (event) => this.handleDrop(event),
         cycleEffort: () => void this.cycleEffort(),
+        attach: () => this.composer.openMentionPicker(),
         toggleMode: () => this.toggleMode(),
         switchModel: () => void this.switchModel(),
-        newSession: () => void this.newSession(),
+        addTab: () => void this.chatTabs.addTab(),
         openHistory: () => void this.actions.createSessionWorkflow().run(""),
         isEditing: () => this.composer.isEditing,
+        isStreaming: () => this.service.isStreaming(),
         reconcileQueuedInput: (value, event) => this.reconcileQueuedInput(value, event),
       },
     });
@@ -563,19 +602,20 @@ export class ChatView extends ItemView {
     // The empty state renders into messagesEl, so it needs the field set first.
     this.renderEmptyState();
     this.transcript = layout.transcript;
-    this.tabsEl = layout.tabsEl;
+    this.tabHeader = layout.tabHeader;
     this.chipsEl = layout.chipsEl;
     this.fieldEl = layout.fieldEl;
     this.inputEl = layout.inputEl;
     this.modeToggleEl = layout.modeToggleEl;
+    this.modeLabelEl = layout.modeLabelEl;
     this.menu = layout.menu;
     this.sendButton = layout.sendButton;
     this.stopButton = layout.stopButton;
     this.statusEl = layout.statusEl;
     this.modelPillEl = layout.modelPillEl;
     this.effortKnobEl = layout.effortKnobEl;
-    this.usageEl = layout.usageEl;
-    this.contextBarEl = layout.contextBarEl;
+    this.contextEl = layout.contextEl;
+    this.contextRingEl = layout.contextRingEl;
     this.contextPercentEl = layout.contextPercentEl;
     this.workingEl = layout.workingEl;
   }
@@ -601,28 +641,14 @@ export class ChatView extends ItemView {
   }
 
   private renderEmptyState(): void {
-    this.emptyStateEl = this.messagesEl.createDiv({ cls: "agentic-chat-empty" });
-    const icon = this.emptyStateEl.createDiv({ cls: "agentic-chat-empty-icon" });
-    setIcon(icon, "bot");
-    this.emptyStateEl.createDiv({
+    this.emptyStateEl = acHook(this.messagesEl.createDiv({ cls: "agentic-chat-empty" }), "empty");
+    const icon = this.emptyStateEl.createDiv({ cls: "agentic-chat-empty-icon", attr: { "aria-hidden": "true" } });
+    setIcon(icon, "sparkles");
+    this.emptyStateEl.createEl("h2", { cls: "agentic-chat-empty-title", text: "What should we work on?" });
+    this.emptyStateEl.createEl("p", {
       cls: "agentic-chat-empty-text",
-      text: "Ask anything about your vault. The agent can read, search, write, and edit notes — every tool call is shown inline. Type / for commands or @ to attach a note.",
+      text: "I can search, read, and edit your vault. In Safe mode you approve every change. Type / for commands or @ to attach a note.",
     });
-    // Suggested prompts fill the empty surface with a low-effort starting point
-    // (teaches / and @ without a manual) instead of a big vertical void.
-    const suggestions = [
-      "Read the active note and summarize it",
-      "List notes changed in the last week",
-      "Draft a weekly overview of my vault",
-    ];
-    const row = this.emptyStateEl.createDiv({ cls: "agentic-chat-empty-suggestions" });
-    for (const suggestion of suggestions) {
-      const chip = row.createEl("button", { cls: "agentic-chat-empty-suggestion", text: suggestion });
-      chip.addEventListener("click", () => {
-        this.inputEl.value = suggestion;
-        void this.submit("button");
-      });
-    }
   }
 
   private clearEmptyState(): void {
@@ -686,7 +712,9 @@ export class ChatView extends ItemView {
     this.modeToggleEl.toggleClass("is-active", settings.mode === "yolo");
     this.modeToggleEl.toggleClass("is-disabled", streaming);
     this.modeToggleEl.setAttr("aria-checked", String(settings.mode === "yolo"));
-    this.modeToggleEl.setAttr("aria-label", `Permission mode: ${settings.mode === "yolo" ? "YOLO" : "Safe"}`);
+    const modeName = settings.mode === "yolo" ? "YOLO" : "Safe";
+    this.modeToggleEl.setAttr("aria-label", `Permission mode: ${modeName}`);
+    this.modeLabelEl?.setText(modeName);
     // Effort can't change mid-turn (it would disagree with the in-flight request).
     this.effortKnobEl?.toggleClass("is-disabled", streaming);
   }

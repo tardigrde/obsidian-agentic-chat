@@ -312,7 +312,7 @@ async function reloadPlugin(): Promise<void> {
 
 async function openChat(): Promise<void> {
   await browser.executeObsidianCommand("agentic-chat:open-chat");
-  await $(".agentic-chat-view").waitForExist();
+  await $('[data-ac="view"]').waitForExist();
 }
 
 async function openNote(path: string): Promise<void> {
@@ -325,8 +325,8 @@ async function openNote(path: string): Promise<void> {
 
 async function sendPrompt(prompt: string): Promise<void> {
   await browser.execute((value) => {
-    const textarea = document.querySelector<HTMLTextAreaElement>(".agentic-chat-input");
-    const send = document.querySelector<HTMLButtonElement>(".agentic-chat-send");
+    const textarea = document.querySelector<HTMLTextAreaElement>('[data-ac="composer-input"]');
+    const send = document.querySelector<HTMLButtonElement>('[data-ac="send"]');
     if (!textarea || !send) throw new Error("agentic-chat composer is not mounted");
     textarea.value = value;
     textarea.dispatchEvent(new Event("input", { bubbles: true }));
@@ -350,12 +350,12 @@ async function runSlashCommand(command: string): Promise<string> {
 }
 
 async function answerAskUser(answer: string): Promise<void> {
-  const askUser = await $(".agentic-chat-ask-user");
+  const askUser = await $('[data-ac="ask-user"]');
   await askUser.waitForExist({ timeout: 10_000 });
   await browser.execute((value) => {
-    const prompt = document.querySelector<HTMLElement>(".agentic-chat-ask-user");
-    const textarea = prompt?.querySelector<HTMLTextAreaElement>(".agentic-chat-ask-input");
-    const submit = prompt?.querySelector<HTMLButtonElement>(".agentic-chat-ask-submit");
+    const prompt = document.querySelector<HTMLElement>('[data-ac="ask-user"]');
+    const textarea = prompt?.querySelector<HTMLTextAreaElement>('[data-ac="ask-input"]');
+    const submit = prompt?.querySelector<HTMLButtonElement>('[data-ac="ask-submit"]');
     if (!textarea || !submit) throw new Error("ask_user prompt controls are not mounted");
     textarea.value = value;
     textarea.dispatchEvent(new Event("input", { bubbles: true }));
@@ -364,32 +364,33 @@ async function answerAskUser(answer: string): Promise<void> {
   await askUser.waitForExist({ reverse: true, timeout: 10_000 });
 }
 
-async function waitForApprovalModal() {
-  const modal = await $(".agentic-chat-approval");
+/** The pending inline approval card (a resolved one stays as a record). */
+async function waitForApprovalCard() {
+  const modal = await $('[data-ac="approval"]:not(.is-resolved)');
   await modal.waitForExist({ timeout: 10_000 });
   return modal;
 }
 
 async function allowApproval(): Promise<void> {
-  const modal = await waitForApprovalModal();
-  const allow = await modal.$("button=Allow");
+  const modal = await waitForApprovalCard();
+  const allow = await modal.$('[data-ac="approval-allow"]');
   await allow.waitForExist({ timeout: 5_000 });
   await allow.click();
   await modal.waitForExist({ reverse: true, timeout: 5_000 });
 }
 
 async function denyApprovalAndWaitForNextTarget(path: string): Promise<void> {
-  const modal = await waitForApprovalModal();
-  const deny = await modal.$("button=Deny");
+  const modal = await waitForApprovalCard();
+  const deny = await modal.$('[data-ac="approval-deny"]');
   await deny.waitForExist({ timeout: 5_000 });
   await deny.click();
   // Deny is two-step: the first click arms the optional reason field.
-  const confirmDeny = await modal.$("button=Confirm Deny");
+  const confirmDeny = await modal.$("button=Confirm deny");
   await confirmDeny.waitForExist({ timeout: 5_000 });
   await confirmDeny.click();
   await browser.waitUntil(
     async () => {
-      const next = await $(".agentic-chat-approval");
+      const next = await $('[data-ac="approval"]:not(.is-resolved)');
       if (!(await next.isExisting().catch(() => false))) return false;
       return (await next.getText()).includes(path);
     },
@@ -397,16 +398,26 @@ async function denyApprovalAndWaitForNextTarget(path: string): Promise<void> {
   );
 }
 
+/** Esc starts the two-step deny on the focused card; Enter in the reason confirms it. */
 async function closeApprovalWithEscape(): Promise<void> {
-  const modal = await waitForApprovalModal();
+  const card = await waitForApprovalCard();
+  await browser.waitUntil(
+    async () => await browser.execute((selector) => document.activeElement === document.querySelector(selector), '[data-ac="approval"]:not(.is-resolved)'),
+    { timeout: 3_000, timeoutMsg: "the approval card did not take focus" },
+  );
   await browser.keys("Escape");
-  await modal.waitForExist({ reverse: true, timeout: 5_000 });
+  await browser.waitUntil(async () => (await card.getAttribute("data-ac-state")) === "deny-armed", {
+    timeout: 3_000,
+    timeoutMsg: "Esc did not arm the deny",
+  });
+  await browser.keys("Enter");
+  await card.waitForExist({ reverse: true, timeout: 5_000 });
 }
 
 async function doubleClickAllowApproval(): Promise<void> {
-  const modal = await waitForApprovalModal();
+  const modal = await waitForApprovalCard();
   await browser.execute(() => {
-    const root = document.querySelector<HTMLElement>(".agentic-chat-approval");
+    const root = document.querySelector<HTMLElement>('[data-ac="approval"]:not(.is-resolved)');
     const allow = Array.from(root?.querySelectorAll<HTMLButtonElement>("button") ?? []).find(
       (button) => button.innerText.trim() === "Allow",
     );
@@ -434,9 +445,9 @@ async function loadFirstInactiveSessionFromList(): Promise<void> {
 async function waitForTurnToFinish(): Promise<void> {
   await browser.waitUntil(
     async () => {
-      const stopVisible = await $(".agentic-chat-stop").isDisplayed().catch(() => false);
-      const approvalOpen = await $(".agentic-chat-approval").isExisting().catch(() => false);
-      const askUserOpen = await $(".agentic-chat-ask-user").isExisting().catch(() => false);
+      const stopVisible = await $('[data-ac="stop"]').isDisplayed().catch(() => false);
+      const approvalOpen = await $('[data-ac="approval"]:not(.is-resolved)').isExisting().catch(() => false);
+      const askUserOpen = await $('[data-ac="ask-user"]').isExisting().catch(() => false);
       return !stopVisible && !approvalOpen && !askUserOpen;
     },
     { timeout: TURN_TIMEOUT_MS, timeoutMsg: "next-level dogfood turn did not finish" },
@@ -444,7 +455,7 @@ async function waitForTurnToFinish(): Promise<void> {
 }
 
 async function transcriptText(): Promise<string> {
-  return await browser.execute(() => document.querySelector<HTMLElement>(".agentic-chat-messages")?.innerText ?? "");
+  return await browser.execute(() => document.querySelector<HTMLElement>('[data-ac="messages"]')?.innerText ?? "");
 }
 
 async function latestSessionText(): Promise<string> {
@@ -583,7 +594,7 @@ describe("agentic-chat next-level dogfood", function () {
     try {
       await setWriteApproval("ask");
       await sendPrompt("Open an approval, change write approval to deny, then allow the in-flight write.");
-      await waitForApprovalModal();
+      await waitForApprovalCard();
       await setWriteApproval("deny");
       await allowApproval();
       await waitForTurnToFinish();

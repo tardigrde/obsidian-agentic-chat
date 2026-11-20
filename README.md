@@ -15,10 +15,11 @@ through typed, visible, approval-gated tool calls. Desktop and mobile.
 
 ## Why this one
 
-- **You see every step.** Each tool call (read, search, edit, rename, …) renders
-  inline with its arguments, result, and timing.
+- **You see every step.** Each turn has one activity line (`Read 4 notes,
+  edited 1`); click it to see every tool call with its arguments, result, and
+  timing.
 - **Nothing changes without you.** Writes, edits, renames, and deletes ask first
-  and show a diff. `/undo` reverts the last change. Deletes go to trash; if no
+  in an approval card in the chat, with a diff. `/undo` reverts the last change. Deletes go to trash; if no
   trash works, the file is removed permanently and the result says so.
 - **Private by default.** OpenRouter requests go only to zero-data-retention,
   no-training endpoints. Or run fully local with Ollama. No telemetry.
@@ -58,7 +59,7 @@ Approve the diff, then run `/undo` to see the change reverted. More prompts in
 | Skip approval prompts | Toggle **Safe → YOLO** in the composer (recursive deletes still ask) |
 | Hide notes from the agent | *Advanced → Ignored files*, e.g. `Private/`, `**/diary/**` |
 | Give the agent standing rules | Put them in `AGENTS.md` at the vault root, or run `/init` |
-| Watch cost | `/usage`, the context bar, and a spend cap in *Advanced → Notifications* |
+| Watch cost | The meta under each answer, `/usage`, the context ring, and a spend cap in *Advanced → Notifications* |
 | Undo / rewind | `/undo` for the last vault change; click a sent message to edit and rerun |
 | Debug setup | `/doctor`, then `/status` |
 

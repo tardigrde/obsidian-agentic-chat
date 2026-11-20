@@ -18,6 +18,7 @@ export interface AgentSessionActionsRuntime {
   list(): Promise<SessionInfo[]>;
   delete(path: string): Promise<void>;
   rename(path: string, name: string): Promise<void>;
+  setTabLabel(label: string | undefined): Promise<void>;
   rewriteMessages(
     messages: AgentMessage[],
     options?: { expectedPath?: string | null; expectedGeneration?: number },
@@ -275,6 +276,12 @@ export class AgentSessionActions {
 
   async renameSession(path: string, name: string): Promise<void> {
     await this.options.sessions.rename(path, name);
+    this.options.sessions.refreshInfoIfActive();
+    this.options.notifyChange();
+  }
+
+  async setTabLabel(label: string | undefined): Promise<void> {
+    await this.options.sessions.setTabLabel(label);
     this.options.sessions.refreshInfoIfActive();
     this.options.notifyChange();
   }

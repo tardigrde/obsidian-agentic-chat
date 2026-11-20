@@ -32,7 +32,7 @@ export async function composerHitTest(): Promise<ComposerHit> {
       const r = element.getBoundingClientRect();
       return { x: r.x, y: r.y, width: r.width, height: r.height, right: r.right, bottom: r.bottom };
     };
-    const input = document.querySelector<HTMLElement>(".agentic-chat-input");
+    const input = document.querySelector<HTMLElement>('[data-ac="composer-input"]');
     // WebDriver scrolls an element into view before it clicks; do the same.
     input?.scrollIntoView({ block: "nearest", inline: "nearest" });
     const rect = input?.getBoundingClientRect();
@@ -78,7 +78,7 @@ export async function waitForComposerReady({ timeoutMs = 15_000 } = {}): Promise
 }
 
 /** The pane must not scroll sideways. A 1px tolerance absorbs fractional layout. */
-export async function expectNoHorizontalOverflow(selector = ".agentic-chat-view"): Promise<void> {
+export async function expectNoHorizontalOverflow(selector = '[data-ac="view"]'): Promise<void> {
   const metrics = await browser.execute((sel) => {
     const element = document.querySelector<HTMLElement>(sel) ?? document.scrollingElement;
     if (!element) return null;

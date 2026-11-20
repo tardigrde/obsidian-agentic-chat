@@ -82,7 +82,7 @@ export interface MountOptions {
   /** Scripted model turns, in order, shared by every tab's service. */
   turns?: ReplayTurn[];
   settings?: Partial<AgenticChatSettings>;
-  /** Answer each tool approval without a modal. Default: open the real ApprovalModal. */
+  /** Answer each tool approval. Default: approve at once (no card is shown). */
   approve?: (request: ToolApprovalRequest) => Promise<UserApprovalChoice>;
   /** Resolve a `hold: true` turn. Default: release at once. */
   waitForRelease?: () => Promise<void>;
@@ -177,7 +177,7 @@ export async function mountChatView(options: MountOptions = {}): Promise<Mounted
   const $$ = <T extends Element = HTMLElement>(selector: string) =>
     Array.from(root.ownerDocument.querySelectorAll<T>(selector));
   const type = (text: string): HTMLTextAreaElement => {
-    const input = root.querySelector<HTMLTextAreaElement>(".agentic-chat-input");
+    const input = root.querySelector<HTMLTextAreaElement>('[data-ac="composer-input"]');
     if (!input) throw new Error("composer input not mounted");
     input.value = text;
     input.dispatchEvent(new Event("input", { bubbles: true }));
@@ -208,7 +208,7 @@ export async function mountChatView(options: MountOptions = {}): Promise<Mounted
     },
     queue: async (text) => {
       type(text);
-      root.querySelector<HTMLButtonElement>(".agentic-chat-send")?.click();
+      root.querySelector<HTMLButtonElement>('[data-ac="send"]')?.click();
       await settle();
     },
     idle,

@@ -1,7 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { ActivityLine } from "../../src/ui/activity-line";
 import { AssistantBubble } from "../../src/ui/assistant-bubble";
 
-/** The reasoning pill's lifecycle: none -> thinking -> thought, or dropped on an empty error. */
+/**
+ * The reasoning entry's lifecycle: none -> thinking -> thought, or dropped on
+ * an empty error. The entry lives in the turn's activity line.
+ */
 
 class NoopResizeObserver {
   observe(): void {}
@@ -21,10 +25,10 @@ afterEach(() => {
 
 function bubble(): { bubble: AssistantBubble; parent: HTMLElement } {
   const parent = document.createElement("div");
-  return { bubble: new AssistantBubble(parent), parent };
+  return { bubble: new AssistantBubble(parent, new ActivityLine(parent, { live: false })), parent };
 }
 
-const pills = (parent: HTMLElement) => parent.querySelectorAll(".agentic-chat-reasoning");
+const pills = (parent: HTMLElement) => parent.querySelectorAll(".agentic-chat-thought");
 
 describe("AssistantBubble reasoning pill phases", () => {
   it("walks none -> thinking -> thought, and a late begin does not mount a second pill", () => {
@@ -38,6 +42,20 @@ describe("AssistantBubble reasoning pill phases", () => {
     b.finalizeWithoutText();
     expect(b.reasoningPhase).toBe("thought");
     expect(pills(parent)).toHaveLength(1);
+    b.dispose();
+  });
+
+  it("the folded reasoning opens from the keyboard, not only by click", () => {
+    const { bubble: b, parent } = bubble();
+    b.appendReasoning("a long trace");
+    const pill = parent.querySelector<HTMLElement>(".agentic-chat-thought");
+    expect(pill?.getAttribute("role")).toBe("button");
+    expect(pill?.getAttribute("tabindex")).toBe("0");
+    pill?.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+    expect(pill?.classList.contains("is-expanded")).toBe(true);
+    expect(pill?.getAttribute("aria-expanded")).toBe("true");
+    pill?.dispatchEvent(new KeyboardEvent("keydown", { key: " ", bubbles: true }));
+    expect(pill?.classList.contains("is-expanded")).toBe(false);
     b.dispose();
   });
 
@@ -71,7 +89,7 @@ describe("AssistantBubble reasoning pill phases", () => {
     expect(b.reasoningPhase).toBe("thinking");
     b.finalizeWithoutText();
     expect(b.reasoningPhase).toBe("thought");
-    expect(parent.querySelector(".agentic-chat-reasoning.is-done")).not.toBeNull();
+    expect(parent.querySelector(".agentic-chat-thought.is-done")).not.toBeNull();
     b.dispose();
   });
 });

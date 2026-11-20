@@ -4,8 +4,8 @@ export const TURN_TIMEOUT_MS = Number(process.env.DOGFOOD_TURN_TIMEOUT_MS || 120
 
 export async function sendPrompt(text: string): Promise<void> {
   await browser.execute((value) => {
-    const textarea = document.querySelector<HTMLTextAreaElement>(".agentic-chat-input");
-    const send = document.querySelector<HTMLButtonElement>(".agentic-chat-send");
+    const textarea = document.querySelector<HTMLTextAreaElement>('[data-ac="composer-input"]');
+    const send = document.querySelector<HTMLButtonElement>('[data-ac="send"]');
     if (!textarea || !send) throw new Error("agentic-chat composer is not mounted");
     textarea.value = value;
     textarea.dispatchEvent(new Event("input", { bubbles: true }));
@@ -16,9 +16,9 @@ export async function sendPrompt(text: string): Promise<void> {
 export async function waitForTurnEnd(timeoutMs: number): Promise<void> {
   await browser.waitUntil(
     async () => {
-      const stopVisible = await $(".agentic-chat-stop").isDisplayed().catch(() => false);
-      const approvalOpen = await $(".agentic-chat-approval").isExisting().catch(() => false);
-      const askUserOpen = await $(".agentic-chat-ask-user").isExisting().catch(() => false);
+      const stopVisible = await $('[data-ac="stop"]').isDisplayed().catch(() => false);
+      const approvalOpen = await $('[data-ac="approval"]:not(.is-resolved)').isExisting().catch(() => false);
+      const askUserOpen = await $('[data-ac="ask-user"]').isExisting().catch(() => false);
       return !stopVisible && !approvalOpen && !askUserOpen;
     },
     { timeout: timeoutMs, timeoutMsg: "turn did not finish" },

@@ -58,7 +58,7 @@ describe("ChatView tabs", () => {
 describe("ChatView.closeTab", () => {
   function closableTab() {
     const service = { isPathIgnored: () => false, dispose: vi.fn() };
-    const tab = { ...chatTab(service), unsubscribe: vi.fn(), pendingApprovalModal: { close: vi.fn() } };
+    const tab = { ...chatTab(service), unsubscribe: vi.fn(), pendingApprovals: [{ stop: vi.fn() }] };
     return { tab, service };
   }
 
@@ -77,7 +77,7 @@ describe("ChatView.closeTab", () => {
 
     view.closeTab(1);
 
-    expect(background.tab.pendingApprovalModal.close).toHaveBeenCalledTimes(1);
+    expect(background.tab.pendingApprovals[0].stop).toHaveBeenCalledTimes(1);
     expect(background.tab.unsubscribe).toHaveBeenCalledTimes(1);
     expect(background.service.dispose).toHaveBeenCalledTimes(1);
     expect(view.tabs).toEqual([active.tab]);

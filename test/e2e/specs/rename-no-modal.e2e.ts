@@ -23,16 +23,16 @@ const SOURCE_PATH = "Source.md";
 
 async function openChat(): Promise<void> {
   await browser.executeObsidianCommand("agentic-chat:open-chat");
-  await $(".agentic-chat-view").waitForExist();
+  await $('[data-ac="view"]').waitForExist();
   await waitForComposerReady();
 }
 
 async function sendPrompt(prompt: string): Promise<void> {
   await waitForComposerReady();
-  const input = await $(".agentic-chat-input");
+  const input = await $('[data-ac="composer-input"]');
   await input.click();
   await input.setValue(prompt);
-  await $(".agentic-chat-send").click();
+  await $('[data-ac="send"]').click();
 }
 
 async function configurePlugin(): Promise<boolean> {
@@ -107,7 +107,7 @@ async function waitForBacklink(): Promise<void> {
 }
 
 async function waitForTurnEnd(timeout = 20_000): Promise<void> {
-  await browser.waitUntil(async () => !(await $(".agentic-chat-stop").isDisplayed()), {
+  await browser.waitUntil(async () => !(await $('[data-ac="stop"]').isDisplayed()), {
     timeout,
     timeoutMsg: "the rename turn never settled",
   });
@@ -177,7 +177,7 @@ describe("agentic-chat rename without link modal", function () {
       async () =>
         (await $(".modal-container").isExisting()) ||
         (await noteExists(NEW_PATH)) ||
-        !(await $(".agentic-chat-stop").isDisplayed()),
+        !(await $('[data-ac="stop"]').isDisplayed()),
       { timeout: 15_000, timeoutMsg: "the scripted rename neither ran nor settled" },
     );
     // A blocking link modal would hang the turn, so the turn must end first.

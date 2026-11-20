@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { ContextReadout } from "../src/agent/readouts";
-import { contextLevel, contextPercent, formatContextReadoutTitle } from "../src/ui/context-bar";
+import type { AgentMessage } from "@earendil-works/pi-agent-core";
+import { contextLevel, contextPercent, lastPromptTokens } from "../src/ui/context-bar";
 
 describe("contextLevel", () => {
   it("is ok below 75%", () => {
@@ -31,24 +31,28 @@ describe("contextPercent", () => {
   });
 });
 
-describe("formatContextReadoutTitle", () => {
-  it("explains the percentage with a section breakdown", () => {
-    const readout: ContextReadout = {
-      fraction: 0.1234,
-      contextWindow: 10_000,
-      load: {
-        transcriptTokens: 100,
-        systemPromptTokens: 100,
-        toolSchemaTokens: 34,
-        reserveTokens: 1_000,
-        inputTokens: 234,
-        totalTokens: 1_234,
-      },
-    };
+describe("lastPromptTokens", () => {
+  it("reads the provider count of the last assistant reply, cache included", () => {
+    const messages = [
+      { role: "user", content: "hi", timestamp: 1 },
+      { role: "assistant", content: [], usage: { input: 100, output: 5, cacheRead: 900, cacheWrite: 0 }, timestamp: 2 },
+      { role: "toolResult", content: [], timestamp: 3 },
+    ] as unknown as AgentMessage[];
+    expect(lastPromptTokens(messages)).toBe(1_000);
+  });
 
-    expect(formatContextReadoutTitle(readout)).toBe(
-      "Context window 12% used (1,234 of 10,000 estimated tokens). " +
-        "Transcript 100, system prompt and loaded skills 100, active tool schemas 34, response reserve 1,000.",
-    );
+  it("is undefined before the first reply or when the reply has no usage", () => {
+    expect(lastPromptTokens([])).toBeUndefined();
+    expect(lastPromptTokens([{ role: "assistant", content: [], timestamp: 1 }] as unknown as AgentMessage[])).toBeUndefined();
+  });
+
+  it("skips a stop notice or an aborted reply (zero usage) and keeps the last real count", () => {
+    const messages = [
+      { role: "assistant", content: [], usage: { input: 700, output: 5, cacheRead: 0, cacheWrite: 0 }, timestamp: 1 },
+      { role: "user", content: "again", timestamp: 2 },
+      { role: "assistant", content: [], usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, stopReason: "aborted", timestamp: 3 },
+      { role: "assistant", content: [], timestamp: 4 },
+    ] as unknown as AgentMessage[];
+    expect(lastPromptTokens(messages)).toBe(700);
   });
 });

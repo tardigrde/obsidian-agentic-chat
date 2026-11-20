@@ -13,14 +13,14 @@ const DEFAULT_MODEL = "openrouter/auto";
 
 async function openChat(): Promise<void> {
   await browser.executeObsidianCommand("agentic-chat:open-chat");
-  await $(".agentic-chat-view").waitForExist();
+  await $('[data-ac="view"]').waitForExist();
 }
 
 async function sendPrompt(prompt: string): Promise<void> {
-  const input = await $(".agentic-chat-input");
+  const input = await $('[data-ac="composer-input"]');
   await input.click();
   await input.setValue(prompt);
-  await $(".agentic-chat-send").click();
+  await $('[data-ac="send"]').click();
 }
 
 function readApiKey(): string | undefined {
@@ -64,14 +64,14 @@ async function configureProvider(config: { apiKey: string; baseUrl: string; mode
 }
 
 async function renderedAssistantText(): Promise<string> {
-  const elements = await browser.$$(".agentic-chat-assistant .agentic-chat-text");
+  const elements = await browser.$$('[data-ac="assistant-text"]');
   const text: string[] = [];
   for (const element of elements) text.push(await element.getText());
   return text.join("\n");
 }
 
 async function renderedErrorText(): Promise<string> {
-  const elements = await browser.$$(".agentic-chat-error");
+  const elements = await browser.$$('[data-ac="turn-error"]');
   const text: string[] = [];
   for (const element of elements) text.push(await element.getText());
   return text.join("\n").trim();
@@ -118,7 +118,7 @@ describe("agentic-chat OpenAI-compatible live", function () {
       'Use the read tool to read "Welcome.md". After the tool result, reply exactly: tool-ok',
     );
 
-    await $(".agentic-chat-step.is-done").waitForExist({ timeout: 120_000 });
+    await $('[data-ac="step"][data-ac-state="done"]').waitForExist({ timeout: 120_000 });
     const text = await waitForAssistantText(/\btool-ok\b/i, "OpenWebUI tool flow did not render tool-ok");
     await expect(text).toMatch(/\btool-ok\b/i);
   });

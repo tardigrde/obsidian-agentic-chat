@@ -5,7 +5,7 @@ import { clearScriptedTurns, installScriptedTurns, releaseScriptedTurns } from "
 
 async function openChat(): Promise<void> {
   await browser.executeObsidianCommand("agentic-chat:open-chat");
-  await $(".agentic-chat-view").waitForExist();
+  await $('[data-ac="view"]').waitForExist();
 }
 
 async function configureSafe(): Promise<void> {
@@ -32,8 +32,8 @@ async function configureSafe(): Promise<void> {
 async function sendPrompt(text: string): Promise<void> {
   await waitForComposerReady();
   await browser.execute((msg) => {
-    const textarea = document.querySelector<HTMLTextAreaElement>(".agentic-chat-input");
-    const send = document.querySelector<HTMLButtonElement>(".agentic-chat-send");
+    const textarea = document.querySelector<HTMLTextAreaElement>('[data-ac="composer-input"]');
+    const send = document.querySelector<HTMLButtonElement>('[data-ac="send"]');
     if (!textarea || !send) throw new Error("composer missing");
     textarea.value = msg;
     textarea.dispatchEvent(new Event("input", { bubbles: true }));
@@ -43,19 +43,19 @@ async function sendPrompt(text: string): Promise<void> {
 
 async function selectTab(index: number): Promise<void> {
   await browser.execute((target) => {
-    document.querySelectorAll<HTMLElement>(".agentic-chat-tab")[target]?.click();
+    document.querySelectorAll<HTMLElement>('[data-ac="tab"]')[target]?.click();
   }, index);
   await browser.waitUntil(
     async () =>
       await browser.execute((target) => {
-        return document.querySelectorAll<HTMLElement>(".agentic-chat-tab")[target]?.classList.contains("is-active");
+        return document.querySelectorAll<HTMLElement>('[data-ac="tab"]')[target]?.classList.contains("is-active");
       }, index),
     { timeout: 2_000 },
   );
 }
 
 async function waitForComposerIdle(): Promise<void> {
-  await browser.waitUntil(async () => (await $(".agentic-chat-send").getText()).trim() === "Send", {
+  await browser.waitUntil(async () => (await $('[data-ac="send"]').getAttribute("data-ac-state")) === "send", {
     timeout: 10_000,
     timeoutMsg: "the composer did not become idle",
   });
@@ -114,7 +114,7 @@ describe("two-tab Stop", function () {
     await selectTab(0);
     await waitForComposerIdle();
     await sendPrompt("start tab one slow turn");
-    const tabOneStop = await $(".agentic-chat-stop");
+    const tabOneStop = await $('[data-ac="stop"]');
     await tabOneStop.waitForDisplayed({ timeout: 5_000, timeoutMsg: "tab one never started streaming" });
     // Tab one's call takes the first scripted turn; tab two's call takes the next.
     await browser.waitUntil(
@@ -127,11 +127,11 @@ describe("two-tab Stop", function () {
 
     // Create the second tab after tab one's call is in flight, so its service
     // starts at the second scripted turn instead of reusing the first.
-    await browser.execute(() => document.querySelector<HTMLElement>(".agentic-chat-tab-add")?.click());
+    await browser.execute(() => document.querySelector<HTMLElement>('[data-ac="tab-add"]')?.click());
     await browser.waitUntil(
       async () =>
         ((await browser.execute(
-          () => document.querySelectorAll<HTMLElement>(".agentic-chat-tab").length,
+          () => document.querySelectorAll<HTMLElement>('[data-ac="tab"]').length,
         )) as unknown as number) >= 2,
       { timeout: 5_000 },
     );
@@ -147,7 +147,7 @@ describe("two-tab Stop", function () {
       { timeout: 5_000, timeoutMsg: "both tabs did not have a turn in flight" },
     );
 
-    const stop = await $(".agentic-chat-stop");
+    const stop = await $('[data-ac="stop"]');
     await stop.waitForDisplayed({ timeout: 5_000 });
     await stop.click();
 

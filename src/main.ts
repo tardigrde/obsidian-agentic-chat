@@ -26,14 +26,12 @@ import {
 } from "./mcp/oauth";
 import { ObsidianSessionManager, SessionWriteRegistry } from "./session/session-manager";
 import { initPricingCache } from "./llm/pricing-cache";
-import { ApprovalModal } from "./ui/approval-modal";
 import { shouldCollapseLeftSidebar } from "./ui/chat-placement";
 import { ChatView } from "./ui/chat-view";
 import { buildQuickAskTarget } from "./ui/quick-ask";
 import { QuickAskModal } from "./ui/quick-ask-modal";
 import { ObsidianSecretStore, hydrateSettingsSecrets, settingsForStorage } from "./secrets/secret-store";
 import { migrateLegacyPlaintextSecrets, withUnmigratedSecrets } from "./secrets/legacy-plaintext";
-import { applyRememberedApprovalChoice } from "./agent/approval-memory";
 import { PluginService } from "./plugins/service";
 import { type AgentMode, resolveModeTransition, validateModeTransition } from "./agent/modes";
 import { SettingsStore } from "./settings-store";
@@ -140,7 +138,7 @@ export default class AgenticChatPlugin extends Plugin {
       app: this.app,
       getSettings: () => this.settings,
       sessionManager,
-      confirmToolCall: options.confirmToolCall ?? ((request, signal) => this.confirmToolCall(request, signal)),
+      confirmToolCall: options.confirmToolCall ?? ((request) => this.denyWithoutChatView(request)),
       askUser: options.askUser,
       streamFn: createWindowE2EStreamFn({ enabled: __AGENTIC_CHAT_ENABLE_E2E_STREAM__ }),
       loopGuardDisabled: __AGENTIC_CHAT_ENABLE_E2E_STREAM__,
@@ -225,11 +223,12 @@ export default class AgenticChatPlugin extends Plugin {
     }).open();
   }
 
-  /** Show the approval dialog and persist a remembered allow/deny choice after the user decides. */
-  private async confirmToolCall(request: ToolApprovalRequest, signal?: AbortSignal): Promise<UserApprovalChoice> {
-    const choice = await new ApprovalModal(this.app, request).ask(signal);
-    await this.settingsStore.update((settings) => applyRememberedApprovalChoice(settings, request.toolName, choice));
-    return choice;
+  /**
+   * Approvals render inline in the chat tab that asked. A service built
+   * without a chat view has no place to ask, so the call is denied.
+   */
+  private async denyWithoutChatView(request: ToolApprovalRequest): Promise<UserApprovalChoice> {
+    return { approved: false, remember: false, reason: `No chat view is open to approve "${request.label}".` };
   }
 
   async activateView(): Promise<void> {

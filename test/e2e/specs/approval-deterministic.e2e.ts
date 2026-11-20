@@ -2,6 +2,15 @@ import { browser, expect, $ } from "@wdio/globals";
 import { after, afterEach, before, beforeEach, describe, it } from "mocha";
 import { waitForComposerReady } from "../support/layout";
 import {
+  allowApproval,
+  alwaysAllowApproval,
+  denyApproval,
+  dismissOpenApproval,
+  lastApprovalOutcome,
+  PENDING_APPROVAL,
+  waitForApproval,
+} from "../support/chat";
+import {
   installScriptedTurns,
   releaseScriptedTurns,
   scriptedCallLabels,
@@ -25,7 +34,7 @@ const STOP_APPROVAL_NOTE_PATH = "E2E-Stop-Approval.md";
 
 async function openChat(): Promise<void> {
   await browser.executeObsidianCommand("agentic-chat:open-chat");
-  await $(".agentic-chat-view").waitForExist();
+  await $('[data-ac="view"]').waitForExist();
   await waitForComposerReady();
 }
 
@@ -33,10 +42,10 @@ async function sendPrompt(prompt: string): Promise<void> {
   // A missed first send shifts every later scripted turn by one, so a flaky
   // click here fails the whole spec. Wait until the composer can be hit.
   await waitForComposerReady();
-  const input = await $(".agentic-chat-input");
+  const input = await $('[data-ac="composer-input"]');
   await input.click();
   await input.setValue(prompt);
-  await $(".agentic-chat-send").click();
+  await $('[data-ac="send"]').click();
 }
 
 async function runSlashCommand(command: string): Promise<void> {
@@ -112,50 +121,6 @@ async function noteExists(path: string): Promise<boolean> {
   return await browser.executeObsidian(async ({ app }, notePath) => app.vault.getAbstractFileByPath(notePath) != null, path);
 }
 
-async function allowApproval(): Promise<void> {
-  const modal = await $(".agentic-chat-approval");
-  await modal.waitForExist({ timeout: 10_000 });
-  const allow = await modal.$("button=Allow");
-  await allow.waitForExist({ timeout: 5_000 });
-  await allow.click();
-  await modal.waitForExist({ reverse: true, timeout: 5_000 });
-}
-
-async function denyApproval(): Promise<void> {
-  const modal = await $(".agentic-chat-approval");
-  await modal.waitForExist({ timeout: 10_000 });
-  const deny = await modal.$("button=Deny");
-  await deny.waitForExist({ timeout: 5_000 });
-  await deny.click();
-  // Deny is two-step: the first click arms the optional reason field.
-  const confirmDeny = await modal.$("button=Confirm Deny");
-  await confirmDeny.waitForExist({ timeout: 5_000 });
-  // While the deny is armed, the title must say what Confirm will do.
-  const title = await browser.execute(() => document.querySelector(".agentic-chat-approval")?.closest(".modal")?.querySelector(".modal-title")?.textContent ?? "");
-  expect(title).toMatch(/^Deny "/);
-  await confirmDeny.click();
-  await modal.waitForExist({ reverse: true, timeout: 5_000 });
-}
-
-async function clickRememberApprovalChoice(): Promise<void> {
-  const modal = await $(".agentic-chat-approval");
-  await modal.waitForExist({ timeout: 10_000 });
-  await browser.execute(() => {
-    const root = document.querySelector<HTMLElement>(".agentic-chat-approval");
-    if (!root) throw new Error("approval modal not found");
-    const setting = Array.from(root.querySelectorAll<HTMLElement>(".setting-item")).find(
-      (item) => item.querySelector<HTMLElement>(".setting-item-name")?.innerText.trim() === "Don't ask again for this tool",
-    );
-    if (!setting) throw new Error("remember approval setting not found");
-    const toggle = setting.querySelector<HTMLElement>(".checkbox-container");
-    const input = setting.querySelector<HTMLInputElement>("input[type='checkbox']");
-    if (toggle) toggle.click();
-    else if (input) input.click();
-    else throw new Error("remember approval toggle not found");
-  });
-  await modal.waitForExist({ timeout: 2_000 });
-}
-
 async function perToolApproval(toolName: string): Promise<string | undefined> {
   return await browser.executeObsidian(async ({ app }, name) => {
     const plugin = (app as unknown as {
@@ -170,23 +135,6 @@ async function perToolApproval(toolName: string): Promise<string | undefined> {
   }, toolName);
 }
 
-async function dismissOpenApproval(): Promise<void> {
-  const modal = await $(".agentic-chat-approval");
-  if (!(await modal.isExisting())) return;
-  const deny = await modal.$("button=Deny");
-  if (await deny.isExisting()) {
-    await deny.click();
-    const confirm = await modal.$("button=Confirm Deny");
-    if (await confirm.isExisting()) await confirm.click();
-  }
-  await modal.waitForExist({ reverse: true, timeout: 5_000 }).catch(() => {});
-  if (await modal.isExisting()) {
-    const stop = await modal.$("button=Stop turn");
-    if (await stop.isExisting()) await stop.click();
-  }
-  await modal.waitForExist({ reverse: true, timeout: 5_000 }).catch(() => {});
-}
-
 describe("agentic-chat deterministic approvals", function () {
   before(async function () {
     await cleanupNotes();
@@ -199,18 +147,18 @@ describe("agentic-chat deterministic approvals", function () {
   });
 
   beforeEach(async function () {
-    expect(await $(".agentic-chat-approval").isExisting()).toBe(false);
+    expect(await $(PENDING_APPROVAL).isExisting()).toBe(false);
     await releaseScriptedTurns(false);
   });
 
   afterEach(async function () {
     // Unblock a held turn even when the test fails before its edit step.
     await releaseScriptedTurns(true);
-    // A failed test can leave the approval modal open. Close it here so the
+    // A failed test can leave an approval card pending. Settle it here so the
     // next test fails on its own assertion, not on an intercepted click.
     await dismissOpenApproval();
     await browser
-      .waitUntil(async () => !(await $(".agentic-chat-stop").isDisplayed()), { timeout: 5_000 })
+      .waitUntil(async () => !(await $('[data-ac="stop"]').isDisplayed()), { timeout: 5_000 })
       .catch(() => {});
   });
 
@@ -273,7 +221,9 @@ describe("agentic-chat deterministic approvals", function () {
         removeBackground: removeStyle.backgroundColor,
       };
     });
-    expect(diffStyles.addColor).not.toBe(diffStyles.removeColor);
+    // As in the design: normal text on both tints (status-coloured text on its
+    // own tint fails contrast); the tint and the +/- carry the meaning.
+    expect(diffStyles.addColor).toBe(diffStyles.removeColor);
     expect(diffStyles.addBackground).not.toBe(diffStyles.removeBackground);
     await allowApproval();
 
@@ -304,7 +254,7 @@ describe("agentic-chat deterministic approvals", function () {
     await sendPrompt("scripted denied write");
     await denyApproval();
 
-    await expect($(".agentic-chat-messages")).toHaveText(/The denied write was not applied/);
+    await expect($('[data-ac="messages"]')).toHaveText(/The denied write was not applied/);
     expect(await noteExists(DENIED_NOTE_PATH)).toBe(false);
     expect(await scriptedCallLabels()).toEqual(["denied write call", "denied write final"]);
   });
@@ -320,48 +270,42 @@ describe("agentic-chat deterministic approvals", function () {
     await sendPrompt("# Prefer concise vault updates.");
     await allowApproval();
     await browser.waitUntil(
-      async () => (await $(".agentic-chat-messages").getText()).includes("Saved the standing instruction."),
+      async () => (await $('[data-ac="messages"]').getText()).includes("Saved the standing instruction."),
       { timeout: 8_000, timeoutMsg: "instruction capture final response did not render" },
     );
 
     expect(await readNote(INSTRUCTIONS_PATH)).toBe(INSTRUCTIONS_BODY);
   });
 
-  it("keeps don't ask again passive and remembers deny after the final choice", async function () {
+  it("Always allow remembers allow for the tool, so the next write does not ask", async function () {
     await installScriptedTurns([
-      toolTurn("remember deny write call", "e2e-remember-deny-write", "write", {
+      toolTurn("remember allow write call", "e2e-remember-allow-write", "write", {
         path: REMEMBER_DENY_PATH,
-        content: "should not be written",
+        content: "first remembered write",
       }),
-      textTurn("remember deny final", "Remembered the deny decision."),
-      toolTurn("remember deny second call", "e2e-remember-deny-write-second", "write", {
+      textTurn("remember allow final", "Remembered the allow decision."),
+      toolTurn("remember allow second call", "e2e-remember-allow-write-second", "write", {
         path: REMEMBER_DENY_SECOND_PATH,
-        content: "should not be written either",
+        content: "second write without asking",
       }),
-      textTurn("remember deny second final", "Still denied without asking."),
+      textTurn("remember allow second final", "Wrote again without asking."),
     ]);
-    await sendPrompt("scripted remember denied write");
-    await clickRememberApprovalChoice();
-    expect(await $(".agentic-chat-approval").isExisting()).toBe(true);
-    await denyApproval();
+    await sendPrompt("scripted remember allowed write");
+    await alwaysAllowApproval();
+    expect(await lastApprovalOutcome()).toBe("always");
 
-    await browser.waitUntil(async () => (await perToolApproval("write")) === "deny", {
+    await browser.waitUntil(async () => (await perToolApproval("write")) === "allow", {
       timeout: 5_000,
-      timeoutMsg: "remembered deny policy was not saved for write",
+      timeoutMsg: "remembered allow policy was not saved for write",
     });
-    expect(await noteExists(REMEMBER_DENY_PATH)).toBe(false);
+    await expect($('[data-ac="messages"]')).toHaveText(/Remembered the allow decision/);
 
-    await sendPrompt("scripted remember denied write again");
-    // The remembered deny answers without a modal; wait for the final turn.
-    await expect($(".agentic-chat-messages")).toHaveText(/Still denied without asking/);
-    expect(await $(".agentic-chat-approval").isExisting()).toBe(false);
-    expect(await scriptedCallLabels()).toEqual([
-      "remember deny write call",
-      "remember deny final",
-      "remember deny second call",
-      "remember deny second final",
-    ]);
-    expect(await noteExists(REMEMBER_DENY_SECOND_PATH)).toBe(false);
+    await sendPrompt("scripted remember allowed write again");
+    // The remembered allow answers without a card; wait for the final turn.
+    await expect($('[data-ac="messages"]')).toHaveText(/Wrote again without asking/);
+    expect(await $(PENDING_APPROVAL).isExisting()).toBe(false);
+    expect(await readNote(REMEMBER_DENY_SECOND_PATH)).toBe("second write without asking");
+    await setApproval("ask");
   });
 
   it("keeps a plain queued message editable until the active turn finishes", async function () {
@@ -371,16 +315,16 @@ describe("agentic-chat deterministic approvals", function () {
     ]);
     await sendPrompt("scripted queue initial");
     await browser.waitUntil(
-      async () => (await $(".agentic-chat-send").getText()).trim() === "Queue",
+      async () => (await $('[data-ac="send"]').getAttribute("data-ac-state")) === "queue",
       { timeout: 5_000, timeoutMsg: "send button did not switch to queue mode" },
     );
 
     await sendPrompt("queued draft before edit");
     await browser.waitUntil(
-      async () => (await $(".agentic-chat-send").getText()).trim() === "Update",
+      async () => (await $('[data-ac="send"]').getAttribute("data-ac-state")) === "update",
       { timeout: 5_000, timeoutMsg: "send button did not switch to update mode" },
     );
-    const input = await $(".agentic-chat-input");
+    const input = await $('[data-ac="composer-input"]');
     await input.setValue("queued draft after edit");
     expect(await input.getValue()).toBe("queued draft after edit");
     await browser.execute(() => {
@@ -389,10 +333,10 @@ describe("agentic-chat deterministic approvals", function () {
     });
 
     await browser.waitUntil(
-      async () => (await $(".agentic-chat-messages").getText()).includes("Queued answer used the edited draft."),
+      async () => (await $('[data-ac="messages"]').getText()).includes("Queued answer used the edited draft."),
       { timeout: 8_000, timeoutMsg: "queued scripted answer did not render" },
     );
-    const transcript = await $(".agentic-chat-messages").getText();
+    const transcript = await $('[data-ac="messages"]').getText();
     const firstPrompt = transcript.indexOf("scripted queue initial");
     const firstAnswer = transcript.indexOf("Initial queued answer.");
     const originalDraft = transcript.indexOf("queued draft before edit");
@@ -420,11 +364,11 @@ describe("agentic-chat deterministic approvals", function () {
       timeout: 10_000,
       timeoutMsg: "approved empty-folder delete did not remove the folder",
     });
-    await expect($(".agentic-chat-messages")).toHaveText(/Deleted the empty folder/);
+    await expect($('[data-ac="messages"]')).toHaveText(/Deleted the empty folder/);
     expect(await scriptedCallLabels()).toEqual(["empty folder delete call", "empty folder delete final"]);
   });
 
-  it("closes the approval modal when the user stops the turn", async function () {
+  it("resolves the approval card as stopped when the user stops the turn", async function () {
     await installScriptedTurns([
       toolTurn("stop approval call", "e2e-stop-approval", "write", {
         path: STOP_APPROVAL_NOTE_PATH,
@@ -435,15 +379,15 @@ describe("agentic-chat deterministic approvals", function () {
     await setApproval("ask");
     await sendPrompt("scripted write that will be stopped");
 
-    const modal = await $(".agentic-chat-approval");
-    await modal.waitForExist({ timeout: 10_000 });
-    const stopTurn = await modal.$("button=Stop turn");
-    await stopTurn.waitForDisplayed({ timeout: 5_000 });
-    await stopTurn.click();
+    await waitForApproval();
+    // The card is inline (no modal) and the composer's Stop is in reach.
+    expect(await $(".modal-container").isExisting()).toBe(false);
+    await $('[data-ac="stop"]').click();
 
-    await modal.waitForExist({ reverse: true, timeout: 5_000 });
+    await $(PENDING_APPROVAL).waitForExist({ reverse: true, timeout: 5_000 });
+    expect(await lastApprovalOutcome()).toBe("stopped");
     await browser.waitUntil(
-      async () => !(await $(".agentic-chat-stop").isDisplayed()),
+      async () => !(await $('[data-ac="stop"]').isDisplayed()),
       { timeout: 5_000, timeoutMsg: "the stopped turn never settled" },
     );
     await browser.waitUntil(async () => !(await noteExists(STOP_APPROVAL_NOTE_PATH)), {
@@ -453,6 +397,46 @@ describe("agentic-chat deterministic approvals", function () {
     const labels = await scriptedCallLabels();
     expect(labels).toContain("stop approval call");
     expect(labels).not.toContain("stop approval final");
+  });
+
+  it("allows with Enter and starts the deny with Esc", async function () {
+    await installScriptedTurns([
+      toolTurn("enter allow call", "e2e-enter-allow", "write", { path: WRITE_NOTE_PATH, content: "enter allowed" }),
+      textTurn("enter allow final", "Allowed by Enter."),
+      toolTurn("esc deny call", "e2e-esc-deny", "write", { path: DENIED_NOTE_PATH, content: "should not be written" }),
+      textTurn("esc deny final", "Denied by Esc."),
+    ]);
+    await setApproval("ask");
+    await sendPrompt("scripted enter allow");
+    await waitForApproval();
+    // The card takes focus when the composer is empty.
+    await browser.waitUntil(
+      async () => await browser.execute((selector) => document.activeElement === document.querySelector(selector), PENDING_APPROVAL),
+      { timeout: 3_000, timeoutMsg: "the approval card did not take focus" },
+    );
+    await browser.keys("Enter");
+    await $(PENDING_APPROVAL).waitForExist({ reverse: true, timeout: 5_000 });
+    expect(await lastApprovalOutcome()).toBe("allowed");
+    await expect($('[data-ac="messages"]')).toHaveText(/Allowed by Enter/);
+    expect(await readNote(WRITE_NOTE_PATH)).toBe("enter allowed");
+
+    await sendPrompt("scripted esc deny");
+    await waitForApproval();
+    await browser.waitUntil(
+      async () => await browser.execute((selector) => document.activeElement === document.querySelector(selector), PENDING_APPROVAL),
+      { timeout: 3_000, timeoutMsg: "the approval card did not take focus" },
+    );
+    await browser.keys("Escape");
+    await browser.waitUntil(async () => (await $(PENDING_APPROVAL).getAttribute("data-ac-state")) === "deny-armed", {
+      timeout: 3_000,
+      timeoutMsg: "Esc did not arm the deny",
+    });
+    // Focus is in the reason field; Enter there confirms the deny.
+    await browser.keys(["n", "o", "Enter"]);
+    await $(PENDING_APPROVAL).waitForExist({ reverse: true, timeout: 5_000 });
+    expect(await lastApprovalOutcome()).toBe("denied");
+    await expect($('[data-ac="messages"]')).toHaveText(/Denied by Esc/);
+    expect(await noteExists(DENIED_NOTE_PATH)).toBe(false);
   });
 
   after(async function () {

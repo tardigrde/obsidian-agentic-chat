@@ -9,6 +9,7 @@ import {
   contextReadout,
   estimateNextCostReadout,
   expectedOutputTokens,
+  type ContextLoadParts,
   type ContextOverheadCounter,
   type ContextReadout,
 } from "./readouts";
@@ -25,7 +26,7 @@ export interface AgentServiceReadoutInput {
 type AgentContextReadoutInput = Pick<
   AgentServiceReadoutInput,
   "messages" | "model" | "settings" | "systemPrompt" | "tools"
->;
+> & { parts?: ContextLoadParts };
 type AgentSessionUsageReadoutInput = Pick<AgentServiceReadoutInput, "messages" | "subagentUsage">;
 type AgentNextCostReadoutInput = Pick<
   AgentServiceReadoutInput,
@@ -42,6 +43,7 @@ export function agentContextReadout(
     systemPrompt: input.systemPrompt,
     tools: input.tools,
     reserveTokens: expectedOutputTokens(input.settings),
+    parts: input.parts,
   }, counter);
 }
 

@@ -2,9 +2,9 @@
 
 ## Sub-features
 
-- Up to three independent tabs, each with its own session and agent service.
-- Tab add, switch, close, busy dot, and needs-approval badge.
-- Header **New chat** and **Conversation history** buttons.
+- Up to five independent tabs, each with its own session and agent service.
+- Tab add, switch, close, rename (tab label), status dots, `+N` overflow menu.
+- Header **New tab** (`+`) and **Conversation history** buttons.
 - Conversation history modal: search, load, rename, delete.
 - `/new`, `/sessions`, `/sessions clear --confirm`, and `/export`.
 - Session persistence and reload from JSONL.
@@ -12,22 +12,31 @@
 
 ## How to get to it (user view)
 
-- Tab strip above the composer: click a tab to switch, `+` to add, `x` to close.
-- Header buttons at the right of the tab strip: **New chat** (square-pen) and
-  **Conversation history** (history).
+- Header row above the transcript: click a tab to switch, `+` to add, `x` (on
+  hover or focus, desktop only) to close. Left/Right/Home/End move between tabs.
+- A tab shows its number, or its label once the user names it. The label is a
+  `tab_label` entry in the session JSONL; the session name does not change.
+- Rename: double-click (desktop), long-press 500 ms (touch), or the tab menu
+  item "Rename current tab". Enter or blur saves, Esc cancels, empty clears.
+- The tab menu (`+N ▾` when tabs are hidden, `⋯` otherwise) lists hidden tabs,
+  then Rename current tab, Open from history…, and Close current tab.
+- Status dots, most urgent first: needs you, error, working, new reply.
 - Commands: `/new`, `/sessions`, `/export`.
 - Command palette: `Agentic Chat: New conversation`.
 
 ## Driving it with the probe harness
 
 ```ts
-await browser.execute(() => document.querySelector<HTMLElement>(".agentic-chat-tab-add")?.click());
-await browser.execute(() => document.querySelectorAll<HTMLElement>(".agentic-chat-tab")[1]?.click());
+await browser.execute(() => document.querySelector<HTMLElement>('[data-ac="tab-add"]')?.click());
+await browser.execute(() => document.querySelectorAll<HTMLElement>('[data-ac="tab"]')[1]?.click());
 await $(".agentic-chat-session-list").waitForExist();
 ```
 
-- Use `.agentic-chat-tab` for tabs, `.agentic-chat-tab.is-active` for the active
-  one, `.agentic-chat-tab-add` for `+`, `.agentic-chat-tab-close` for `x`.
+- Hooks: `[data-ac="tab"]` (with `is-active`, `is-overflow`, and `data-ac-state`
+  = `needs-you|error|running|unread|idle`), `tab-label`, `tab-input`, `tab-add`,
+  `tab-close`, `tab-overflow`, `tab-menu`.
+- Type into the rename input with `browser.keys`: WebDriver's `clearValue`
+  blurs the input, and blur commits the rename.
 - Open history through `/sessions` in a deterministic spec. The header history
   button has no direct helper.
 - Session rows: `.agentic-chat-session-row`, `.agentic-chat-session-main`,
@@ -40,14 +49,23 @@ await $(".agentic-chat-session-list").waitForExist();
 
 | entry point | source | proof | status |
 |---|---|---|---|
-| Tab strip renders | `src/ui/chat-view.ts#syncTabStrip` | `test/e2e/specs/smoke.e2e.ts#mounts the chat view with a reachable composer and its toolbar` | `covered` |
-| `+` adds a tab | `src/ui/chat-tabs.ts#addTab` | `test/e2e/specs/multi-tab-approval.e2e.ts#surfaces background tab approval with tab badge and session label (no auto-switch)` | `covered` |
-| Switch between tabs | `src/ui/chat-view.ts#switchToTab` | `test/e2e/specs/multi-tab-approval.e2e.ts#surfaces background tab approval with tab badge and session label (no auto-switch)` | `covered` |
-| Busy dot on a streaming tab | `src/ui/chat-view.ts#tabLabel` | no committed check | `NONE` |
-| Needs-approval tab badge | `src/ui/chat-view.ts#tabLabel` | `test/e2e/specs/multi-tab-approval.e2e.ts#surfaces background tab approval with tab badge and session label (no auto-switch)` | `covered` |
-| `x` closes a tab | `src/ui/chat-tabs.ts#onActivate` | `test/e2e/specs/multi-tab-approval.e2e.ts#clears pending modal and badge when background tab is closed` (calls `closeTab`, does not click `x`) | `partial` |
+| Tab strip renders | `src/ui/chat-view.ts#syncTabStrip` | `test/e2e/specs/tabs-v2.e2e.ts#puts the tabs in a header row above the transcript` | `covered` |
+| Rename a tab (double-click; label persists, name stays) | `src/ui/tab-strip.ts#beginRename` | `test/e2e/specs/tabs-v2.e2e.ts#renames a tab by double-click; the label survives a reload and the session name does not change` | `covered` |
+| Rename from the tab menu; Esc cancels | `src/ui/tab-strip.ts#renderMenu` | `test/e2e/specs/tabs-v2.e2e.ts#renames the current tab from the menu; Esc cancels` | `covered` |
+| Long-press rename on touch | `src/ui/tab-strip.ts#wireLongPress` | `test/e2e/specs/tabs-v2.e2e.ts#long-press renames on touch, and the close button is only in the menu there` (synthetic touch pointer event) | `partial` |
+| Five tabs, `+N` overflow menu | `src/ui/tab-strip.ts#layout` | `test/e2e/specs/tabs-v2.e2e.ts#holds five tabs; in a 360px pane the rest go into the +N menu` | `covered` |
+| Tab label is its own JSONL field | `src/session/session-manager.ts#appendTabLabel` | `test/session-tab-label.test.ts#stores the label as a tab_label entry and keeps the session name` (unit); the reload half is in `test/e2e/specs/tabs-v2.e2e.ts#renames a tab by double-click; the label survives a reload and the session name does not change` | `partial` |
+| `+` adds a tab | `src/ui/chat-tabs.ts#addTab` | `test/e2e/specs/multi-tab-approval.e2e.ts#keeps a background tab's approval in that tab with an orange dot (no auto-switch)` | `covered` |
+| Switch between tabs | `src/ui/chat-view.ts#switchToTab` | `test/e2e/specs/multi-tab-approval.e2e.ts#keeps a background tab's approval in that tab with an orange dot (no auto-switch)` | `covered` |
+| Status dot on a tab (most urgent wins) | `src/ui/tab-status.ts#tabStatus` | `test/tab-status.test.ts#picks one status per tab, most urgent first` (unit only) | `partial` |
+| Needs-you tab dot | `src/ui/tab-strip.ts#renderTab` | `test/e2e/specs/multi-tab-approval.e2e.ts#keeps a background tab's approval in that tab with an orange dot (no auto-switch)` | `covered` |
+| `+N` dot shows the most urgent hidden status | `src/ui/tab-strip.ts#renderOverflowButton` | `test/ui/tab-strip.test.ts#hidden tabs go into +N, and its dot shows the most urgent hidden status` (happy-dom, stubbed widths) | `partial` |
+| Arrow keys, Home, End move and activate (roving tabindex) | `src/ui/tab-strip.ts#onTabKey` | `test/ui/tab-strip.test.ts#Left, Right, Home, and End move and activate, wrapping at the ends`; focus ring: `test/e2e/specs/tabs-v2.e2e.ts#keyboard focus on a tab shows its ring inside the strip, not clipped` | `covered` |
+| Delete closes the focused tab | `src/ui/tab-strip.ts#onTabKey` | `test/ui/tab-strip.test.ts#Delete closes the focused tab from the keyboard (when more than one is open)` (happy-dom) | `partial` |
+| A rename follows its tab when tabs change | `src/ui/tab-strip.ts#render` | `test/ui/tab-strip.test.ts#a rename follows its tab when an earlier tab closes, and the strip does not freeze` (happy-dom) | `partial` |
+| `x` closes a tab | `src/ui/tab-strip.ts#renderTab` | `test/e2e/specs/multi-tab-approval.e2e.ts#settles the pending card and drops the dot when the background tab is closed` (calls `closeTab`, does not click `x`) | `partial` |
 | Closing the last tab starts a new conversation | `src/ui/chat-tabs.ts#closeTab` | `test/chat-view-tabs.test.ts#starts a new conversation instead of closing the only tab` (unit only) | `partial` |
-| Header New chat button | `src/ui/chat-view.ts#startNewConversation` | `test/ui/chat-sessions.test.ts#history lists the earlier conversation and loading it restores the transcript` (happy-dom) | `partial` |
+| New conversation in the active tab (`/new`, palette; the header button is gone in UI v2) | `src/ui/chat-view.ts#startNewConversation` | `test/ui/chat-sessions.test.ts#history lists the earlier conversation and loading it restores the transcript` (happy-dom) | `partial` |
 | Header history button | `src/ui/chat-view.ts#buildLayout` | `test/ui/chat-sessions.test.ts#history lists the earlier conversation and loading it restores the transcript` (happy-dom) | `partial` |
 | `/new` | `src/ui/chat-turn.ts#dispatchPrompt` | `test/session-actions.test.ts#makeActions` (unit only) | `partial` |
 | `/sessions` opens history | `src/ui/chat-turn.ts#dispatchPrompt` | `test/e2e/specs/runtime-behavior.e2e.ts#reopens, renames, and deletes persisted sessions without a model call` | `covered` |
@@ -74,7 +92,7 @@ await $(".agentic-chat-session-list").waitForExist();
 
 ## Gotchas
 
-- `MAX_TABS` is 3. The `+` control disappears at the cap.
+- `MAX_TABS` is 5. The `+` button is disabled at the cap.
 - The `x` control exists only when more than one tab is open. Closing the last
   tab resets the view to a fresh conversation instead.
 - The view does not load a session twice when another tab already has it open.
@@ -83,5 +101,5 @@ await $(".agentic-chat-session-list").waitForExist();
 - Delete removes the row before the file operation finishes. A failure restores
   the row.
 - Export needs at least one user/assistant turn and writes a Markdown note.
-- The header buttons and the tab `x` have no direct e2e helper. A proof that
-  calls `closeTab()` is not proof of the click target.
+- The tab `x` has no direct e2e helper. A proof that calls `closeTab()` is not
+  proof of the click target.

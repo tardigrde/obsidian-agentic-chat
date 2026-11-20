@@ -146,22 +146,22 @@ async function configurePlugin(config: McpE2EConfig): Promise<boolean> {
 
 async function openChat(): Promise<void> {
   await browser.executeObsidianCommand("agentic-chat:open-chat");
-  await $(".agentic-chat-view").waitForExist();
+  await $('[data-ac="view"]').waitForExist();
 }
 
 async function sendPrompt(prompt: string): Promise<void> {
-  const input = await $(".agentic-chat-input");
+  const input = await $('[data-ac="composer-input"]');
   await input.click();
   await input.setValue(prompt);
-  await $(".agentic-chat-send").click();
+  await $('[data-ac="send"]').click();
 }
 
 async function allowApproval(localToolName: string): Promise<void> {
-  const modal = await $(".agentic-chat-approval");
+  const modal = await $('[data-ac="approval"]:not(.is-resolved)');
   await modal.waitForExist({ timeout: 20_000 });
   await expect(modal).toHaveText(new RegExp(localToolName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
   await expect(modal).toHaveText(/obsidian/);
-  const allow = await modal.$("button=Allow");
+  const allow = await modal.$('[data-ac="approval-allow"]');
   await allow.waitForExist({ timeout: 5_000 });
   await allow.click();
   await modal.waitForExist({ reverse: true, timeout: 5_000 });
@@ -203,7 +203,7 @@ describe("agentic-chat live MCP over HTTPS", function () {
     if (!config) this.skip();
     await sendPrompt("call the configured secure MCP server");
     await allowApproval(localTool);
-    await expect($(".agentic-chat-messages")).toHaveText(/MCP e2e finished/);
+    await expect($('[data-ac="messages"]')).toHaveText(/MCP e2e finished/);
 
     const result = await latestMcpToolResult(localTool);
     expect(result).not.toBeNull();

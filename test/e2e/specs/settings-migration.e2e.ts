@@ -298,6 +298,6 @@ describe("agentic-chat settings migration", function () {
     expect("refreshToken" in storedOAuth).toBe(false);
 
     await browser.executeObsidianCommand("agentic-chat:open-chat");
-    await $(".agentic-chat-view").waitForExist();
+    await $('[data-ac="view"]').waitForExist();
   });
 });

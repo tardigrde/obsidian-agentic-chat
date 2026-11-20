@@ -217,6 +217,11 @@ export class AgentConversation {
     return this.options.sessionManager.renameSession(path, name);
   }
 
+  /** Set or clear the active session's tab label (not its name). */
+  async setTabLabel(label: string | undefined): Promise<void> {
+    await this.options.sessionManager.appendTabLabel(label);
+  }
+
   refreshInfoIfActive(): SessionInfo | undefined {
     if (!this.options.sessionManager.hasActiveSession()) {
       this.sessionInfo = undefined;

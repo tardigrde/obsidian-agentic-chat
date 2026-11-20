@@ -47,6 +47,20 @@ export interface SessionInfoEntry {
   name?: string;
 }
 
+/**
+ * The tab label: a short word the user gives the chat tab (double-click,
+ * long-press, or the tab menu). It is not the session name, which stays the
+ * auto name from the first prompt or a rename in history. The last entry wins;
+ * no `label` clears it, and the tab shows its number again.
+ */
+export interface TabLabelSessionEntry {
+  type: "tab_label";
+  id: string;
+  parentId: string | null;
+  timestamp: string;
+  label?: string;
+}
+
 export interface ActionAuditSessionEntry {
   type: "action_audit";
   id: string;
@@ -81,6 +95,7 @@ export type SessionEntry =
   | ModelChangeSessionEntry
   | ThinkingLevelChangeSessionEntry
   | SessionInfoEntry
+  | TabLabelSessionEntry
   | ActionAuditSessionEntry
   | FileCheckpointSessionEntry
   | LegacyPlanTrackerSessionEntry;

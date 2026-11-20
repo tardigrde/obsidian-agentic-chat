@@ -1,3 +1,4 @@
+import { noteDisplayPath } from "./activity-summary";
 import { type App, loadMermaid, Notice, setIcon, TFile } from "obsidian";
 import { openSystemUrl } from "../platform/system-browser";
 import type { AskUserDetails } from "../tools/ask-user-tool";
@@ -20,13 +21,16 @@ export const MAX_SOURCE_CHIPS = 8;
 /** Tools whose target file counts as a "source" (its contents were read into context). */
 export const SOURCE_TOOLS = new Set(["read", "get_active_note", "edit"]);
 
-/** Short display name for a source chip: the last path segment (full path in the title). */
+/**
+ * Short display name for a source chip: the last path segment, without ".md"
+ * for notes, as Obsidian shows them (full path in the title).
+ */
 export function sourceChipName(path: string): string {
   const trimmed = path.trim();
   if (!trimmed) return trimmed;
   const segments = trimmed.split("/");
   for (let i = segments.length - 1; i >= 0; i--) {
-    if (segments[i]) return segments[i];
+    if (segments[i]) return noteDisplayPath(segments[i]);
   }
   return trimmed;
 }

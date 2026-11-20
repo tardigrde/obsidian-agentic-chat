@@ -56,11 +56,14 @@ await $(".agentic-chat-send").click();
 | File context menu | `src/main.ts#registerContextMenus` | no committed check | `NONE` |
 | Files context menu (multi-select) | `src/main.ts#registerContextMenus` | no committed check | `NONE` |
 | Composer card mounts | `src/ui/chat-view.ts#buildLayout` | `test/e2e/specs/smoke.e2e.ts#mounts the chat view with a reachable composer and its toolbar` | `covered` |
-| Empty-state suggestion chips | `src/ui/chat-view.ts#renderEmptyState` | `test/ui/chat-view-states.test.ts#a suggestion chip sends its prompt` (happy-dom) | `partial` |
+| Empty state (no suggestions, removed in UI v2) | `src/ui/chat-view.ts#renderEmptyState` | `test/ui/chat-view-states.test.ts#idle: empty state, Send, no Stop, no working indicator` (happy-dom) | `partial` |
+| Attach button opens the @ picker | `src/ui/composer-controller.ts#openMentionPicker` | `test/e2e/specs/design-tokens.e2e.ts#opens the @ note picker from the attach button` | `covered` |
+| Per-answer meta (time · tokens · cost) | `src/ui/format.ts#formatTurnMeta` | `test/e2e/specs/design-tokens.e2e.ts#shows the per-answer meta in the turn actions and no global usage line` | `covered` |
+| Context ring (% only, no click) | `src/ui/chat-chrome.ts#syncContextRing` | `test/e2e/specs/smoke.e2e.ts#mounts the chat view with a reachable composer and its toolbar` | `partial` |
 | Enter sends while idle | `src/ui/chat-view.ts#buildLayout` | `test/e2e/specs/composer-paths.e2e.ts#sends with Enter while the agent is idle` | `covered` |
 | Enter steers while the agent runs | `src/ui/composer-input.ts#resolveComposerAction` | `test/e2e/specs/composer-paths.e2e.ts#steers after a successful tool call while the agent is running` | `covered` |
 | Shift+Enter inserts a newline | `src/ui/chat-view.ts#buildLayout` | `test/e2e/specs/composer-paths.e2e.ts#inserts a newline with Shift+Enter without sending` | `covered` |
-| Send button | `src/ui/chat-layout.ts#cls: ["agentic-chat-send", "mod-cta"]` | `test/e2e/specs/approval-deterministic.e2e.ts#asks before a scripted edit and undo restores the prior text` | `covered` |
+| Send button | `src/ui/chat-layout.ts#cls: ["agentic-chat-send", "agentic-chat-round", "mod-cta"]` | `test/e2e/specs/approval-deterministic.e2e.ts#asks before a scripted edit and undo restores the prior text` | `covered` |
 | ArrowUp/ArrowDown recall | `src/ui/chat-view.ts#buildLayout` | `test/composer-history.test.ts#recalls older entries with Up and swallows Up at the oldest entry without wrapping` (unit only) | `partial` |
 | Escape cancels edit | `src/ui/chat-view.ts#buildLayout` | `test/prompt-edit-state.test.ts#starts editing a prompt and restores the original draft on cancel` (unit only) | `partial` |
 | Autocomplete menu opens | `src/ui/composer-controller.ts#updateAutocomplete` | `test/e2e/specs/smoke.e2e.ts#renders the /sta autocomplete menu above the input card, fully visible` | `covered` |

@@ -19,7 +19,7 @@ The active note is attached automatically unless it is ignored, is a root standi
 
 Tool calls render inline in the transcript. You can expand them to inspect arguments, results, and timing.
 
-Mutating calls follow the approval policy. When a call is set to **ask**, the plugin shows the pending arguments and a line-level diff (red removed, green added) before anything changes.
+Mutating calls follow the approval policy. When a call is set to **ask**, an approval card appears in the chat, below the turn's activity line. It shows the change as a line-level diff (red removed, green added) and three choices: **Allow**, **Always allow** the tool, and **Deny** (with an optional reason). Enter allows; Esc starts the deny. If the approval is in another tab, that tab gets an orange dot and the card waits there. Stop resolves a waiting card as stopped.
 
 ## Safe and YOLO modes
 
@@ -33,7 +33,7 @@ Click the model pill in the composer or run `/model`. Shift-click (or Shift+Ente
 
 ## Sessions and long chats
 
-Each chat is a session, saved as JSONL in the plugin folder and resumed on reload. Session tabs sit above the composer. `/new` starts one; `/sessions` browses, searches, reopens, renames, and deletes them.
+Each chat is a session, saved as JSONL in the plugin folder and resumed on reload. Tabs sit in the header row at the top, up to five. A tab shows its number until you name it: double-click it (long-press on a phone), or use **Rename current tab** in the tab menu. The tab name is separate from the session name in history. Tabs that do not fit go into the `+N` menu. `/new` starts a new conversation in the current tab; `/sessions` browses, searches, reopens, renames, and deletes sessions.
 
 Long sessions compact older turns automatically before the context window fills. Run `/compact [instructions]` to summarize now; the optional text tells the summary what to keep. `/usage` shows tokens and cost.
 
@@ -58,7 +58,7 @@ Run `/export` to save the current conversation as a Markdown note in the vault.
 
 ## Reasoning effort
 
-Set your reasoning effort with `/effort [level]` (for example, `/effort high`). The choice persists across messages. Change it with `/effort` again or with the effort knob in the composer.
+Set your reasoning effort with `/effort [level]` (for example, `/effort high`). The choice persists across messages. Change it with `/effort` again or click the effort value in the model pill (Alt+click on the pill also cycles it).
 
 ## Undo and retry
 

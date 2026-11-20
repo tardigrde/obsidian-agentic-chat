@@ -82,7 +82,7 @@ Include the output of `/status` and `/doctor`.
 | Term | Meaning |
 | --- | --- |
 | **Agent** | The model plus a loop: it can call tools, read the results, and continue until the task is done. |
-| **Tool call / step card** | One action the agent takes (`read`, `edit`, `rename`, …), shown inline with arguments, result, and timing. |
+| **Tool call / step** | One action the agent takes (`read`, `edit`, `rename`, …). Each turn has one activity line (`Read 4 notes, edited 1`); click it to see each step with its arguments, result, and timing. |
 | **Approval gate** | The allow / ask / deny policy for mutating tools, set globally or per tool. **Deny** always wins. |
 | **Safe / YOLO** | Composer switch. Safe follows your approval policy; YOLO auto-approves mutating tools for the session, except recursive folder deletes and `create_skill`. |
 | **Steering** | Sending a message while the agent works. It arrives after the current model turn. |
@@ -94,6 +94,6 @@ Include the output of `/status` and `/doctor`.
 | **Artifact** | A large tool output (MCP result, imported document) stored outside the chat. The agent reads slices with the `artifact` tool, which keeps context small. |
 | **Deferred tool** | A tool listed in the prompt but loaded only when needed (`search_tools`): MCP tools, `import_document`, `create_skill`. |
 | **Compaction** | Summarizing older turns before the context window fills (auto at 80%, or `/compact`). |
-| **Context window** | How many tokens the model can see at once. The composer bar shows how full it is. |
+| **Context window** | How many tokens the model can see at once. The ring in the composer shows how full it is; hover it for the breakdown. |
 | **Effort** | Reasoning effort (`off` … `xhigh`) for models that support it. More effort means more tokens. |
 | **ZDR** | Zero data retention: an OpenRouter routing rule that sends requests only to endpoints that store nothing. On by default. |

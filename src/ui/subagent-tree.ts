@@ -58,8 +58,13 @@ export function renderSubagentChildren(
   for (let i = 0; i < children.length; i++) {
     const child = children[i];
     const childRow = list.children[i] as HTMLDetailsElement;
+    // Open a running child, close a settled one, but only when its status
+    // changes: a progress tick keeps the user's own open/closed choice.
+    if (childRow.dataset.status !== child.status) {
+      childRow.dataset.status = child.status;
+      childRow.open = child.status === "running";
+    }
     childRow.className = `agentic-chat-subagent is-${child.status}`;
-    childRow.open = child.status === "running";
     renderSubagentHeader(childRow, child, onStopSubagentChild);
     renderSubagentBody(childRow, child);
   }
@@ -70,12 +75,15 @@ export function renderSubagentChildren(
 }
 
 function renderSubagentAggregate(card: HTMLElement, children: SubagentChildStatus[]): void {
-  // `card` is the step BODY; the status pill lives in the step HEADER, which is
-  // a child of the step card (the body's parent).
-  const header = card.parentElement?.querySelector<HTMLElement>(".agentic-chat-step-header");
+  // `card` is the row's detail; the status pill lives in the row's head (a
+  // sibling of the detail), before the time.
+  const header = card.parentElement?.querySelector<HTMLElement>(".agentic-chat-step-head");
   if (!header) return;
   let pill = header.querySelector<HTMLElement>(".agentic-chat-step-status");
-  pill ??= header.createSpan({ cls: "agentic-chat-step-status" });
+  if (!pill) {
+    pill = header.createSpan({ cls: "agentic-chat-step-status" });
+    header.insertBefore(pill, header.querySelector(".agentic-chat-step-time"));
+  }
   const running = children.some((child) => child.status === "running");
   const queued = !running && children.some((child) => child.status === "queued");
   const failed = children.some((child) => child.status === "error");

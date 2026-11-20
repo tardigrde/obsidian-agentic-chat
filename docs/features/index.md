@@ -1,12 +1,12 @@
 # Feature map
 
-Agentic Chat is a sidebar chat panel (`ItemView`) with streaming answers, inline tool-call step cards, session tabs, and approval-gated vault edits.
+Agentic Chat is a sidebar chat panel (`ItemView`) with streaming answers, one activity line per turn (click it to see each step), session tabs, and approval-gated vault edits.
 
 ## Core chat
 
 - Native Obsidian `ItemView` in the sidebar.
 - Streaming assistant output.
-- Inline tool-call step cards.
+- One activity line per turn; click it to see each tool step.
 - Reasoning tokens in a collapsible section when the model provides them.
 - Obsidian-style Markdown rendering, including callouts and Mermaid diagrams.
 - Session tabs, history browsing, rename, delete, export, and clear actions.

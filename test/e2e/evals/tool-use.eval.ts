@@ -118,12 +118,12 @@ async function executeRun(evalCase: ToolUseCase, planned: PlannedRun): Promise<R
     // starts. The new session file is the only one that may appear.
     sessionBaseline = await listSessionPaths();
     await browser.executeObsidianCommand("agentic-chat:new-conversation");
-    await $(".agentic-chat-empty").waitForExist({ timeout: 30_000 });
+    await $('[data-ac="empty"]').waitForExist({ timeout: 30_000 });
     await sendPrompt(evalCase.prompt);
     // The turn-end wait passes while Stop is still hidden, so first wait for
     // this run's assistant bubble (the transcript was empty after
     // new-conversation). A slow provider can take more than 30 s to start.
-    await $(".agentic-chat-assistant").waitForExist({ timeout: 60_000 });
+    await $('[data-ac="assistant-message"]').waitForExist({ timeout: 60_000 });
     await waitForTurnOrAskUser(plan.turn.timeoutMs);
     await endTurn();
   } catch (caught) {
@@ -208,12 +208,12 @@ function writeRecord(record: RunRecord): void {
 
 async function openChat(): Promise<void> {
   await browser.executeObsidianCommand("agentic-chat:open-chat");
-  await $(".agentic-chat-view").waitForExist();
+  await $('[data-ac="view"]').waitForExist();
 }
 
 /** A settings popout or a closed tab can leave the chat view gone; reopen it. */
 async function openChatIfNeeded(): Promise<void> {
-  if (await $(".agentic-chat-view").isExisting().catch(() => false)) return;
+  if (await $('[data-ac="view"]').isExisting().catch(() => false)) return;
   await openChat();
 }
 
@@ -603,8 +603,8 @@ async function listSessionPaths(): Promise<string[]> {
 async function waitForTurnOrAskUser(timeoutMs: number): Promise<void> {
   await browser.waitUntil(
     async () => {
-      const stopVisible = await $(".agentic-chat-stop").isDisplayed().catch(() => false);
-      const askUserOpen = await $(".agentic-chat-ask-user").isExisting().catch(() => false);
+      const stopVisible = await $('[data-ac="stop"]').isDisplayed().catch(() => false);
+      const askUserOpen = await $('[data-ac="ask-user"]').isExisting().catch(() => false);
       return askUserOpen || !stopVisible;
     },
     { timeout: timeoutMs, timeoutMsg: "turn did not finish" },
@@ -620,7 +620,7 @@ async function endTurn(): Promise<void> {
     await browser.keys("Escape");
     await browser.pause(200);
   }
-  const stop = await $(".agentic-chat-stop");
+  const stop = await $('[data-ac="stop"]');
   if (!(await stop.isDisplayed().catch(() => false))) return;
   try {
     await stop.click();

@@ -1,10 +1,13 @@
 import type { AgentEvent } from "@earendil-works/pi-agent-core";
-import { setIcon } from "obsidian";
+import { Notice } from "obsidian";
 import type { AgentService } from "../agent/agent-service";
 import type { ToolApprovalRequest, UserApprovalChoice } from "../agent/tool-call-controller";
 import type { AskUserRequest } from "../tools/ask-user-tool";
-import type { ApprovalModal } from "./approval-modal";
+import type { ApprovalCard } from "./approval-card";
 import { freshChatTabState, type ChatTabWorkingState } from "./chat-tab-state";
+import { TabStrip, type TabHeaderElements, type TabView } from "./tab-strip";
+import { tabStatus } from "./tab-status";
+import { errorMessage } from "../utils/errors";
 import { restoreUndeliveredText, UNDELIVERED_STEER_STATUS } from "./composer-input";
 
 /** One open conversation in the leaf: its own agent service + saved UI state. */
@@ -12,12 +15,23 @@ export interface ChatTab {
   service: AgentService;
   unsubscribe: () => void;
   state: ChatTabWorkingState;
-  needsApproval?: boolean;
-  pendingApprovalModal?: ApprovalModal;
+  /** A background turn finished and the user has not looked at it yet. */
+  unread?: boolean;
+  /**
+   * Approval cards waiting in this tab's transcript. Parallel tool calls (MCP
+   * tools run in parallel) can ask at once, so this is a list, not one slot.
+   */
+  pendingApprovals?: ApprovalCard[];
+  /**
+   * Approval cards that settled while this tab was in the background (a Stop,
+   * an abort, the spend cap): shown once on switch-back, so the user sees
+   * that an approval was asked and how it ended.
+   */
+  unseenApprovals?: ApprovalCard[];
 }
 
-/** Maximum independent sessions ("tabs") in one chat leaf. */
-export const MAX_TABS = 3;
+/** Maximum independent sessions ("tabs") in one chat leaf. Each tab owns an AgentService. */
+export const MAX_TABS = 5;
 
 export interface ChatTabsDeps {
   createService: (handlers: {
@@ -29,7 +43,8 @@ export interface ChatTabsDeps {
   onActiveEvent: (event: AgentEvent) => void;
   onBackgroundFinished: (tabNumber: number) => void;
   isViewClosed: () => boolean;
-  container: () => HTMLElement | undefined;
+  header: () => TabHeaderElements | undefined;
+  openHistory: () => void;
   composerValue: () => string;
   setComposerValueQuiet: (value: string) => void;
   setStatus: (text: string) => void;
@@ -49,8 +64,14 @@ export interface ChatTabsDeps {
  * composer draft in and out of the textarea.
  */
 export class ChatTabs {
+  /** A stable key per open tab, so a rename follows the tab, not its index. */
+  private readonly tabKeys = new WeakMap<ChatTab, string>();
+  private nextTabKey = 0;
+
   private tabs: ChatTab[] = [];
   private activeIndex = 0;
+  private strip: TabStrip | null = null;
+  private stripHeader: TabHeaderElements | null = null;
 
   constructor(private readonly deps: ChatTabsDeps) {}
 
@@ -130,6 +151,7 @@ export class ChatTabs {
     this.deps.prepareSwitch();
     this.parkDraft();
     this.activeIndex = index;
+    this.tabs[index].unread = false;
     this.restoreDraft();
     this.deps.renderActiveTab();
   }
@@ -158,7 +180,7 @@ export class ChatTabs {
     if (closingActive) this.deps.endEditing();
     const [tab] = this.tabs.splice(index, 1);
     tab.unsubscribe();
-    tab.pendingApprovalModal?.close();
+    for (const card of tab.pendingApprovals ?? []) card.stop();
     tab.service.dispose();
     if (index < this.activeIndex) {
       this.activeIndex -= 1;
@@ -172,61 +194,64 @@ export class ChatTabs {
     this.syncTabStrip();
   }
 
+  /** The tab's name for notices: its label, else the session name. */
   tabLabel(tab: ChatTab): string {
     const info = tab.service.getSessionInfo();
-    return info?.name?.trim() || "New chat";
+    return info?.tabLabel?.trim() || info?.name?.trim() || "New chat";
   }
 
-  /** Activate `el` on click and on Enter/Space, so non-button controls are keyboard-usable. */
-  private onActivate(el: HTMLElement, handler: () => void, stopPropagation = false): void {
-    el.addEventListener("click", (event) => {
-      if (stopPropagation) event.stopPropagation();
-      handler();
-    });
-    el.addEventListener("keydown", (event) => {
-      if (event.key !== "Enter" && event.key !== " ") return;
-      event.preventDefault();
-      if (stopPropagation) event.stopPropagation();
-      handler();
-    });
-  }
-
-  /** Render the tab pills + add button, reflecting active/busy state. */
-  syncTabStrip(): void {
-    const tabsEl = this.deps.container();
-    if (!tabsEl) return;
-    tabsEl.empty();
-    this.tabs.forEach((tab, index) => {
-      const active = index === this.activeIndex;
-      const pill = tabsEl.createDiv({
-        cls: "agentic-chat-tab",
-        attr: { role: "tab", tabindex: "0", "aria-selected": String(active), "aria-label": this.tabLabel(tab), title: this.tabLabel(tab) },
-      });
-      pill.toggleClass("is-active", active);
-      pill.createSpan({ cls: "agentic-chat-tab-num", text: String(index + 1) });
-      if (tab.service.isStreaming()) pill.createSpan({ cls: "agentic-chat-tab-busy", attr: { "aria-hidden": "true" } });
-      if (tab.needsApproval) {
-        pill.addClass("is-needs-approval");
-        pill.setAttr("title", `${this.tabLabel(tab)} — needs approval: click to review`);
-      }
-      this.onActivate(pill, () => void this.switchToTab(index));
-      if (this.tabs.length > 1) {
-        const close = pill.createSpan({
-          cls: "agentic-chat-tab-close",
-          attr: { role: "button", tabindex: "0", "aria-label": "Close tab" },
-        });
-        setIcon(close, "x");
-        this.onActivate(close, () => this.closeTab(index), true);
-      }
-    });
-    if (this.tabs.length < MAX_TABS) {
-      const add = tabsEl.createDiv({
-        cls: "agentic-chat-tab-add",
-        attr: { role: "button", tabindex: "0", "aria-label": "New tab", title: "New tab" },
-      });
-      setIcon(add, "plus");
-      this.onActivate(add, () => void this.addTab());
+  /** Rename tab `index` (set or clear its label). The session name stays. */
+  async renameTab(index: number, label: string | undefined): Promise<void> {
+    const tab = this.tabs[index];
+    if (!tab) return;
+    try {
+      await tab.service.setTabLabel(label);
+    } catch (error) {
+      new Notice(`Could not rename the tab: ${errorMessage(error)}`);
     }
+    this.syncTabStrip();
+  }
+
+  private ensureStrip(): TabStrip | null {
+    const header = this.deps.header();
+    if (!header) return null;
+    if (this.strip && this.stripHeader === header) return this.strip;
+    this.strip?.dispose();
+    this.stripHeader = header;
+    this.strip = new TabStrip(header, {
+      activate: (index) => void this.switchToTab(index),
+      close: (index) => this.closeTab(index),
+      rename: (index, label) => void this.renameTab(index, label),
+      openHistory: () => this.deps.openHistory(),
+    });
+    return this.strip;
+  }
+
+  /** Render the header tabs: number or label, status dot, overflow. */
+  syncTabStrip(): void {
+    const strip = this.ensureStrip();
+    if (!strip) return;
+    const views: TabView[] = this.tabs.map((tab, index) => {
+      const info = tab.service.getSessionInfo();
+      const active = index === this.activeIndex;
+      let key = this.tabKeys.get(tab);
+      if (key === undefined) {
+        key = `tab-${(this.nextTabKey += 1)}`;
+        this.tabKeys.set(tab, key);
+      }
+      return {
+        key,
+        label: info?.tabLabel,
+        sessionName: info?.name,
+        status: tabStatus({
+          needsApproval: (tab.pendingApprovals?.length ?? 0) > 0,
+          streaming: tab.service.isStreaming(),
+          error: !active && !!tab.service.getError(),
+          unread: !active && !!tab.unread,
+        }),
+      };
+    });
+    strip.render(views, this.activeIndex, this.tabs.length < MAX_TABS, MAX_TABS);
   }
 
   private handleTabEvent(tab: ChatTab, event: AgentEvent): void {
@@ -236,6 +261,7 @@ export class ChatTabs {
     }
     // A background tab finishing while you're viewing another: surface it.
     if (event.type === "agent_end") {
+      tab.unread = true;
       this.deps.onBackgroundFinished(this.tabs.indexOf(tab) + 1);
     }
     this.syncTabStrip();
@@ -280,5 +306,8 @@ export class ChatTabs {
   clear(): void {
     this.tabs = [];
     this.activeIndex = 0;
+    this.strip?.dispose();
+    this.strip = null;
+    this.stripHeader = null;
   }
 }

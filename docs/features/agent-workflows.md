@@ -79,7 +79,7 @@ window, the role's model (or the parent's), and only the tools in its allowlist.
   with a cap. Children cannot spawn children.
 - **Approval.** Each child tool call still passes through the parent's approval
   gate.
-- **UI and cost.** A dispatch shows a step card with each child's live status;
+- **UI and cost.** A dispatch shows a step row in the activity line with each child's live status and a Stop per running child;
   click a row for its summary. Child tokens and cost add to the session total.
 - **Timeout.** *Advanced → Subagents → Subagent timeout* aborts a child after N
   seconds (`0` disables).

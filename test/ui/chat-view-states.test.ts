@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { replayErrorTurn, replayTextTurn, replayToolCallTurn, type ReplayTurn } from "../../src/agent/replay-stream";
 import { mountChatView, seedFile, settle, type MountedChatView } from "./support/mount-chat-view";
 
@@ -10,8 +10,9 @@ import { mountChatView, seedFile, settle, type MountedChatView } from "./support
  *                             -> stopped -> idle
  *                             -> error -> idle (Ask again)
  *
- * Each state is read from what the user sees: the Send label, the Stop button,
- * the working indicator, the mode toggle, the approval modal, and the transcript.
+ * Each state is read from what the user sees: the send state, the Stop button,
+ * the working indicator, the mode toggle, the inline approval card, and the
+ * transcript.
  */
 
 interface Gate {
@@ -49,15 +50,15 @@ const shown = (el: HTMLElement | null) => !!el && el.style.display !== "none";
 
 function chrome() {
   return {
-    send: ui.$<HTMLButtonElement>(".agentic-chat-send")?.textContent ?? "",
+    send: ui.$<HTMLButtonElement>('[data-ac="send"]')?.getAttribute("data-ac-state") ?? "",
     stop: shown(ui.$(".agentic-chat-stop")),
     working: shown(ui.$(".agentic-chat-working")),
     modeDisabled: ui.$(".agentic-chat-mode-toggle")?.classList.contains("is-disabled") ?? false,
   };
 }
 
-const IDLE = { send: "Send", stop: false, working: false, modeDisabled: false };
-const STREAMING = { send: "Queue", stop: true, working: true, modeDisabled: true };
+const IDLE = { send: "send", stop: false, working: false, modeDisabled: false };
+const STREAMING = { send: "queue", stop: true, working: true, modeDisabled: true };
 
 async function mount(turns: ReplayTurn[], held?: Gate, settings = {}): Promise<void> {
   ui = await mountChatView({ turns, waitForRelease: held?.wait, settings });
@@ -67,8 +68,8 @@ describe("chat view state machine", () => {
   it("idle: empty state, Send, no Stop, no working indicator", async () => {
     await mount([]);
     expect(chrome()).toEqual(IDLE);
-    expect(ui.$(".agentic-chat-empty")).not.toBeNull();
-    expect(ui.$$(".agentic-chat-empty-suggestion")).toHaveLength(3);
+    expect(ui.$('[data-ac="empty"]')?.textContent).toContain("What should we work on?");
+    expect(ui.$$('[data-ac="empty"] button')).toHaveLength(0);
   });
 
   it("idle -> streaming -> idle: one send renders the user turn, streams, and settles", async () => {
@@ -88,12 +89,69 @@ describe("chat view state machine", () => {
     expect(ui.calls()).toBe(1);
   });
 
-  it("a suggestion chip sends its prompt", async () => {
-    await mount([replayTextTurn("summary")]);
-    ui.$<HTMLButtonElement>(".agentic-chat-empty-suggestion")?.click();
+  it("send clears the composer and shrinks it back (the cleared value is re-measured)", async () => {
+    await mount([replayTextTurn("ok")]);
+    const input = ui.$<HTMLTextAreaElement>('[data-ac="composer-input"]')!;
+    input.value = "a long prompt";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    // As if the long draft had grown the box.
+    input.style.setProperty("--ac-input-h", "200px");
+    ui.$<HTMLButtonElement>('[data-ac="send"]')!.click();
+    await settle();
     await ui.idle();
-    expect(ui.$(".agentic-chat-user")?.textContent).toContain("Read the active note and summarize it");
-    expect(ui.calls()).toBe(1);
+    expect(input.value).toBe("");
+    expect(input.style.getPropertyValue("--ac-input-h")).not.toBe("200px");
+  });
+
+  it("a tap on the context ring opens the breakdown (touch has no hover); Esc closes it", async () => {
+    await mount([replayTextTurn("the answer")]);
+    await ui.send("hello");
+    await ui.idle();
+    const ring = ui.$<HTMLElement>('[data-ac="context"]');
+    expect(ring?.style.display).not.toBe("none");
+    expect(ring?.getAttribute("role")).toBe("button");
+    expect(ring?.getAttribute("aria-expanded")).toBe("false");
+    ring?.click();
+    const panel = ui.$<HTMLElement>('[data-ac="context-breakdown"]');
+    expect(panel?.style.display).not.toBe("none");
+    expect(panel?.textContent).toBe(ring?.getAttribute("title"));
+    expect(panel?.textContent).toMatch(/tokens \(estimated\)/);
+    expect(ring?.getAttribute("aria-expanded")).toBe("true");
+    ring?.ownerDocument.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    expect(panel?.style.display).toBe("none");
+    expect(ring?.getAttribute("aria-expanded")).toBe("false");
+    // Enter opens it from the keyboard too.
+    ring?.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+    expect(panel?.style.display).not.toBe("none");
+  });
+
+  it("streaming: 'Working…' is real text in the live region (screen readers hear it), gone when idle", async () => {
+    const held = gate();
+    await mount([replayTextTurn("the answer", { hold: true })], held);
+    await ui.send("hi");
+    const line = ui.$('.agentic-chat-status-line');
+    expect(line?.getAttribute("aria-live")).toBe("polite");
+    expect(line?.textContent).toContain("Working…");
+    held.release();
+    await ui.idle();
+    expect(line?.textContent).not.toContain("Working…");
+  });
+
+  it("closing the view with the context breakdown open removes its document listeners", async () => {
+    await mount([replayTextTurn("the answer")]);
+    await ui.send("hello");
+    await ui.idle();
+    // The exact handlers the panel adds when it opens.
+    const added = vi.spyOn(document, "addEventListener");
+    ui.$<HTMLElement>('[data-ac="context"]')?.click();
+    const handlers = added.mock.calls.map(([, handler]) => handler);
+    added.mockRestore();
+    expect(handlers.length).toBe(2);
+    const removed = vi.spyOn(document, "removeEventListener");
+    await ui.close();
+    const gone = removed.mock.calls.map(([, handler]) => handler);
+    removed.mockRestore();
+    expect(handlers.every((handler) => gone.includes(handler))).toBe(true);
   });
 
   it("streaming: the Queue button holds the draft as a chip and sends it after the turn", async () => {
@@ -103,7 +161,7 @@ describe("chat view state machine", () => {
     expect(chrome()).toEqual(STREAMING);
 
     await ui.queue("follow-up prompt");
-    expect(chrome().send).toBe("Update");
+    expect(chrome().send).toBe("update");
     expect(ui.$(".agentic-chat-chips")?.textContent).toContain("follow-up prompt");
 
     held.release();
@@ -137,7 +195,7 @@ describe("chat view state machine", () => {
     await mount([replayTextTurn("never finishes", { hold: true })], held);
     await ui.send("long task");
     await ui.queue("draft while running");
-    expect(chrome().send).toBe("Update");
+    expect(chrome().send).toBe("update");
 
     ui.$<HTMLButtonElement>(".agentic-chat-stop")?.click();
     await ui.idle();
@@ -165,7 +223,7 @@ describe("chat view state machine", () => {
     expect(ui.$(".agentic-chat-assistant:last-child .agentic-chat-text")?.textContent).toContain("recovered");
   });
 
-  it("streaming -> approval pending -> Allow -> idle: the modal blocks the tool until allowed", async () => {
+  it("streaming -> approval pending -> Allow -> idle: the inline card blocks the tool until allowed", async () => {
     await mount([
       replayToolCallTurn("call-1", "write", { path: "Notes/new.md", content: "hello" }),
       replayTextTurn("written"),
@@ -173,19 +231,145 @@ describe("chat view state machine", () => {
     await ui.send("create a note");
     await settle();
 
-    const modal = ui.$(".modal-container .agentic-chat-approval");
-    expect(modal).not.toBeNull();
-    expect(ui.$(".modal-title")?.textContent).toMatch(/write|Notes\/new\.md/i);
+    const card = ui.$('[data-ac="approval"]');
+    expect(card).not.toBeNull();
+    // In the transcript, below the turn's activity line, not in a modal.
+    expect(ui.$(".modal-container")).toBeNull();
+    expect(card?.closest('[data-ac="messages"]')).not.toBeNull();
+    expect(card?.parentElement?.previousElementSibling?.getAttribute("data-ac")).toBe("activity");
+    expect(ui.$('[data-ac="activity"]')?.getAttribute("data-ac-state")).toBe("needs-you");
+    expect(ui.$('[data-ac="status"]')?.textContent).toBe("Waiting for your approval");
+    expect(ui.$('[data-ac="tab"]')?.getAttribute("data-ac-state")).toBe("needs-you");
     expect(chrome()).toEqual(STREAMING);
     expect(ui.app.vault.contentOf("Notes/new.md")).toBeUndefined();
 
-    const allow = ui.$$<HTMLButtonElement>(".modal-container button").find((button) => button.textContent === "Allow");
-    allow?.click();
+    // The keyboard path: Enter on the focused card allows it.
+    expect(card?.ownerDocument.activeElement).toBe(card);
+    card?.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+    await settle();
+    // The last card is done: focus goes back to the composer, not to <body>.
+    expect(card?.ownerDocument.activeElement).toBe(ui.$('[data-ac="composer-input"]'));
     await ui.idle();
-    expect(ui.$(".modal-container")).toBeNull();
+    expect(ui.$('[data-ac="approval"]')?.getAttribute("data-ac-state")).toBe("allowed");
+    expect(ui.$(".agentic-chat-approval-outcome")?.textContent).toBe("Allowed once");
     expect(ui.app.vault.contentOf("Notes/new.md")).toBe("hello");
     expect(chrome()).toEqual(IDLE);
     expect(ui.calls()).toBe(2);
+  });
+
+  it("two approvals at once in one tab (parallel MCP calls): the first to settle keeps the tab waiting for the second", async () => {
+    const held = gate();
+    await mount([replayTextTurn("working", { hold: true })], held);
+    await ui.send("do two things");
+    const view = ui.view as unknown as {
+      activeTab: unknown;
+      confirmToolCallForTab(tab: unknown, request: { toolName: string; label: string; args: unknown }): Promise<unknown>;
+    };
+    const tab = view.activeTab;
+    const first = view.confirmToolCallForTab(tab, { toolName: "mcp__a__x", label: "Run x", args: {} });
+    const second = view.confirmToolCallForTab(tab, { toolName: "mcp__b__y", label: "Run y", args: {} });
+    await settle();
+    expect(ui.$$('[data-ac="approval"]')).toHaveLength(2);
+
+    ui.$$<HTMLButtonElement>('[data-ac="approval-allow"]')[0]?.click();
+    await first;
+    await settle();
+    expect(ui.$('[data-ac="status"]')?.textContent).toBe("Waiting for your approval");
+    expect(ui.$('[data-ac="tab"]')?.getAttribute("data-ac-state")).toBe("needs-you");
+    expect(ui.$('[data-ac="activity"]')?.getAttribute("data-ac-state")).toBe("needs-you");
+
+    ui.$$<HTMLButtonElement>('[data-ac="approval-allow"]')[0]?.click();
+    await second;
+    await settle();
+    expect(ui.$('[data-ac="status"]')?.textContent).not.toBe("Waiting for your approval");
+    expect(ui.$('[data-ac="tab"]')?.getAttribute("data-ac-state")).not.toBe("needs-you");
+    held.release();
+    await ui.idle();
+  });
+
+  it("a second approval does not steal focus from the first card's deny reason", async () => {
+    const held = gate();
+    await mount([replayTextTurn("working", { hold: true })], held);
+    await ui.send("do two things");
+    const view = ui.view as unknown as {
+      activeTab: unknown;
+      confirmToolCallForTab(tab: unknown, request: { toolName: string; label: string; args: unknown }): Promise<{ approved: boolean }>;
+    };
+    const tab = view.activeTab;
+    const first = view.confirmToolCallForTab(tab, { toolName: "mcp__a__x", label: "Run x", args: {} });
+    await settle();
+    // The user starts the deny on card A and types a reason.
+    ui.$<HTMLButtonElement>('[data-ac="approval-deny"]')?.click();
+    await settle();
+    const reason = ui.$<HTMLTextAreaElement>(".agentic-chat-deny-reason-input");
+    expect(reason).not.toBeNull();
+    expect(reason?.ownerDocument.activeElement).toBe(reason);
+    const second = view.confirmToolCallForTab(tab, { toolName: "mcp__b__y", label: "Run y", args: {} });
+    await settle();
+    // Card B must not take focus: Enter still confirms the deny of card A.
+    expect(reason?.ownerDocument.activeElement).toBe(reason);
+    reason?.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+    expect((await first).approved).toBe(false);
+    await settle();
+    // Card A is done: focus moves on to card B, so Enter and Esc work there.
+    const cardB = ui.$$<HTMLElement>('[data-ac="approval"]').find((el) => el.querySelector('[data-ac="approval-allow"]'));
+    expect(reason?.ownerDocument.activeElement).toBe(cardB);
+    ui.$$<HTMLButtonElement>('[data-ac="approval-allow"]').at(-1)?.click();
+    await second;
+    held.release();
+    await ui.idle();
+  });
+
+  it("an approval that settles while its tab is in the background still shows its outcome on switch-back", async () => {
+    const held = gate();
+    await mount([replayTextTurn("working", { hold: true })], held);
+    await ui.send("do it");
+    const view = ui.view as unknown as {
+      activeTab: unknown;
+      confirmToolCallForTab(tab: unknown, request: { toolName: string; label: string; args: unknown }, signal?: AbortSignal): Promise<{ approved: boolean }>;
+    };
+    const tab1 = view.activeTab;
+    // Open a second tab: tab 1 is now in the background.
+    ui.$<HTMLButtonElement>('[data-ac="tab-add"]')?.click();
+    await settle();
+    const abort = new AbortController();
+    const choice = view.confirmToolCallForTab(tab1, { toolName: "mcp__a__x", label: "Run x", args: {} }, abort.signal);
+    await settle();
+    abort.abort();
+    expect((await choice).approved).toBe(false);
+    // Back to tab 1: the user sees that an approval was asked and how it ended.
+    ui.$$<HTMLElement>('[data-ac="tab"]')[0]?.click();
+    await settle();
+    const card = ui.$('[data-ac="approval"]');
+    expect(card?.getAttribute("data-ac-state")).toBe("stopped");
+    expect(card?.textContent).toContain("Stopped");
+    held.release();
+    await ui.idle();
+  });
+
+  it("allowing card A with Enter moves focus on to card B (parallel approvals)", async () => {
+    const held = gate();
+    await mount([replayTextTurn("working", { hold: true })], held);
+    await ui.send("do two things");
+    const view = ui.view as unknown as {
+      activeTab: unknown;
+      confirmToolCallForTab(tab: unknown, request: { toolName: string; label: string; args: unknown }): Promise<{ approved: boolean }>;
+    };
+    const tab = view.activeTab;
+    const first = view.confirmToolCallForTab(tab, { toolName: "mcp__a__x", label: "Run x", args: {} });
+    await settle();
+    const second = view.confirmToolCallForTab(tab, { toolName: "mcp__b__y", label: "Run y", args: {} });
+    await settle();
+    const [cardA, cardB] = ui.$$<HTMLElement>('[data-ac="approval"]');
+    expect(cardA?.ownerDocument.activeElement).toBe(cardA);
+    cardA?.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+    expect((await first).approved).toBe(true);
+    await settle();
+    expect(cardA?.ownerDocument.activeElement).toBe(cardB);
+    cardB?.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+    expect((await second).approved).toBe(true);
+    held.release();
+    await ui.idle();
   });
 
   it("approval pending -> Deny twice with a reason: the tool does not run and the reason reaches the model", async () => {
@@ -196,36 +380,50 @@ describe("chat view state machine", () => {
     await ui.send("create a note");
     await settle();
 
-    const deny = () => ui.$$<HTMLButtonElement>(".modal-container button").find((button) => /Deny/.test(button.textContent ?? ""));
+    const deny = () => ui.$<HTMLButtonElement>('[data-ac="approval-deny"]');
     deny()?.click();
-    expect(deny()?.textContent).toBe("Confirm Deny");
-    expect(ui.$(".modal-title")?.textContent).toMatch(/deny/i);
+    expect(deny()?.textContent).toBe("Confirm deny");
+    expect(ui.$('[data-ac="approval"]')?.getAttribute("data-ac-state")).toBe("deny-armed");
     const reason = ui.$<HTMLTextAreaElement>(".agentic-chat-deny-reason-input");
     expect(reason).not.toBeNull();
     reason!.value = "wrong folder";
     deny()?.click();
     await ui.idle();
 
-    expect(ui.$(".modal-container")).toBeNull();
+    expect(ui.$('[data-ac="approval"]')?.getAttribute("data-ac-state")).toBe("denied");
     expect(ui.app.vault.contentOf("Notes/new.md")).toBeUndefined();
     expect(ui.$(".agentic-chat-step")?.className).toContain("is-error");
     expect(ui.root.textContent).toContain("wrong folder");
     expect(chrome()).toEqual(IDLE);
   });
 
-  it("approval pending -> Stop turn in the modal: the turn stops and nothing is written", async () => {
+  it("approval pending -> Stop in the composer: the card resolves as stopped and nothing is written", async () => {
     await mount([replayToolCallTurn("call-1", "write", { path: "Notes/new.md", content: "hello" })]);
     await ui.send("create a note");
     await settle();
-    ui.$$<HTMLButtonElement>(".modal-container button").find((button) => button.textContent === "Stop turn")?.click();
+    ui.$<HTMLButtonElement>('[data-ac="stop"]')?.click();
     await ui.idle();
-    expect(ui.$(".modal-container")).toBeNull();
+    expect(ui.$('[data-ac="approval"]')?.getAttribute("data-ac-state")).toBe("stopped");
     expect(ui.app.vault.contentOf("Notes/new.md")).toBeUndefined();
     expect(chrome()).toEqual(IDLE);
     expect(ui.calls()).toBe(1);
   });
 
-  it("YOLO mode skips the approval modal", async () => {
+  it("approval pending -> new session: the choice settles as stopped (no hang, nothing written)", async () => {
+    await mount([replayToolCallTurn("call-1", "write", { path: "Notes/new.md", content: "hello" })]);
+    await ui.send("create a note");
+    await settle();
+    const card = ui.$('[data-ac="approval"]');
+    expect(card?.getAttribute("data-ac-state")).not.toBe("stopped");
+    // The swap aborts the turn before the transcript re-renders: the card must settle.
+    await (ui.view as unknown as { newSession(): Promise<void> }).newSession();
+    await ui.idle();
+    expect(card?.getAttribute("data-ac-state")).toBe("stopped");
+    expect(ui.app.vault.contentOf("Notes/new.md")).toBeUndefined();
+    expect(chrome()).toEqual(IDLE);
+  });
+
+  it("YOLO mode skips the approval card", async () => {
     await mount(
       [replayToolCallTurn("call-1", "write", { path: "Notes/yolo.md", content: "fast" }), replayTextTurn("done")],
       undefined,
@@ -234,7 +432,7 @@ describe("chat view state machine", () => {
     expect(ui.$(".agentic-chat-mode-toggle")?.getAttribute("aria-checked")).toBe("true");
     await ui.send("write it");
     await ui.idle();
-    expect(ui.$(".modal-container")).toBeNull();
+    expect(ui.$('[data-ac="approval"]')).toBeNull();
     expect(ui.app.vault.contentOf("Notes/yolo.md")).toBe("fast");
   });
 

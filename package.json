@@ -44,6 +44,7 @@
     "capture:release-fixtures": "node scripts/capture-release-fixtures.mjs",
     "check:feature-map": "node scripts/check-feature-map.mjs",
     "check:secrets": "node scripts/check-secrets.mjs",
+    "check:css-tokens": "node scripts/check-css-tokens.mjs",
     "logs:prune": "node scripts/logs-prune.mjs",
     "tests:status": "node scripts/tests-status.mjs",
     "delegate": "bash scripts/delegate.sh",

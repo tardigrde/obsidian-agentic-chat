@@ -122,8 +122,6 @@ function formatReadCallBody(parsed: Record<string, unknown>): string {
 /** Tools whose success result is just file contents already on disk / in context — hide it. */
 export const HIDE_RESULT_TOOLS = new Set(["read", "get_active_note", "write", "subagent"]);
 
-/** Tools whose primary arg is a vault path — render it as a clickable link in the step title. */
-export const PATH_TOOLS = new Set(["read", "write", "edit", "delete", "rename", "get_active_note", "ls"]);
 
 /** Extract the vault path (path, else newPath) from tool args, or "" if none/invalid. */
 export function callPath(rawArgs: string): string {
@@ -192,14 +190,6 @@ export function formatDetailedUsage(usage: Usage, options: DetailedUsageOptions 
   ];
 }
 
-export function formatUsage(usage: Usage): string {
-  const total = usage.cost?.total ?? 0;
-  const cost = total > 0 ? ` · ${formatCost(total)}` : "";
-  const hit = cacheHitPercent(usage);
-  const cache = hit === null ? "" : ` · ${hit}% cache`;
-  return `${formatTokenInteger(usage.totalTokens)} tokens${cache}${cost}`;
-}
-
 /**
  * Full integer token count with thousands separators (e.g. `3,327,418`). Used for
  * the cumulative footer so the raw number stops reads as anxiety-inducing noise.
@@ -242,4 +232,30 @@ function formatTokenCount(value: number): string {
 
 function trimTrailingZero(value: string): string {
   return value.endsWith(".0") ? value.slice(0, -2) : value;
+}
+
+/** Compact token count for the per-answer meta: `850`, `4.1k`, `1.2M`. */
+export function formatTokensCompact(value: number): string {
+  if (!Number.isFinite(value) || value < 0) value = 0;
+  if (value < 1000) return String(Math.round(value));
+  if (value < 1_000_000) return `${(value / 1000).toFixed(1).replace(/\.0$/, "")}k`;
+  return `${(value / 1_000_000).toFixed(1).replace(/\.0$/, "")}M`;
+}
+
+/**
+ * The per-answer meta under a turn: `6s · 4.1k tokens · $0.004`. Time shows
+ * only when it was measured live; cost only when the provider reported one.
+ */
+export function formatTurnMeta(input: { usage?: Usage | null; elapsedMs?: number }): string {
+  const parts: string[] = [];
+  if (input.elapsedMs !== undefined && Number.isFinite(input.elapsedMs)) {
+    parts.push(input.elapsedMs < 60_000 ? `${Math.max(1, Math.round(input.elapsedMs / 1000))}s` : formatElapsed(input.elapsedMs));
+  }
+  const usage = input.usage;
+  if (usage && usage.totalTokens > 0) {
+    parts.push(`${formatTokensCompact(usage.totalTokens)} tokens`);
+    const cost = usage.cost?.total;
+    if (typeof cost === "number" && cost > 0) parts.push(cost < 0.01 ? `$${cost.toFixed(3)}` : formatCost(cost));
+  }
+  return parts.join(" · ");
 }

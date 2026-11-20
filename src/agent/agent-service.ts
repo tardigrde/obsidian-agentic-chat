@@ -427,6 +427,7 @@ export class AgentService {
       settings,
       systemPrompt: this.runtimeResources.composeSystemPrompt(settings, this.getActiveModelId()),
       tools: this.agent?.state.tools ?? [],
+      parts: this.runtimeResources.contextParts(settings, this.agent?.state.tools ?? []),
     }, this.contextOverhead);
   }
 
@@ -695,6 +696,11 @@ export class AgentService {
   async releaseDeletedSession(paths: ReadonlySet<string>): Promise<void> {
     this.resetTurnGuards();
     return this.sessionActions.releaseDeletedSession(paths);
+  }
+
+  /** Set or clear the active session's tab label; the session name stays. */
+  async setTabLabel(label: string | undefined): Promise<void> {
+    return this.sessionActions.setTabLabel(label);
   }
 
   async renameSession(path: string, name: string): Promise<void> {
