@@ -54,15 +54,15 @@ describe("chat view U3-B", function () {
       turn("t1-call1", [
         { type: "thinking", thinking: "FIRST-THOUGHT read the plan" },
         { type: "toolCall", id: "u3-read", name: "read", arguments: { path: NOTE } },
-      ], { hold: true }),
+      ], { hold: true, emitUpdates: true }),
       turn("t1-call2", [
         { type: "thinking", thinking: "SECOND-THOUGHT list the folder" },
         { type: "toolCall", id: "u3-list", name: "vault_inspect", arguments: { action: "list", path: FOLDER } },
-      ]),
+      ], { emitUpdates: true }),
       turn("t1-call3", [
         { type: "thinking", thinking: "THIRD-THOUGHT answer now" },
         { type: "text", text: `Done. The folder is [[${FOLDER}]].` },
-      ]),
+      ], { emitUpdates: true }),
       // Turn 2 (item 15): text, then ask_user; the answer, then more text.
       turn("t2-call1", [
         { type: "text", text: "TEXT-BEFORE-ASK let me check one thing." },
@@ -244,5 +244,15 @@ describe("chat view U3-B", function () {
       value: document.querySelector<HTMLTextAreaElement>('[data-ac="composer-input"]')?.value ?? null,
     }));
     expect(state).toEqual({ views: 1, value: "hello brave " });
+
+    // Outside the composer, Ctrl+W still closes the chat tab.
+    await browser.execute(() => (document.activeElement as HTMLElement | null)?.blur());
+    await $('[data-ac="messages"]').click({ x: 0, y: 0 });
+    await browser.execute(() => (document.activeElement as HTMLElement | null)?.blur());
+    await browser.keys(["Control", "w"]);
+    await browser.waitUntil(async () => (await browser.execute(() => document.querySelectorAll('[data-ac="view"]').length)) === 0, {
+      timeout: 3_000,
+      timeoutMsg: "Ctrl+W outside the composer no longer closes the chat tab",
+    });
   });
 });

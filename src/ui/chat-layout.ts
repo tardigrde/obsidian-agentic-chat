@@ -1,7 +1,6 @@
-import { Platform, setIcon, type App, type Component } from "obsidian";
+import { setIcon, type App, type Component } from "obsidian";
 import type { AcItem } from "./autocomplete";
 import { AutocompleteMenu } from "./autocomplete-menu";
-import { deletePreviousWord, isDeleteWordKey } from "./composer-keys";
 import type { ComposerSubmitSource } from "./composer-input";
 import { wireContextBreakdownPanel } from "./context-breakdown-panel";
 import type { TabHeaderElements } from "./tab-strip";
@@ -171,14 +170,6 @@ export function buildLayout(deps: ChatLayoutDeps): ChatLayoutElements {
   );
   inputEl.addEventListener("keydown", (event) => {
     if (menu.handleKey(event)) return;
-    // Ctrl+W deletes the previous word, as in a terminal; Obsidian must not
-    // close the pane under the cursor (U3 #7). Cmd+W on macOS still closes.
-    if (isDeleteWordKey(event, Platform.isMacOS)) {
-      event.preventDefault();
-      event.stopPropagation();
-      deletePreviousWord(inputEl);
-      return;
-    }
     if (event.key === "Escape" && callbacks.isEditing()) {
       event.preventDefault();
       callbacks.cancelEditing();
