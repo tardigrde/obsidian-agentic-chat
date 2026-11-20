@@ -1,8 +1,15 @@
 import { describe, expect, it } from "vitest";
 import type { AgentMessage, AgentTool } from "@earendil-works/pi-agent-core";
 import { estimateTextTokens } from "@earendil-works/pi-ai/utils/estimate";
+import type { App } from "obsidian";
 import { CachedContextOverheadCounter, contextReadout, estimateContextLoad } from "../src/agent/readouts";
+import { AgentRuntimeResourceState } from "../src/agent/runtime-resource-state";
+import { isDeferredToolName } from "../src/agent/tool-loading";
+import { DEFAULT_SETTINGS } from "../src/settings-schema";
+import type { ToolArtifactStoreLike } from "../src/artifacts/tool-artifact-store";
 import { formatContextBreakdown } from "../src/ui/context-bar";
+import { ReadMemo } from "../src/vault/read-memo";
+import { FakeApp } from "./helpers/fake-vault";
 
 const tool = (name: string): AgentTool =>
   ({ name, label: name, description: `${name} does one thing`, parameters: { type: "object", properties: {} } }) as unknown as AgentTool;
@@ -28,7 +35,11 @@ describe("context breakdown", () => {
     expect(b.instructionsTokens).toBe(estimateTextTokens(instructions));
     expect(b.skillsTokens).toBe(estimateTextTokens(skills));
     expect(b.instructionsTokens + b.skillsTokens).toBeLessThanOrEqual(load.systemPromptTokens);
-    expect(b.builtinToolTokens + b.mcpToolTokens).toBe(load.toolSchemaTokens);
+    // MCP is measured on its own (not derived from the total): it equals the
+    // estimate of the MCP schemas alone.
+    const mcpOnly = estimateContextLoad({ messages: [], systemPrompt: "", tools: tools.filter((t) => t.name.startsWith("mcp__")) });
+    expect(b.mcpToolTokens).toBe(mcpOnly.toolSchemaTokens);
+    expect(b.builtinToolTokens).toBe(load.toolSchemaTokens - mcpOnly.toolSchemaTokens);
     expect(b.mcpToolTokens).toBeGreaterThan(0);
     expect(b.mcpServers).toBe(2);
     expect(b.toolResultTokens).toBeGreaterThan(0);
@@ -84,5 +95,29 @@ describe("context breakdown", () => {
       "Conversation",
       "Kept for answer",
     ]);
+  });
+
+  it("contextParts: vault instructions, and only unloaded MCP tools count as deferred", async () => {
+    const app = new FakeApp();
+    await app.vault.create("AGENTS.md", "Always answer in one paragraph.");
+    const state = new AgentRuntimeResourceState({
+      app: app as unknown as App,
+      getSettings: () => DEFAULT_SETTINGS,
+      readMemo: new ReadMemo(),
+      webFetch: async () => ({ status: 200, text: "", headers: {} }),
+      artifactStore: {} as ToolArtifactStoreLike,
+    });
+    await state.reload();
+    // Two MCP tools, as a connected server would give them.
+    const internals = state as unknown as { resources: { mcpTools: AgentTool[] } };
+    internals.resources = { ...internals.resources, mcpTools: [tool("mcp__notion__search"), tool("mcp__notion__fetch")] };
+    const active = state.buildParentTools(DEFAULT_SETTINGS);
+    const allDeferred = (state as unknown as { lastBuild: { all: AgentTool[] } }).lastBuild.all.filter((t) => isDeferredToolName(t.name));
+    // The fixture has non-MCP deferred tools too; they must not count.
+    expect(allDeferred.some((t) => !t.name.startsWith("mcp__"))).toBe(true);
+    const loaded = [...active, tool("mcp__notion__search")];
+    const parts = state.contextParts(DEFAULT_SETTINGS, loaded);
+    expect(parts.deferredNotLoaded).toBe(1);
+    expect(parts.instructions).toContain("Always answer in one paragraph.");
   });
 });

@@ -362,6 +362,20 @@ describe("chat view state machine", () => {
     expect(ui.calls()).toBe(1);
   });
 
+  it("approval pending -> new session: the choice settles as stopped (no hang, nothing written)", async () => {
+    await mount([replayToolCallTurn("call-1", "write", { path: "Notes/new.md", content: "hello" })]);
+    await ui.send("create a note");
+    await settle();
+    const card = ui.$('[data-ac="approval"]');
+    expect(card?.getAttribute("data-ac-state")).not.toBe("stopped");
+    // The swap aborts the turn before the transcript re-renders: the card must settle.
+    await (ui.view as unknown as { newSession(): Promise<void> }).newSession();
+    await ui.idle();
+    expect(card?.getAttribute("data-ac-state")).toBe("stopped");
+    expect(ui.app.vault.contentOf("Notes/new.md")).toBeUndefined();
+    expect(chrome()).toEqual(IDLE);
+  });
+
   it("YOLO mode skips the approval card", async () => {
     await mount(
       [replayToolCallTurn("call-1", "write", { path: "Notes/yolo.md", content: "fast" }), replayTextTurn("done")],

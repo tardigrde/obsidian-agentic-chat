@@ -30,7 +30,7 @@ export interface ContextLoadParts {
   instructions?: string;
   /** The loaded-skills section inside the system prompt. */
   skills?: string;
-  /** Deferred tools in the catalog (MCP and others) that are not loaded, so not sent. */
+  /** Deferred MCP tools in the catalog that are not loaded, so not sent (the tooltip's "MCP deferred"). */
   deferredNotLoaded?: number;
 }
 

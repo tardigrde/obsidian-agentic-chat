@@ -1,3 +1,5 @@
+import { readdirSync, readFileSync } from "node:fs";
+import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { replayTextTurn, replayToolCallTurn } from "../../src/agent/replay-stream";
 import { AC_HOOKS, acSelector, type AcHook } from "../../src/ui/test-hooks";
@@ -87,5 +89,34 @@ describe("chat view test hooks", () => {
 
   it("every hook name is unique", () => {
     expect(new Set(AC_HOOKS).size).toBe(AC_HOOKS.length);
+  });
+
+  // Static checks over the whole tree, so a dropped hook or a typo in a spec
+  // fails T1, not only the app lanes.
+  // Vitest runs from the repo root (happy-dom has no file: import.meta.url).
+  const root = process.cwd();
+  const files = (dir: string, ext: RegExp): string[] =>
+    readdirSync(path.join(root, dir), { recursive: true, withFileTypes: true })
+      .filter((entry) => entry.isFile() && ext.test(entry.name))
+      .map((entry) => path.join(entry.parentPath, entry.name));
+
+  it("every hook in AC_HOOKS is applied somewhere in src", () => {
+    const src = files("src", /\.ts$/)
+      .filter((file) => !file.endsWith(path.join("ui", "test-hooks.ts")))
+      .map((file) => readFileSync(file, "utf8"))
+      .join("\n");
+    const unused = AC_HOOKS.filter((hook) => !new RegExp(`acHook\\([^;]*?["']${hook}["']`, "s").test(src));
+    expect(unused).toEqual([]);
+  });
+
+  it('every data-ac="…" a test, driver, or script selects is a known hook', () => {
+    const known = new Set<string>(AC_HOOKS);
+    const unknown: string[] = [];
+    for (const file of [...files("test", /\.(ts|mjs)$/), ...files("scripts", /\.(ts|mjs)$/)]) {
+      for (const match of readFileSync(file, "utf8").matchAll(/data-ac=\\?["']([a-z-]+)\\?["']/g)) {
+        if (!known.has(match[1])) unknown.push(`${path.relative(root, file)}: ${match[1]}`);
+      }
+    }
+    expect(unknown).toEqual([]);
   });
 });

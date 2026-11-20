@@ -82,6 +82,49 @@ describe("TabStrip re-render", () => {
     { key: "b", label: "Vendors", sessionName: undefined, status },
   ];
 
+  it("hidden tabs go into +N, and its dot shows the most urgent hidden status", () => {
+    // happy-dom has no layout: give each tab 100px in a 160px strip.
+    const rect = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({ width: 100 } as DOMRect);
+    try {
+      const { el, tabStrip } = strip();
+      Object.defineProperty(el.strip, "clientWidth", { value: 160 });
+      tabStrip.render(
+        [
+          { key: "a", label: undefined, sessionName: undefined, status: null },
+          { key: "b", label: undefined, sessionName: undefined, status: "running" },
+          { key: "c", label: undefined, sessionName: undefined, status: "needs-you" },
+        ],
+        0,
+        true,
+        5,
+      );
+      expect(el.overflow.textContent).toBe("+2");
+      expect(el.overflow.getAttribute("data-ac-state")).toBe("needs-you");
+      expect(el.overflow.querySelector(".agentic-chat-dot.is-needs-you")).not.toBeNull();
+      expect(el.overflow.getAttribute("aria-label")).toBe("2 more tabs, needs approval");
+      tabStrip.dispose();
+    } finally {
+      rect.mockRestore();
+    }
+  });
+
+  it("Left, Right, Home, and End move and activate, wrapping at the ends", () => {
+    const { el, tabStrip, activated } = strip();
+    const three: TabView[] = [...views(), { key: "c", label: undefined, sessionName: undefined, status: null }];
+    tabStrip.render(three, 0, true, 5);
+    const press = (index: number, key: string) =>
+      el.strip.querySelectorAll<HTMLElement>('[data-ac="tab"]')[index]?.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true }));
+    press(0, "ArrowRight");
+    press(0, "ArrowLeft");
+    press(1, "End");
+    press(2, "Home");
+    press(2, "ArrowRight");
+    expect(activated).toEqual([1, 2, 2, 0, 0]);
+    // Roving tabindex: only the active tab is in the Tab order.
+    expect(Array.from(el.strip.querySelectorAll('[data-ac="tab"]')).map((tab) => tab.getAttribute("tabindex"))).toEqual(["0", "-1", "-1"]);
+    tabStrip.dispose();
+  });
+
   it("keeps the tab nodes and focus when a background event re-renders the same state", () => {
     const { el, tabStrip } = strip();
     tabStrip.render(views("running"), 0, true, 5);
