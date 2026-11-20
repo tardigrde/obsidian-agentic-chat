@@ -1,6 +1,6 @@
 import { mkdirSync } from "node:fs";
 import { browser, expect, $ } from "@wdio/globals";
-import { after, before, describe, it } from "mocha";
+import { after, afterEach, before, describe, it } from "mocha";
 import {
   configureScriptedPlugin,
   noteExists,
@@ -49,35 +49,18 @@ describe("chat view U3-B", function () {
       if (!app.vault.getAbstractFileByPath(folder)) await app.vault.createFolder(folder);
       if (!app.vault.getAbstractFileByPath(note)) await app.vault.create(note, "# Plan\n\nStep one.\n");
     }, { folder: FOLDER, note: NOTE });
-    await installScriptedTurns([
-      // Turn 1 (items 3, 4, 5): thought -> read, thought -> list a folder, thought -> answer.
-      turn("t1-call1", [
-        { type: "thinking", thinking: "FIRST-THOUGHT read the plan" },
-        { type: "toolCall", id: "u3-read", name: "read", arguments: { path: NOTE } },
-      ], { hold: true, emitUpdates: true }),
-      turn("t1-call2", [
-        { type: "thinking", thinking: "SECOND-THOUGHT list the folder" },
-        { type: "toolCall", id: "u3-list", name: "vault_inspect", arguments: { action: "list", path: FOLDER } },
-      ], { emitUpdates: true }),
-      turn("t1-call3", [
-        { type: "thinking", thinking: "THIRD-THOUGHT answer now" },
-        { type: "text", text: `Done. The folder is [[${FOLDER}]].` },
-      ], { emitUpdates: true }),
-      // Turn 2 (item 15): text, then ask_user; the answer, then more text.
-      turn("t2-call1", [
-        { type: "text", text: "TEXT-BEFORE-ASK let me check one thing." },
-        { type: "toolCall", id: "u3-ask", name: "ask_user", arguments: { question: "Which plan?", choices: ["Plan A", "Plan B"] } },
-      ]),
-      textTurn("t2-call2", "TEXT-AFTER-ASK you picked a plan."),
-      // Turn 3 (item 10): one subagent; the child holds until released.
-      turn("t3-call1", [
-        { type: "toolCall", id: "u3-sub", name: "subagent", arguments: { agent: "explorer", task: "Critique the plan for gaps" } },
-      ]),
-      textTurn("t3-child", "CHILD-REPORT the plan has two gaps.", { hold: true }),
-      textTurn("t3-call2", "The explorer found two gaps."),
-    ]);
+    // Each test installs its own scripted turns, so one red test stays in one test.
+    await installScriptedTurns([]);
     await configureScriptedPlugin("allow");
     await openChat();
+  });
+
+  afterEach(async function () {
+    // A red test can leave a held turn running: release it and stop the turn.
+    await releaseScriptedTurns();
+    if (await $('[data-ac="stop"]').isDisplayed()) await $('[data-ac="stop"]').click();
+    await waitForIdle(10_000);
+    await releaseScriptedTurns(false);
   });
 
   after(async function () {
@@ -107,6 +90,21 @@ describe("chat view U3-B", function () {
   });
 
   it("U3 #5 #3 #4: one spinner per turn; thoughts in event order; a folder is never a note link", async function () {
+    await installScriptedTurns([
+      // Turn 1 (items 3, 4, 5): thought -> read, thought -> list a folder, thought -> answer.
+      turn("t1-call1", [
+        { type: "thinking", thinking: "FIRST-THOUGHT read the plan" },
+        { type: "toolCall", id: "u3-read", name: "read", arguments: { path: NOTE } },
+      ], { hold: true, emitUpdates: true }),
+      turn("t1-call2", [
+        { type: "thinking", thinking: "SECOND-THOUGHT list the folder" },
+        { type: "toolCall", id: "u3-list", name: "vault_inspect", arguments: { action: "list", path: FOLDER } },
+      ], { emitUpdates: true }),
+      turn("t1-call3", [
+        { type: "thinking", thinking: "THIRD-THOUGHT answer now" },
+        { type: "text", text: `Done. The folder is [[${FOLDER}]].` },
+      ], { emitUpdates: true }),
+    ]);
     await submitComposer("plan check");
     await browser.waitUntil(
       async () => (await browser.execute(() => document.querySelector('[data-ac="activity"]')?.getAttribute("data-ac-state"))) === "running",
@@ -161,6 +159,14 @@ describe("chat view U3-B", function () {
   });
 
   it("U3 #15: the question shows after the text written before it", async function () {
+    await installScriptedTurns([
+      // Turn 2 (item 15): text, then ask_user; the answer, then more text.
+      turn("t2-call1", [
+        { type: "text", text: "TEXT-BEFORE-ASK let me check one thing." },
+        { type: "toolCall", id: "u3-ask", name: "ask_user", arguments: { question: "Which plan?", choices: ["Plan A", "Plan B"] } },
+      ]),
+      textTurn("t2-call2", "TEXT-AFTER-ASK you picked a plan."),
+    ]);
     await submitComposer("ask me");
     const choice = await $("button.agentic-chat-ask-choice=Plan A");
     await choice.waitForDisplayed({ timeout: 5_000 });
@@ -183,6 +189,14 @@ describe("chat view U3-B", function () {
   });
 
   it("U3 #10: a subagent row starts collapsed, names the task once, and opens its log on a row click", async function () {
+    await installScriptedTurns([
+      // Turn 3 (item 10): one subagent; the child holds until released.
+      turn("t3-call1", [
+        { type: "toolCall", id: "u3-sub", name: "subagent", arguments: { agent: "explorer", task: "Critique the plan for gaps" } },
+      ]),
+      textTurn("t3-child", "CHILD-REPORT the plan has two gaps.", { hold: true }),
+      textTurn("t3-call2", "The explorer found two gaps."),
+    ]);
     await submitComposer("delegate it");
     await browser.waitUntil(
       async () => await browser.execute(() => !!document.querySelector('[data-ac="step"] .agentic-chat-subagents')),
