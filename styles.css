@@ -2605,6 +2605,37 @@ body.is-mobile,
   }
 }
 
+/* Narrow panes (a 320-400px sidebar, a phone): the collapsed activity line
+   wraps instead of cutting its counts, and the approval actions share one
+   row (the keyboard hint goes; touch has no keyboard anyway). */
+@container agentic-chat (max-width: 400px) {
+  .agentic-chat-activity button.agentic-chat-activity-head {
+    height: auto;
+    padding-top: var(--ac-space-1);
+    padding-bottom: var(--ac-space-1);
+    text-align: start;
+  }
+
+  .agentic-chat-activity-summary {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .agentic-chat-approval-kbd {
+    display: none;
+  }
+
+  .agentic-chat-approval-actions {
+    gap: var(--ac-space-1);
+    padding-left: var(--ac-space-2);
+    padding-right: var(--ac-space-2);
+  }
+
+  .agentic-chat-approval-actions .agentic-chat-approval-button {
+    padding: 0 var(--ac-space-2);
+  }
+}
+
 /* Narrow sidebar: drop the decoration, keep the meaning. The shield stays
    for Safe/YOLO; the % stays for the context (the ring glyph goes). */
 @container agentic-chat (max-width: 320px) {

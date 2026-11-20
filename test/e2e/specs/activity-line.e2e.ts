@@ -205,6 +205,25 @@ describe("activity line and inline approval", function () {
       };
     }, PENDING_APPROVAL);
     expect(buttons).toEqual({ allowIsAccent: true, allowOpacity: "1", denyBackground: "rgba(0, 0, 0, 0)", denyBorder: "0px", denyShadow: "none", pathIsAccent: true, titleCut: false });
+    // A 320px sidebar: the three actions share one row, and the activity
+    // summary wraps instead of cutting its counts.
+    const narrow = await browser.execute(async (selector) => {
+      const view = document.querySelector<HTMLElement>('[data-ac="view"]');
+      const el = document.querySelector<HTMLElement>(selector);
+      if (!view || !el) return null;
+      const old = view.style.width;
+      view.style.setProperty("width", "320px");
+      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      const top = (hook: string) => Math.round(el.querySelector<HTMLElement>(`[data-ac="${hook}"]`)?.getBoundingClientRect().top ?? -1);
+      const summary = el.parentElement?.previousElementSibling?.querySelector<HTMLElement>(".agentic-chat-activity-summary");
+      const result = {
+        oneRow: top("approval-allow") === top("approval-deny"),
+        summaryCut: !summary || summary.scrollWidth > summary.clientWidth + 1 || summary.scrollHeight > summary.clientHeight + 1,
+      };
+      view.style.width = old;
+      return result;
+    }, PENDING_APPROVAL);
+    expect(narrow).toEqual({ oneRow: true, summaryCut: false });
     if (process.env.AGENTIC_CHAT_SCREENSHOT_DIR) {
       await browser.saveScreenshot(`${process.env.AGENTIC_CHAT_SCREENSHOT_DIR}/approval-card.png`);
     }
