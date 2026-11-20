@@ -381,14 +381,18 @@ export class ChatView extends ItemView {
     this.cancelAutocomplete();
     this.menu?.detach();
     this.transcript?.dispose();
-    // The view owns its tab services; dispose them so no detached agent keeps running.
-    for (const tab of this.tabs) {
-      tab.unsubscribe();
-      for (const card of tab.pendingApprovals ?? []) card.stop();
-      tab.service.dispose();
-    }
+    // The view owns its tab services; dispose them so no detached agent keeps
+    // running. Each dispose stops a running turn first, so its end is saved.
+    const tabs = this.tabs;
     this.tabs = [];
     this.chatTabs.clear();
+    await Promise.all(
+      tabs.map((tab) => {
+        tab.unsubscribe();
+        for (const card of tab.pendingApprovals ?? []) card.stop();
+        return tab.service.dispose();
+      }),
+    );
   }
 
   /** Add a vault file/folder from an Obsidian context menu to the next prompt. */

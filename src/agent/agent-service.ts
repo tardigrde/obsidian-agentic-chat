@@ -148,6 +148,7 @@ export class AgentService {
   private readonly turnCap = new AgentTurnCap({ maxTurns: () => this.getSettings().maxTurnsPerPrompt });
   private readonly recentEvents: string[] = [];
   private readonly promptTurns: AgentPromptTurnRuntime;
+  private disposal: Promise<void> | null = null;
 
   private initialization: Promise<void> | null = null;
   /** Drops the plugin-invalidation subscription on dispose. */
@@ -718,8 +719,23 @@ export class AgentService {
     return this.sessionActions.truncateMessages(index);
   }
 
-  dispose(): void {
+  /**
+   * Stop a running turn (its aborted end is saved to the session), then detach
+   * for good. Without the stop, a closed view left a user turn with no reply
+   * and no `agent_end` in the session file.
+   */
+  dispose(): Promise<void> {
+    this.disposal ??= this.disposeAfterStop();
+    return this.disposal;
+  }
+
+  private async disposeAfterStop(): Promise<void> {
     if (this.conversation.isDisposed) return;
+    try {
+      await this.conversation.stopRunningTurn();
+    } catch {
+      // Best effort: the detach below must still run.
+    }
     this.unsubscribePluginInvalidation?.();
     this.unsubscribePluginInvalidation = undefined;
     if (this.pluginReloadTimer !== undefined) window.clearTimeout(this.pluginReloadTimer);
