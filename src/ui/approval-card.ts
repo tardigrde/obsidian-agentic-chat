@@ -350,7 +350,10 @@ export class ApprovalCard {
     // path, which shows "Large change … (diff omitted)".
     if (!initial || diffTooLarge(initial.before, initial.after)) return false;
     const stat = diffStat(diffLines(initial.before, initial.after));
-    const summary = container.createEl("p", { cls: "agentic-chat-approval-summary", text: `+${stat.added} −${stat.removed}` });
+    // Where the change lands, as in the design: `+6 −1 · in "Next steps"`.
+    const section = sectionAbove(before, edits[0]?.oldText);
+    const statText = (added: number, removed: number) => `+${added} −${removed}${section ? ` · in "${section}"` : ""}`;
+    const summary = container.createEl("p", { cls: "agentic-chat-approval-summary", text: statText(stat.added, stat.removed) });
     const diffEl = container.createDiv({ cls: "agentic-chat-diff-window" });
     const renderWindow = () => {
       const windowed = buildExactEditPreviewWindow(before, edits, { contextBefore, contextAfter });
@@ -363,7 +366,7 @@ export class ApprovalCard {
       }
       const lines = diffLines(windowed.before, windowed.after);
       const next = diffStat(lines);
-      summary.setText(`+${next.added} −${next.removed}`);
+      summary.setText(statText(next.added, next.removed));
       diffEl.empty();
       const pre = diffEl.createEl("pre", { cls: "agentic-chat-diff" });
       if (windowed.hiddenBefore > 0) {
@@ -407,6 +410,23 @@ export class ApprovalCard {
       onClick();
     });
   }
+}
+
+/**
+ * The nearest Markdown heading above the first changed text, or undefined.
+ * Code fences are not parsed: a `#` line inside a fence can be taken as a
+ * heading, which only affects this one-line hint.
+ */
+export function sectionAbove(content: string, changedText: string | undefined): string | undefined {
+  if (!changedText) return undefined;
+  const at = content.indexOf(changedText);
+  if (at < 0) return undefined;
+  const lines = content.slice(0, at).split("\n");
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const heading = /^#{1,6}\s+(.+?)\s*#*\s*$/.exec(lines[i]);
+    if (heading) return heading[1].length > 40 ? `${heading[1].slice(0, 39)}…` : heading[1];
+  }
+  return undefined;
 }
 
 type EditPreviewEdit = NonNullable<Extract<EditPreview, { kind: "diff" }>["edits"]>[number];

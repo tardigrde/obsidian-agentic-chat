@@ -94,6 +94,14 @@ describe("ApprovalCard rendering", () => {
     expect($(".agentic-chat-approval-title")?.getAttribute("title")).toBe(`Create ${path}`);
   });
 
+  it("an exact edit names the section it changes, from the nearest heading above", async () => {
+    const app = fakeApp();
+    await seedFile(app, "Notes/plan.md", "# Plan\n\nIntro\n\n## Next steps\n\nTBD\n");
+    ask(app, { toolName: "edit", args: { path: "Notes/plan.md", edits: [{ oldText: "TBD", newText: "- [ ] Draft scope" }] } });
+    await settle();
+    expect($$(".agentic-chat-approval-summary").map((el) => el.textContent)).toEqual(['+1 −1 · in "Next steps"']);
+  });
+
   it("Show more stops (and its buttons go) once the window is too large to diff", async () => {
     const app = fakeApp();
     const head = Array.from({ length: 100 }, (_, index) => `head ${index}`).join("\n");
