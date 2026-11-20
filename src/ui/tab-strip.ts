@@ -21,6 +21,8 @@ export interface TabHeaderElements {
 
 /** What the strip shows for one tab. */
 export interface TabView {
+  /** Stable per tab while it is open: a rename follows the tab, not its index. */
+  key: string;
   label: string | undefined;
   sessionName: string | undefined;
   status: TabStatus | null;
@@ -48,6 +50,8 @@ export class TabStrip {
   private tabs: TabView[] = [];
   private activeIndex = 0;
   private editingIndex: number | null = null;
+  /** Ends the open rename (commit or cancel); null when no rename is open. */
+  private finishEdit: ((commit: boolean) => void) | null = null;
   private menuOpen = false;
   /** What the strip last drew; a re-render with the same state keeps the nodes. */
   private renderedKey: string | null = null;
@@ -100,12 +104,21 @@ export class TabStrip {
 
   /** Re-render every tab. A rename in progress is kept until it commits. */
   render(tabs: TabView[], activeIndex: number, canAdd: boolean, maxTabs: number): void {
+    const editingKey = this.editingIndex === null ? undefined : this.tabs[this.editingIndex]?.key;
+    const sameShape =
+      activeIndex === this.activeIndex && tabs.length === this.tabs.length && tabs.every((tab, i) => tab.key === this.tabs[i]?.key);
     this.tabs = tabs;
     this.activeIndex = activeIndex;
     this.el.add.disabled = !canAdd;
     this.el.add.setAttr("aria-disabled", String(!canAdd));
     this.el.add.setAttr("title", canAdd ? "New tab" : `Up to ${maxTabs} tabs. Close one to open another.`);
-    if (this.isEditing) return;
+    if (this.isEditing) {
+      // A status or label change waits: the rename re-renders when it ends.
+      if (sameShape) return;
+      // A tab closed or another tab became active under an open rename: save
+      // it first, so it lands on the right tab (by key) and nothing freezes.
+      this.finishEdit?.(editingKey !== undefined && tabs.some((tab) => tab.key === editingKey));
+    }
     // Background tabs re-render on every stream event. Rebuilding unchanged
     // nodes would drop keyboard focus and lose a click between down and up.
     const key = JSON.stringify([tabs, activeIndex]);
@@ -252,17 +265,22 @@ export class TabStrip {
     input.focus();
     input.select();
     let done = false;
+    const key = this.tabs[index]?.key;
     const finish = (commit: boolean) => {
       if (done) return;
       done = true;
+      this.finishEdit = null;
+      // The tab may have moved (an earlier tab closed): rename it where it is now.
+      const now = key === undefined ? -1 : this.tabs.findIndex((tab) => tab.key === key);
       this.editingIndex = null;
       // The input replaced the label: draw the tabs again even if the state is the same.
       this.renderedKey = null;
       const value = input.value.trim();
-      if (commit && value !== current) this.actions.rename(index, value || undefined);
+      if (commit && now !== -1 && value !== current) this.actions.rename(now, value || undefined);
       // Re-render either way so the label (or the number) comes back.
       this.render(this.tabs, this.activeIndex, !this.el.add.disabled, this.tabs.length);
     };
+    this.finishEdit = finish;
     input.addEventListener("keydown", (event) => {
       event.stopPropagation();
       if (event.key === "Enter") {

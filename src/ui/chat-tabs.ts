@@ -58,6 +58,10 @@ export interface ChatTabsDeps {
  * composer draft in and out of the textarea.
  */
 export class ChatTabs {
+  /** A stable key per open tab, so a rename follows the tab, not its index. */
+  private readonly tabKeys = new WeakMap<ChatTab, string>();
+  private nextTabKey = 0;
+
   private tabs: ChatTab[] = [];
   private activeIndex = 0;
   private strip: TabStrip | null = null;
@@ -224,7 +228,13 @@ export class ChatTabs {
     const views: TabView[] = this.tabs.map((tab, index) => {
       const info = tab.service.getSessionInfo();
       const active = index === this.activeIndex;
+      let key = this.tabKeys.get(tab);
+      if (key === undefined) {
+        key = `tab-${(this.nextTabKey += 1)}`;
+        this.tabKeys.set(tab, key);
+      }
       return {
+        key,
         label: info?.tabLabel,
         sessionName: info?.name,
         status: tabStatus({

@@ -68,12 +68,18 @@ describe("TabStrip re-render", () => {
       add: header.createEl("button"),
     };
     const activated: number[] = [];
-    const tabStrip = new TabStrip(el, { activate: (i) => activated.push(i), close: () => {}, rename: () => {}, openHistory: () => {} });
-    return { el, tabStrip, activated };
+    const renamed: Array<[number, string | undefined]> = [];
+    const tabStrip = new TabStrip(el, {
+      activate: (i) => activated.push(i),
+      close: () => {},
+      rename: (i, label) => renamed.push([i, label]),
+      openHistory: () => {},
+    });
+    return { el, tabStrip, activated, renamed };
   }
   const views = (status: TabView["status"] = null): TabView[] => [
-    { label: undefined, sessionName: undefined, status: null },
-    { label: "Vendors", sessionName: undefined, status },
+    { key: "a", label: undefined, sessionName: undefined, status: null },
+    { key: "b", label: "Vendors", sessionName: undefined, status },
   ];
 
   it("keeps the tab nodes and focus when a background event re-renders the same state", () => {
@@ -107,6 +113,30 @@ describe("TabStrip re-render", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it("a rename follows its tab when an earlier tab closes, and the strip does not freeze", () => {
+    const { el, tabStrip, renamed } = strip();
+    tabStrip.render(views(), 1, true, 5);
+    el.strip.querySelectorAll<HTMLElement>('[data-ac="tab"]')[1]?.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
+    const input = el.strip.querySelector<HTMLInputElement>('[data-ac="tab-input"]');
+    expect(input).not.toBeNull();
+    if (input) input.value = "Plan";
+    // Tab "a" closes while the rename is open: "b" is now index 0.
+    tabStrip.render([views()[1]], 0, true, 5);
+    expect(renamed).toEqual([[0, "Plan"]]);
+    expect(el.strip.querySelector('[data-ac="tab"][aria-selected="true"] [data-ac="tab-label"]')?.textContent).toBe("Vendors");
+    tabStrip.dispose();
+  });
+
+  it("a background status change does not end a rename the user is typing", () => {
+    const { el, tabStrip, renamed } = strip();
+    tabStrip.render(views(), 0, true, 5);
+    el.strip.querySelectorAll<HTMLElement>('[data-ac="tab"]')[0]?.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
+    tabStrip.render(views("running"), 0, true, 5);
+    expect(el.strip.querySelector('[data-ac="tab-input"]')).not.toBeNull();
+    expect(renamed).toEqual([]);
+    tabStrip.dispose();
   });
 
   it("keeps keyboard focus on the same tab when a status change rebuilds the strip", () => {
