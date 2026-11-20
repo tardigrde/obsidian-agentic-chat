@@ -122,8 +122,10 @@ export function failedCount(steps: readonly SummaryStep[]): number {
   return steps.filter((step) => step.status === "error").length;
 }
 
+/** A path for the running label: a note without ".md", cut to `max`. */
 function shortTarget(value: string, max = 40): string {
-  return value.length > max ? `${value.slice(0, max - 1)}…` : value;
+  const shown = noteDisplayPath(value);
+  return shown.length > max ? `${shown.slice(0, max - 1)}…` : shown;
 }
 
 function host(url: string): string {
@@ -179,7 +181,8 @@ export function noteDisplayPath(path: string): string {
 export function stepRowParts(name: string, rawArgs: string): { verb: string; arg: string; path: string } {
   const parts = stepRowPartsRaw(name, rawArgs);
   // Display only: `path` (the link target) keeps the real file name.
-  if (!parts.path) return parts;
+  // The arg is a vault path when the row links one, or for a delete (no link: the file is gone).
+  if (!parts.path && name !== "delete") return parts;
   return { ...parts, arg: parts.arg.split(" → ").map(noteDisplayPath).join(" → ") };
 }
 

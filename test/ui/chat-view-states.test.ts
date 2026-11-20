@@ -254,6 +254,10 @@ describe("chat view state machine", () => {
     expect(reason?.ownerDocument.activeElement).toBe(reason);
     reason?.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
     expect((await first).approved).toBe(false);
+    await settle();
+    // Card A is done: focus moves on to card B, so Enter and Esc work there.
+    const cardB = ui.$$<HTMLElement>('[data-ac="approval"]').find((el) => el.querySelector('[data-ac="approval-allow"]'));
+    expect(reason?.ownerDocument.activeElement).toBe(cardB);
     ui.$$<HTMLButtonElement>('[data-ac="approval-allow"]').at(-1)?.click();
     await second;
     held.release();

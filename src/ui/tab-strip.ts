@@ -208,6 +208,7 @@ export class TabStrip {
     };
     el.addEventListener("pointerdown", (event) => {
       if (event.pointerType !== "touch") return;
+      if (timer !== null) window.clearTimeout(timer);
       start = { x: event.clientX, y: event.clientY };
       this.longPressCancels.add(cancel);
       timer = window.setTimeout(() => {

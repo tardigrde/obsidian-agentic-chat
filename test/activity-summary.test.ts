@@ -41,7 +41,9 @@ describe("activity line summary", () => {
   });
 
   it("says what a running step does", () => {
-    expect(runningLabel("read", JSON.stringify({ path: "Meetings/Kickoff.md" }))).toBe("Reading Meetings/Kickoff.md");
+    // Notes without ".md", like the step rows and the source pills.
+    expect(runningLabel("read", JSON.stringify({ path: "Meetings/Kickoff.md" }))).toBe("Reading Meetings/Kickoff");
+    expect(runningLabel("delete", JSON.stringify({ path: "Old/Plan.md" }))).toBe("Deleting Old/Plan");
     expect(runningLabel("fetch_url", JSON.stringify({ url: "https://vendors.example.com/pricing" }))).toBe("Fetching vendors.example.com");
     expect(runningLabel("vault_inspect", JSON.stringify({ action: "search" }))).toBe("Searching the vault…");
     expect(runningLabel("mcp__github__issues", "{}")).toBe("Using github…");
@@ -52,6 +54,8 @@ describe("activity line summary", () => {
     expect(stepRowParts("read", JSON.stringify({ path: "Meetings/Sync.md" }))).toEqual({ verb: "Read", arg: "Meetings/Sync", path: "Meetings/Sync.md" });
     expect(stepRowParts("read", JSON.stringify({ path: "Files/report.pdf" }))).toEqual({ verb: "Read", arg: "Files/report.pdf", path: "Files/report.pdf" });
     expect(stepRowParts("rename", JSON.stringify({ path: "A.md", newPath: "Archive/A.md" })).arg).toBe("A → Archive/A");
+    // A delete has no link (the file is gone), but its row still names the note the same way.
+    expect(stepRowParts("delete", JSON.stringify({ path: "Old/Plan.md" }))).toEqual({ verb: "Delete", arg: "Old/Plan", path: "" });
     expect(stepRowParts("vault_inspect", JSON.stringify({ action: "search", query: "tag:#meeting" }))).toEqual({ verb: "Search", arg: "tag:#meeting", path: "" });
     expect(stepRowParts("fetch_url", JSON.stringify({ url: "https://x.example/p" }))).toEqual({ verb: "Fetch", arg: "https://x.example/p", path: "" });
   });

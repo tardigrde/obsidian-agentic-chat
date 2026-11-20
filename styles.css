@@ -2592,6 +2592,34 @@ body.is-mobile,
 }
 
 /* Touch: the same layout, bigger targets, nothing hover-only. */
+/* Touch: every control reaches 44px. Rows and buttons grow; small pills and
+   the chip × keep their look and get an invisible 44px hit area around them. */
+.is-mobile .agentic-chat-step-head,
+.is-mobile .agentic-chat-error-retry {
+  min-height: var(--ac-hit);
+}
+
+.is-mobile .agentic-chat-source-chip,
+.is-mobile .agentic-chat-chip-remove {
+  position: relative;
+}
+
+/* The chip label ellipsizes itself; the chip must not clip the × hit area. */
+.is-mobile .agentic-chat-chip {
+  overflow: visible;
+}
+
+.is-mobile .agentic-chat-source-chip::after,
+.is-mobile .agentic-chat-chip-remove::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: max(100%, var(--ac-hit));
+  height: max(100%, var(--ac-hit));
+  transform: translate(-50%, -50%);
+}
+
 .is-mobile .agentic-chat-mode-label {
   display: none;
 }

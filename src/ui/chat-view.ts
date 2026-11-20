@@ -468,6 +468,13 @@ export class ChatView extends ItemView {
       if (tab.pendingApprovals.length === 0 && tab === this.activeTab && !this.closed) {
         this.transcript.approvalSettled();
         if (this.statusEl.textContent === APPROVAL_STATUS) this.statusEl.setText("");
+      } else if (tab === this.activeTab && !this.closed) {
+        // Hand focus on to the next waiting card, so Enter and Esc keep working.
+        // `focus` itself leaves the composer and another card's focus alone.
+        const next = tab.pendingApprovals.find((pending) => !pending.settled);
+        const active = this.containerEl.ownerDocument.activeElement;
+        const lost = !active || active === this.containerEl.ownerDocument.body || !active.isConnected;
+        if (next && lost) next.focus(this.inputEl.value.trim().length > 0);
       }
       this.syncTabStrip();
     }

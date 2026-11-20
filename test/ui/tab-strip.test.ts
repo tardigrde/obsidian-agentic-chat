@@ -96,6 +96,10 @@ describe("TabStrip re-render", () => {
       const down = new MouseEvent("pointerdown", { bubbles: true, clientX: 5, clientY: 5 }) as MouseEvent & { pointerType: string };
       Object.defineProperty(down, "pointerType", { value: "touch" });
       tab?.dispatchEvent(down);
+      // A second finger on the same tab must not leave an orphan timer.
+      const second = new MouseEvent("pointerdown", { bubbles: true, clientX: 6, clientY: 6 }) as MouseEvent & { pointerType: string };
+      Object.defineProperty(second, "pointerType", { value: "touch" });
+      tab?.dispatchEvent(second);
       tabStrip.render(views("unread"), 0, true, 5);
       vi.advanceTimersByTime(1_000);
       expect(el.strip.querySelector('[data-ac="tab-input"]')).toBeNull();

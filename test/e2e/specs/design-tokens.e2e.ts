@@ -208,4 +208,38 @@ describe("UI v2 design tokens and restyle", function () {
     expect(sizes.modeLabel).toBe("none");
     expect(sizes.actionsOpacity).toBe("1");
   });
+
+  it("gives transcript and chip controls a 44px hit area on touch", async function () {
+    await setMobileClass(true);
+    const hits = await browser.execute(() => {
+      const messages = document.querySelector<HTMLElement>('[data-ac="messages"]');
+      const chips = document.querySelector<HTMLElement>('[data-ac="chips"]');
+      if (!messages || !chips) return null;
+      // The plugin's own classes, so the real stylesheet applies.
+      const probe = messages.createDiv({ cls: "agentic-chat-hit-probe" });
+      const source = probe.createEl("button", { cls: "agentic-chat-source-chip", text: "Shortlist" });
+      const retry = probe.createEl("button", { cls: "agentic-chat-error-retry", text: "Ask again" });
+      const step = probe.createDiv({ cls: ["agentic-chat-step", "is-expandable"] });
+      const head = step.createDiv({ cls: "agentic-chat-step-head", text: "Read Shortlist" });
+      const chip = chips.createDiv({ cls: "agentic-chat-chip" });
+      chip.createSpan({ text: "Plan" });
+      const remove = chip.createSpan({ cls: "agentic-chat-chip-remove", attr: { role: "button" } });
+      const reach = (el: HTMLElement, dx: number, dy: number) => {
+        const r = el.getBoundingClientRect();
+        const hit = document.elementFromPoint(r.left + r.width / 2 + dx, r.top + r.height / 2 + dy);
+        return !!hit && (hit === el || el.contains(hit));
+      };
+      const result = {
+        source: reach(source, 0, -20) && reach(source, 0, 20),
+        retry: reach(retry, 0, -20) && reach(retry, 0, 20),
+        step: reach(head, 0, -20) && reach(head, 0, 20),
+        remove: reach(remove, 20, 0) && reach(remove, 0, -20),
+      };
+      probe.remove();
+      chip.remove();
+      return result;
+    });
+    await setMobileClass(false);
+    expect(hits).toEqual({ source: true, retry: true, step: true, remove: true });
+  });
 });
