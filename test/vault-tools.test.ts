@@ -535,6 +535,15 @@ describe("read — dedup + size guardrail", () => {
     await expect(run(read, { path: "Inbox" })).rejects.toThrow(/is a folder — use vault_inspect with action "list"/i);
   });
 
+  it("U3 #9: refuses a binary file with a clear error instead of mangled text", async () => {
+    const png = "\uFFFDPNG\r\n\u001a\n\u0000\u0000\u0000\rIHDR\u0000\u0000\u0001\uFFFD\uFFFD\uFFFD";
+    const app = makeApp({ files: { "700 Media/adulthood.png": { content: png }, "Data/blob.bin": { content: `abc\u0000\uFFFD\uFFFDdef` } } });
+    const read = createVaultTools(app).find((t) => t.name === "read")!;
+    await expect(run(read, { path: "700 Media/adulthood.png" })).rejects.toThrow(/binary file \(PNG image/i);
+    await expect(run(read, { path: "700 Media/adulthood.png" })).rejects.toThrow(/attach/i);
+    await expect(run(read, { path: "Data/blob.bin" })).rejects.toThrow(/binary/i);
+  });
+
   it("returns content on the first read, a pointer on the second identical read", async () => {
     const app = makeApp({ files: { "Note.md": { content: "hello world" } } });
     const memo = new ReadMemo();
