@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { collectArtifactIdsFromText } from "../src/artifacts/artifact-references";
 import type { App } from "obsidian";
 import { Agent, type StreamFn } from "@earendil-works/pi-agent-core";
 import type { Model } from "@earendil-works/pi-ai";
@@ -349,7 +350,8 @@ describe("createSubagentTool", () => {
     // Owner, 2026-11-20: the model gets the pointer only, no part of the report.
     expect(text).not.toContain("Finding line with detail.");
     expect(text).not.toContain("THE-TAIL-MARKER");
-    expect(text).toMatch(/artifact "art-1"/);
+    // `artifact:<id>` keeps the report alive in the artifact prune scan.
+    expect(collectArtifactIdsFromText(text)).toEqual(new Set(["art-1"]));
     expect(text).toMatch(/artifact tool: action "read", id "art-1"/);
     expect(text.length).toBeLessThan(400);
     // The user's subagent row still shows the head of the report.

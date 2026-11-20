@@ -60,9 +60,10 @@ describe("buildModel — OpenRouter", () => {
       expect(buildModel(config({ modelId: "deepseek/deepseek-v4.1-flash-1017" })).input).toEqual(["text", "image"]);
       expect(buildModel(config({ modelId: "deepseek/deepseek-v4-pro" })).input).toEqual(["text"]);
       expect(buildModel(config({ modelId: "made-up/model" })).input).toEqual(["text"]);
+      // A gateway may serve the same id text-only: no image input from a suffix match (S5).
       expect(
         buildModel(config({ provider: "openai-compatible", modelId: "deepseek-v4.1-flash-1017" })).input,
-      ).toEqual(["text", "image"]);
+      ).toEqual(["text"]);
     } finally {
       clearPricingCacheForTests();
     }

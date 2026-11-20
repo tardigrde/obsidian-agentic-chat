@@ -244,6 +244,12 @@ export function createSubagentTool(
       }
       let modelText: string | undefined;
       if (fullReport !== undefined && fullReport.length > PER_CHILD_SUMMARY_CHARS) {
+        // A pending progress tick must not show "done" with the temporary
+        // truncated summary while the artifact is written (review of #406).
+        if (emitTimer) {
+          window.clearTimeout(emitTimer);
+          emitTimer = null;
+        }
         const kept = await keepFullReport(deps.artifactStore, agent, fullReport);
         if (kept) {
           status.summary = kept.userPreview;
@@ -473,7 +479,8 @@ async function keepFullReport(
     const total = report.length.toLocaleString("en-US");
     return {
       modelText:
-        `Subagent "${agent}" finished. Its report is ${total} characters, too long to inline, and is stored in full as artifact "${artifact.id}". ` +
+        // `artifact:<id>` is the reference form the artifact prune scan keeps alive.
+        `Subagent "${agent}" finished. Its report is ${total} characters, too long to inline, and is stored in full as artifact:${artifact.id}. ` +
         `Read it with the artifact tool: action "read", id "${artifact.id}" (it returns chunks; continue with the offset it gives).`,
       userPreview:
         `${report.slice(0, REPORT_PREVIEW_CHARS)}\n\n[Showing the first ${REPORT_PREVIEW_CHARS.toLocaleString("en-US")} of ${total} characters. ` +

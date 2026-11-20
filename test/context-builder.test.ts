@@ -262,6 +262,20 @@ describe("buildPromptContext", () => {
     expect(second).not.toContain("stable body");
   });
 
+  it("re-inlines a shortened note: a prefix of the held section is not the same section", async () => {
+    const fake = app();
+    const long = `${"Kept line of the plan.\n".repeat(20)}LAST-PARAGRAPH that the user deletes.`;
+    const file = await fake.vault.create("Plan.md", long);
+    const options = { app: fake, activeNotePath: "Plan.md", attachments: [], isPathIgnored: () => false };
+    const first = await buildPromptContext(options);
+    await fake.vault.modify(file, "Kept line of the plan.\n".repeat(20).trimEnd());
+    const shortened = await buildPromptContext({ ...options, sentText: `${first}\n\nturn one` });
+
+    expect(shortened).not.toContain("is unchanged");
+    expect(shortened).toContain("Kept line of the plan.");
+    expect(shortened).not.toContain("LAST-PARAGRAPH");
+  });
+
   it("re-inlines an active note after its content changes", async () => {
     const fake = app();
     const file = await fake.vault.create("Iac.md", "version one");

@@ -544,6 +544,15 @@ describe("read — dedup + size guardrail", () => {
     await expect(run(read, { path: "Data/blob.bin" })).rejects.toThrow(/binary/i);
   });
 
+  it("reads a legacy-encoded text note (some U+FFFD) and a file named like an Object key", async () => {
+    // cp1250 Hungarian decoded as UTF-8: only the accented letters turn into U+FFFD.
+    const legacy = "Sz\uFFFDp nap van, a kert z\uFFFDld \uFFFDs a h\uFFFDz el\uFFFDtt \uFFFDll a fa.\n".repeat(30);
+    const app = makeApp({ files: { "Old/napl\u00f3.md": { content: legacy }, "Notes/plan.constructor": { content: "plain text" } } });
+    const read = createVaultTools(app).find((t) => t.name === "read")!;
+    expect((await run(read, { path: "Old/napl\u00f3.md" })).text).toContain("kert");
+    expect((await run(read, { path: "Notes/plan.constructor" })).text).toContain("plain text");
+  });
+
   it("returns content on the first read, a pointer on the second identical read", async () => {
     const app = makeApp({ files: { "Note.md": { content: "hello world" } } });
     const memo = new ReadMemo();

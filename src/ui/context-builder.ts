@@ -47,6 +47,10 @@ export function sentUserText(messages: readonly AgentMessage[]): string {
   return parts.join("\n");
 }
 
+const CONTEXT_OPENING = "<context>\nThe user attached the following from their vault:";
+const CONTEXT_CLOSING = "</context>";
+const SECTION_SEPARATOR = "\n\n---\n\n";
+
 const SECTION_HEAD = /^(Active note|Contents of note|Selected text from|Folder listing for) "([^"\n]+)"/;
 
 /** The one-line stand-in for a section the model already holds verbatim, or null to keep it. */
@@ -65,9 +69,26 @@ function unchangedStub(section: string): string | null {
   return stub.length < section.length ? stub : null;
 }
 
+/**
+ * A section counts as held only when it appears complete: with the context
+ * separators on both sides. A bare `includes` matched a shortened note (a
+ * prefix of the old section) and stubbed it as "unchanged" (review of #406).
+ */
 function dedupeSection(section: string, sentText: string | undefined): string {
-  if (!sentText || !sentText.includes(section)) return section;
+  if (!sentText || !heldComplete(section, sentText)) return section;
   return unchangedStub(section) ?? section;
+}
+
+const SECTION_STARTS = [`${CONTEXT_OPENING}\n\n`, SECTION_SEPARATOR];
+const SECTION_ENDS = [SECTION_SEPARATOR, `\n${CONTEXT_CLOSING}`];
+
+function heldComplete(section: string, sentText: string): boolean {
+  for (const start of SECTION_STARTS) {
+    for (const end of SECTION_ENDS) {
+      if (sentText.includes(`${start}${section}${end}`)) return true;
+    }
+  }
+  return false;
 }
 
 /** Build the `<context>` preamble sent before a user prompt. */
@@ -93,7 +114,7 @@ export async function buildPromptContext(options: PromptContextOptions): Promise
 
   if (sections.length === 0) return "";
   const escapedSections = sections.map((section) => dedupeSection(escapeContextSection(section), options.sentText));
-  return `<context>\nThe user attached the following from their vault:\n\n${escapedSections.join("\n\n---\n\n")}\n</context>`;
+  return `${CONTEXT_OPENING}\n\n${escapedSections.join(SECTION_SEPARATOR)}\n${CONTEXT_CLOSING}`;
 }
 
 /** Encode image attachments as multimodal content parts for the model. */

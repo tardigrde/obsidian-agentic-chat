@@ -60,17 +60,22 @@ function extensionOf(path: string): string {
 
 /** The kind of a known binary file, by extension, or null. */
 export function binaryKindByExtension(path: string): string | null {
-  return BINARY_KINDS[extensionOf(path)] ?? null;
+  const ext = extensionOf(path);
+  return Object.prototype.hasOwnProperty.call(BINARY_KINDS, ext) ? BINARY_KINDS[ext] : null;
 }
 
-/** True when decoded text looks like binary data: a NUL byte, or over 10% U+FFFD in the first 4 KB. */
+/**
+ * True when decoded text looks like binary data: a NUL byte, or over 30%
+ * U+FFFD in the first 4 KB. A legacy-encoded note (cp1250 Hungarian decoded as
+ * UTF-8) shows U+FFFD only for its accented letters, far below 30%.
+ */
 export function looksBinary(text: string): boolean {
   const sample = text.slice(0, 4096);
   if (sample.includes("\u0000")) return true;
   if (sample.length === 0) return false;
   let replacements = 0;
   for (const char of sample) if (char === "�") replacements += 1;
-  return replacements / sample.length > 0.1;
+  return replacements / sample.length > 0.3;
 }
 
 /** The `read` error for a binary file, with the next step for that kind. */

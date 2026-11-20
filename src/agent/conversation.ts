@@ -109,13 +109,16 @@ export class AgentConversation {
     if (!agent?.state.isStreaming) return;
     agent.abort();
     let timer: number | undefined;
-    await Promise.race([
-      agent.waitForIdle(),
-      new Promise<void>((resolve) => {
-        timer = window.setTimeout(resolve, timeoutMs);
-      }),
-    ]);
-    if (timer !== undefined) window.clearTimeout(timer);
+    try {
+      await Promise.race([
+        agent.waitForIdle(),
+        new Promise<void>((resolve) => {
+          timer = window.setTimeout(resolve, timeoutMs);
+        }),
+      ]);
+    } finally {
+      if (timer !== undefined) window.clearTimeout(timer);
+    }
   }
 
   /** Detach for good; a disposed conversation never creates another agent. */

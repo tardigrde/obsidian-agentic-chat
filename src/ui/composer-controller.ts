@@ -208,6 +208,9 @@ export class ChatComposer {
   setComposerValueQuiet(value: string): void {
     const input = this.deps.inputEl();
     input.value = value;
+    // No input event here (history recall, a restored steer), so the send
+    // button state follows by hand (review of #406).
+    this.deps.syncChrome();
     input.setSelectionRange(value.length, value.length);
     this.deps.menu().hide();
     autoGrow(input);

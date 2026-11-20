@@ -597,7 +597,9 @@ export class AgentService {
 
   /** Whether the model the next turn will use accepts image input (vision). */
   supportsImages(): boolean {
-    return agentSupportsImages(this.agent?.state.model);
+    // Build the next turn's model now: the live agent's model was built when
+    // the tab started and can predate the catalog refresh (review of #406).
+    return agentSupportsImages(this.turns.buildModelForTurn());
   }
 
   /**

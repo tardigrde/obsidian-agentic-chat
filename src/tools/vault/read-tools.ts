@@ -167,6 +167,8 @@ export function createReadTool(app: App, isIgnored: IgnoreMatcher, memo?: ReadMe
       if (memo?.has(readKey)) {
         return textResult(alreadyReadMessage(path), { path, deduplicated: true });
       }
+      // A known binary off the index is refused before its bytes are read.
+      if (binaryKind && (await app.vault.adapter.exists(path))) throw binaryReadError(path, binaryKind, undefined);
       let content: string;
       try {
         content = await app.vault.adapter.read(path);
@@ -178,7 +180,7 @@ export function createReadTool(app: App, isIgnored: IgnoreMatcher, memo?: ReadMe
         }
         throw new Error(`${path} is a folder — use vault_inspect with action "list" to list its contents.`, { cause: readError });
       }
-      if (binaryKind || looksBinary(content)) throw binaryReadError(path, binaryKind, content.length);
+      if (looksBinary(content)) throw binaryReadError(path, null, undefined);
       const guidance = readSizeGuardrail({ path, size: content.length, ...range });
       if (guidance) {
         return textResult(guidance, { path, tooLarge: true });

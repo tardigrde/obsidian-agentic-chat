@@ -160,7 +160,9 @@ function buildOpenAICompatibleModel(config: ModelConfig): Model<"openai-completi
     provider: "openai-compatible",
     baseUrl: normalizeOpenAICompatibleApiBaseUrl(config.openaiCompatibleBaseUrl),
     reasoning: false,
-    input: modelInput(info),
+    // A gateway id that suffix-matches an OpenRouter vision model may still be
+    // text-only behind the gateway; a per-model setting or probe is S5.
+    input: ["text"],
     cost: { input: pricing.input, output: pricing.output, cacheRead: pricing.cacheRead, cacheWrite: pricing.cacheWrite },
     contextWindow,
     maxTokens: DEFAULT_MAX_TOKENS,

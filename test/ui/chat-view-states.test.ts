@@ -164,6 +164,14 @@ describe("chat view state machine", () => {
     expect(send?.disabled).toBe(true);
     expect(send?.getAttribute("aria-label")).toMatch(/type a message/i);
 
+    // ArrowUp recalls the sent prompt without an input event: Queue follows it.
+    ui.$<HTMLTextAreaElement>('[data-ac="composer-input"]')?.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "ArrowUp", bubbles: true, cancelable: true }),
+    );
+    expect(ui.$<HTMLTextAreaElement>('[data-ac="composer-input"]')?.value).toBe("first prompt");
+    expect(send?.disabled).toBe(false);
+    ui.$<HTMLTextAreaElement>('[data-ac="composer-input"]')!.value = "";
+
     await ui.queue("follow-up prompt");
     expect(send?.disabled).toBe(false);
     expect(chrome().send).toBe("update");
