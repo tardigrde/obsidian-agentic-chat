@@ -160,6 +160,8 @@ export class TabStrip {
       el.createSpan({ cls: ["agentic-chat-dot", `is-${tab.status}`], attr: { "aria-hidden": "true" } });
     }
     if (this.tabs.length > 1) {
+      // Keyboard path to close: Delete on the focused tab (the × is for the mouse).
+      el.setAttr("aria-keyshortcuts", "Delete");
       const close = acHook(
         el.createSpan({ cls: "agentic-chat-tab-close", attr: { role: "button", tabindex: "-1", "aria-label": `Close tab ${index + 1}` } }),
         "tab-close",
@@ -189,7 +191,12 @@ export class TabStrip {
     let next: number | null = null;
     if (event.key === "ArrowRight") next = index >= last ? 0 : index + 1;
     else if (event.key === "ArrowLeft") next = index <= 0 ? last : index - 1;
-    else if (event.key === "Home") next = 0;
+    else if (event.key === "Delete" && this.tabs.length > 1) {
+      event.preventDefault();
+      this.actions.close(index);
+      this.focusTab(Math.min(index, this.tabs.length - 2));
+      return;
+    } else if (event.key === "Home") next = 0;
     else if (event.key === "End") next = last;
     else if (event.key === "Enter" || event.key === " ") {
       event.preventDefault();

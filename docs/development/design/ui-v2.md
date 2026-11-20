@@ -108,8 +108,9 @@ With `prefers-reduced-motion`, spinners and pulses are static.
   active tab always stays visible. The button reads `+N ▾` with the most urgent
   dot of the hidden tabs, or `⋯` when nothing is hidden. The menu lists the
   hidden tabs, then Rename current tab, Open from history…, Close current tab.
-- **Close.** An × on hover or focus on desktop. On touch, close is only in the
-  menu, so a stray tap does not close a tab.
+- **Close.** An × on hover or focus on desktop, and Delete on the focused tab
+  for the keyboard. On touch, close is only in the menu, so a stray tap does
+  not close a tab.
 - **Keyboard and a11y.** `role="tablist"` with roving tabindex; Left, Right,
   Home, and End move and activate. The status is in the tab's `aria-label`
   (`Tab 2, Project plan, needs approval`).

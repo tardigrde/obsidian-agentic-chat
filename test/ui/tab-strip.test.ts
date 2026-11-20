@@ -139,6 +139,22 @@ describe("TabStrip re-render", () => {
     tabStrip.dispose();
   });
 
+  it("Delete closes the focused tab from the keyboard (when more than one is open)", () => {
+    const closed: number[] = [];
+    const header = document.body.createDiv();
+    const el = { header, strip: header.createDiv(), overflow: header.createEl("button"), menu: header.createDiv(), add: header.createEl("button") };
+    const tabStrip = new TabStrip(el, { activate: () => {}, close: (i) => closed.push(i), rename: () => {}, openHistory: () => {} });
+    tabStrip.render(views(), 0, true, 5);
+    const second = el.strip.querySelectorAll<HTMLElement>('[data-ac="tab"]')[1];
+    expect(second?.getAttribute("aria-keyshortcuts")).toBe("Delete");
+    second?.dispatchEvent(new KeyboardEvent("keydown", { key: "Delete", bubbles: true }));
+    expect(closed).toEqual([1]);
+    tabStrip.render([views()[0]], 0, true, 5);
+    el.strip.querySelector<HTMLElement>('[data-ac="tab"]')?.dispatchEvent(new KeyboardEvent("keydown", { key: "Delete", bubbles: true }));
+    expect(closed).toEqual([1]);
+    tabStrip.dispose();
+  });
+
   it("keeps keyboard focus on the same tab when a status change rebuilds the strip", () => {
     const { el, tabStrip } = strip();
     tabStrip.render(views("running"), 0, true, 5);
