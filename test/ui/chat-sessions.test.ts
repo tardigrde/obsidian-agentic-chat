@@ -130,4 +130,24 @@ describe("chat sessions", () => {
     expect(texts.filter((text) => text.includes(body))).toHaveLength(1);
     expect(texts[3]).toContain('Active note "Inbox/Plan.md" is unchanged');
   });
+  it("U3 #13: closing the view mid-turn records the stopped turn, so the session has no turn without an end", async () => {
+    ui = await mountChatView({
+      turns: [{ ...replayTextTurn("never finishes"), hold: true }],
+      waitForRelease: () => new Promise<void>(() => {}),
+    });
+    await ui.send("a question that gets no answer");
+    expect(ui.view.isStreaming()).toBe(true);
+
+    await ui.close();
+    await settle();
+
+    const { files } = await ui.adapter.list("sessions");
+    const lines = (await ui.adapter.read(files[0])).trim().split("\n").map((line) => JSON.parse(line) as Record<string, unknown>);
+    const audits = lines.flatMap((line) => (line.type === "action_audit" ? [(line.event as { action?: string }).action] : []));
+    const messages = lines.flatMap((line) => (line.type === "message" ? [line.message as { role: string; stopReason?: string }] : []));
+    expect(audits.filter((action) => action === "agent_start")).toHaveLength(1);
+    expect(audits.filter((action) => action === "agent_end")).toHaveLength(1);
+    expect(messages.map((message) => message.role)).toEqual(["user", "assistant"]);
+    expect(messages[1].stopReason).toBe("aborted");
+  });
 });
