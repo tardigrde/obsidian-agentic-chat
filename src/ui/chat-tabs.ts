@@ -15,11 +15,13 @@ export interface ChatTab {
   service: AgentService;
   unsubscribe: () => void;
   state: ChatTabWorkingState;
-  needsApproval?: boolean;
   /** A background turn finished and the user has not looked at it yet. */
   unread?: boolean;
-  /** The approval card waiting in this tab's transcript, if any. */
-  pendingApproval?: ApprovalCard;
+  /**
+   * Approval cards waiting in this tab's transcript. Parallel tool calls (MCP
+   * tools run in parallel) can ask at once, so this is a list, not one slot.
+   */
+  pendingApprovals?: ApprovalCard[];
 }
 
 /** Maximum independent sessions ("tabs") in one chat leaf. Each tab owns an AgentService. */
@@ -168,7 +170,7 @@ export class ChatTabs {
     if (closingActive) this.deps.endEditing();
     const [tab] = this.tabs.splice(index, 1);
     tab.unsubscribe();
-    tab.pendingApproval?.stop();
+    for (const card of tab.pendingApprovals ?? []) card.stop();
     tab.service.dispose();
     if (index < this.activeIndex) {
       this.activeIndex -= 1;
@@ -231,7 +233,7 @@ export class ChatTabs {
         label: info?.tabLabel,
         sessionName: info?.name,
         status: tabStatus({
-          needsApproval: !!tab.needsApproval,
+          needsApproval: (tab.pendingApprovals?.length ?? 0) > 0,
           streaming: tab.service.isStreaming(),
           error: !active && !!tab.service.getError(),
           unread: !active && !!tab.unread,

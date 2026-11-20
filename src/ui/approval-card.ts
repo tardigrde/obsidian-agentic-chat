@@ -49,6 +49,8 @@ export class ApprovalCard {
   private readonly signal?: AbortSignal;
   private readonly onAbort: () => void;
   private headIcon!: HTMLElement;
+  private titleEl!: HTMLElement;
+  private descEl: HTMLElement | null = null;
   private bodyEl!: HTMLElement;
   private actionsEl!: HTMLElement;
   private denyButton!: HTMLButtonElement;
@@ -95,7 +97,7 @@ export class ApprovalCard {
     const head = this.el.createDiv({ cls: "agentic-chat-approval-head" });
     this.headIcon = head.createSpan({ cls: ["agentic-chat-status-icon", "is-needs-you"], attr: { "aria-hidden": "true" } });
     setIcon(this.headIcon, "hand");
-    head.createSpan({ cls: "agentic-chat-approval-title", text: this.request.label });
+    this.titleEl = head.createSpan({ cls: "agentic-chat-approval-title", text: this.request.label });
     this.bodyEl = this.el.createDiv({ cls: "agentic-chat-approval-body" });
     if (this.isCreateSkill()) {
       this.bodyEl.createEl("p", {
@@ -103,7 +105,7 @@ export class ApprovalCard {
         text: "This creates a persistent skill package that loads into future sessions. Review the full body below — anything pasted from the web or another skill stays active until removed.",
       });
     }
-    this.bodyEl.createDiv({ cls: "agentic-chat-approval-desc", text: toolApprovalDescription(this.request.toolName) });
+    this.descEl = this.bodyEl.createDiv({ cls: "agentic-chat-approval-desc", text: toolApprovalDescription(this.request.toolName) });
     const preview = this.bodyEl.createDiv({ cls: "agentic-chat-approval-preview" });
     if (this.isCreateSkill()) this.renderCreateSkillPreview(preview);
     else {
@@ -149,6 +151,12 @@ export class ApprovalCard {
     this.actionsEl.createSpan({ cls: "agentic-chat-approval-kbd", text: "⏎ allow · Esc deny" });
 
     this.el.addEventListener("keydown", (event) => this.onKey(event));
+  }
+
+  /** The head names the concrete action once the preview knows it; the full text stays in the tooltip. */
+  private setTitle(text: string): void {
+    this.titleEl.setText(text);
+    this.titleEl.setAttr("title", text);
   }
 
   private button(text: string, cls: string[]): HTMLButtonElement {
@@ -268,21 +276,23 @@ export class ApprovalCard {
     const preview = buildEditPreview(this.request.toolName, this.request.args, current);
     if (preview.kind === "none") return;
     container.empty();
+    // A concrete preview says what happens, so the generic tool description goes.
+    this.descEl?.remove();
     this.renderPreviewBody(container, preview);
   }
 
   private renderPreviewBody(container: HTMLElement, preview: EditPreview): void {
     if (preview.kind === "rename") {
-      container.createEl("p", { cls: "agentic-chat-approval-summary", text: `Rename ${preview.from} → ${preview.to}` });
+      this.setTitle(`Rename ${preview.from} → ${preview.to}`);
       return;
     }
     if (preview.kind === "delete") {
-      container.createEl("p", { cls: "agentic-chat-approval-summary", text: `Move ${preview.path} to trash` });
+      this.setTitle(`Move ${preview.path} to trash`);
       this.renderDiff(container, preview.content, "");
       return;
     }
     if (preview.kind !== "diff") return;
-    container.createEl("p", { cls: "agentic-chat-approval-summary", text: `${preview.isNew ? "Create" : "Edit"} ${preview.path}` });
+    this.setTitle(`${preview.isNew ? "Create" : "Edit"} ${preview.path}`);
     this.renderDiff(container, preview.before, preview.after, preview.edits);
   }
 
@@ -322,13 +332,17 @@ export class ApprovalCard {
     let contextBefore = DEFAULT_DIFF_CONTEXT_LINES;
     let contextAfter = DEFAULT_DIFF_CONTEXT_LINES;
     const initial = buildExactEditPreviewWindow(before, edits, { contextBefore, contextAfter });
-    if (!initial) return false;
+    // A huge changed region would make diffLines throw: fall back to the plain
+    // path, which shows "Large change … (diff omitted)".
+    if (!initial || diffTooLarge(initial.before, initial.after)) return false;
     const stat = diffStat(diffLines(initial.before, initial.after));
     const summary = container.createEl("p", { cls: "agentic-chat-approval-summary", text: `+${stat.added} −${stat.removed}` });
     const diffEl = container.createDiv({ cls: "agentic-chat-diff-window" });
     const renderWindow = () => {
       const windowed = buildExactEditPreviewWindow(before, edits, { contextBefore, contextAfter });
       if (!windowed) return;
+      // "Show more" stops growing the window once a diff of it would be too large.
+      if (diffTooLarge(windowed.before, windowed.after)) return;
       const lines = diffLines(windowed.before, windowed.after);
       const next = diffStat(lines);
       summary.setText(`+${next.added} −${next.removed}`);

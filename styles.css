@@ -745,7 +745,9 @@ body.is-mobile,
   display: none;
 }
 
-.agentic-chat-activity-head {
+/* Beats Obsidian's `button:not(.clickable-icon)` (0,1,1) and its :hover, so
+   the line stays plain text, as in the design. */
+.agentic-chat-activity button.agentic-chat-activity-head {
   align-self: flex-start;
   display: inline-flex;
   align-items: center;
@@ -764,12 +766,12 @@ body.is-mobile,
   transition: background-color var(--ac-motion), color var(--ac-motion);
 }
 
-.agentic-chat-activity-head:hover {
+.agentic-chat-activity button.agentic-chat-activity-head:hover {
   background-color: var(--ac-hover);
   color: var(--ac-text);
 }
 
-.agentic-chat-activity-head:focus-visible {
+.agentic-chat-activity button.agentic-chat-activity-head:focus-visible {
   outline: var(--ac-line-strong) solid var(--ac-accent);
   outline-offset: var(--ac-line);
 }
@@ -787,6 +789,13 @@ body.is-mobile,
   white-space: nowrap;
 }
 
+.agentic-chat-activity-state {
+  flex: 0 0 auto;
+  color: var(--ac-status-needs-you);
+  white-space: nowrap;
+}
+
+.agentic-chat-activity-state:empty,
 .agentic-chat-activity-fail:empty,
 .agentic-chat-activity-time:empty {
   display: none;
@@ -1076,6 +1085,9 @@ body.is-mobile,
   max-height: var(--ac-scroll-l);
   overflow: auto;
   margin: 0;
+  /* Diff lines bleed into this padding with a negative margin; without it every
+     line is wider than the box and a horizontal scrollbar shows. */
+  padding: 0 var(--ac-space-1h);
   border: var(--ac-line) solid var(--ac-border);
   border-radius: var(--ac-radius-s);
   background-color: var(--ac-surface);
@@ -2121,6 +2133,13 @@ body.is-mobile,
   filter: brightness(1.07);
 }
 
+/* Nothing typed yet: the send button rests muted, as in the design. It still
+   works (an image-only message is valid); it only stops shouting. */
+.agentic-chat-field:has(.agentic-chat-input:placeholder-shown) .agentic-chat-send[data-ac-state="send"] {
+  background-color: var(--ac-surface-raised);
+  color: var(--ac-text-faint);
+}
+
 .agentic-chat-send[data-ac-state="queue"],
 .agentic-chat-send[data-ac-state="update"] {
   background-color: var(--ac-surface-raised);
@@ -2237,7 +2256,9 @@ body.is-mobile,
 
 .agentic-chat-approval-diff-line.is-add,
 .agentic-chat-quick-ask-diff-line.is-add {
-  color: var(--ac-status-done);
+  /* Normal text on the tint, as in the design: status-coloured text on its own
+     12% tint is below 4.5:1 in light mode. The tint and the +/- carry the meaning. */
+  color: var(--ac-text);
   background-color: var(--ac-tint-add);
 }
 

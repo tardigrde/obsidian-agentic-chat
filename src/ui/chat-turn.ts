@@ -13,6 +13,7 @@ import { errorMessage } from "../utils/errors";
 import { failedLastTurnIndex, lastUserTurn, toolResultText } from "./message-content";
 import { safeJson } from "./format";
 import type { TranscriptView } from "./transcript-view";
+import { autoGrow } from "./chat-layout";
 
 export interface ChatTurnComposerPort {
   queueComposerPrompt(): void;
@@ -84,6 +85,7 @@ export class ChatTurn {
         }
         composer.pushHistory(text);
         input.value = "";
+        autoGrow(input);
         await this.steerActiveTurn(text);
         return;
       case "send":
@@ -102,17 +104,20 @@ export class ChatTurn {
     composer.pushHistory(text);
     if (text.startsWith("#")) {
       input.value = "";
+      autoGrow(input);
       await this.captureInlineInstruction(text);
       return;
     }
     if (text.startsWith("/")) {
       input.value = "";
+      autoGrow(input);
       const handled = await this.deps.handleSlashCommand(text);
       if (handled) {
         return;
       }
     }
     input.value = "";
+    autoGrow(input);
     if (editIndex !== null) {
       await this.editAndResend(editIndex, text);
       return;
@@ -148,6 +153,7 @@ export class ChatTurn {
     try {
       this.deps.composer().pushHistory(text);
       input.value = "";
+      autoGrow(input);
       await this.deps.sendPrompt(text);
     } finally {
       this.flushingQueuedPrompt = false;

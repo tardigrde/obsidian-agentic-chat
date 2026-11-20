@@ -29,7 +29,8 @@ const OBSIDIAN_VARIABLE = /var\(\s*--(?:background|text|color|interactive|size|r
 const RAW_COLOUR = new RegExp(
   String.raw`#[0-9a-fA-F]{3,8}\b|\b(?:rgba?|hsla?|oklch|oklab|lab|lch|hwb|color)\(|(?<![\w-])(?:${NAMED_COLOURS.join("|")})(?![\w-])`,
 );
-const PX = /(?<![\w-])-?\d*\.?\d+px\b/;
+// One number form per branch, so the engine never backtracks between them.
+const PX = /(?<![\w-])-?(?:\d+(?:\.\d+)?|\.\d+)px\b/;
 
 /** Line number of `index` in `text`. */
 function lineOf(text, index) {
@@ -88,7 +89,15 @@ export function checkCssTokens(css, file = "styles.css") {
 
 async function main() {
   const file = process.argv[2] ?? "styles.css";
-  const css = readFileSync(path.resolve(process.cwd(), file), "utf8");
+  // Read only inside the checkout: the argument is a repo-relative path.
+  const root = process.cwd();
+  const target = path.resolve(root, file);
+  if (path.relative(root, target).startsWith("..") || path.isAbsolute(path.relative(root, target))) {
+    console.error(`css tokens: refusing ${file}: not inside ${root}`);
+    process.exitCode = 2;
+    return;
+  }
+  const css = readFileSync(target, "utf8");
   const errors = checkCssTokens(css, file);
   const total = declarations(css).length;
   if (errors.length > 0) {

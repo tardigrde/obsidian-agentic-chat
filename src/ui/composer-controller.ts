@@ -132,6 +132,7 @@ export class ChatComposer {
     const input = this.deps.inputEl();
     const result = resolve(input.value, this.activeQuery, item);
     input.value = result.text;
+    autoGrow(input);
     input.setSelectionRange(result.caret, result.caret);
     input.focus();
     if (result.attach) this.addAttachment(result.attach);

@@ -385,7 +385,7 @@ export class ChatView extends ItemView {
     // The view owns its tab services; dispose them so no detached agent keeps running.
     for (const tab of this.tabs) {
       tab.unsubscribe();
-      tab.pendingApproval?.stop();
+      for (const card of tab.pendingApprovals ?? []) card.stop();
       tab.service.dispose();
     }
     this.tabs = [];
@@ -420,12 +420,12 @@ export class ChatView extends ItemView {
   /** Re-render the transcript + chrome for the active tab (after a switch/close). */
   private renderActiveTab(): void {
     this.createSessionActivationCoordinator().renderActiveTab();
-    // A pending approval waits in its tab's transcript: put the card back.
-    const pending = this.activeTab.pendingApproval;
-    if (pending && !pending.settled) {
-      this.transcript.mountApproval(pending);
+    // Pending approvals wait in their tab's transcript: put every card back.
+    const pending = (this.activeTab.pendingApprovals ?? []).filter((card) => !card.settled);
+    for (const card of pending) this.transcript.mountApproval(card);
+    if (pending.length > 0) {
       this.statusEl.setText(APPROVAL_STATUS);
-      pending.focus(this.inputEl.value.trim().length > 0);
+      pending[0].focus(this.inputEl.value.trim().length > 0);
     }
     // Chips depend on the newly active tab's state; the
     // coordinator only syncs chrome, so re-render them here or a queued-prompt
@@ -453,8 +453,7 @@ export class ChatView extends ItemView {
     const index = this.tabs.indexOf(tab);
     if (index === -1) throw new Error("The chat tab that requested approval is no longer open.");
     const card = new ApprovalCard({ app: this.app, request, signal });
-    tab.pendingApproval = card;
-    tab.needsApproval = true;
+    tab.pendingApprovals = [...(tab.pendingApprovals ?? []), card];
     this.syncTabStrip();
     if (tab === this.activeTab) {
       this.transcript.mountApproval(card);
@@ -470,9 +469,9 @@ export class ChatView extends ItemView {
       );
       return choice;
     } finally {
-      if (tab.pendingApproval === card) tab.pendingApproval = undefined;
-      tab.needsApproval = false;
-      if (tab === this.activeTab && !this.closed) {
+      tab.pendingApprovals = (tab.pendingApprovals ?? []).filter((pending) => pending !== card);
+      // Another card in this tab may still wait: keep the needs-you state until the last one settles.
+      if (tab.pendingApprovals.length === 0 && tab === this.activeTab && !this.closed) {
         this.transcript.approvalSettled();
         if (this.statusEl.textContent === APPROVAL_STATUS) this.statusEl.setText("");
       }

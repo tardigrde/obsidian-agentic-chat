@@ -40,8 +40,10 @@ describe("ApprovalCard rendering", () => {
     const c = ask(app, { toolName: "edit", label: "Edit note", args: { path: "Notes/long.md", edits: [{ oldText: "line 15", newText: "line fifteen" }] } });
     await settle();
 
-    expect($(".agentic-chat-approval-title")?.textContent).toBe("Edit note");
-    expect($$(".agentic-chat-approval-summary").map((el) => el.textContent)).toEqual(["Edit Notes/long.md", "+1 −1"]);
+    // Compact, as in the design: the head names the action and path, one stat line, no generic description.
+    expect($(".agentic-chat-approval-title")?.textContent).toBe("Edit Notes/long.md");
+    expect($$(".agentic-chat-approval-summary").map((el) => el.textContent)).toEqual(["+1 −1"]);
+    expect($(".agentic-chat-approval-desc")).toBeNull();
     expect(diffLines()).toContain("is-remove|- line 15");
     expect(diffLines()).toContain("is-add|+ line fifteen");
     const shownBefore = diffLines().length;
@@ -64,7 +66,8 @@ describe("ApprovalCard rendering", () => {
     const app = fakeApp();
     ask(app, { toolName: "write", args: { path: "Notes/new.md", content: "a\nb" } });
     await settle();
-    expect($$(".agentic-chat-approval-summary").map((el) => el.textContent)).toEqual(["Create Notes/new.md", "+2 −0"]);
+    expect($(".agentic-chat-approval-title")?.textContent).toBe("Create Notes/new.md");
+    expect($$(".agentic-chat-approval-summary").map((el) => el.textContent)).toEqual(["+2 −0"]);
     expect(diffLines()).toEqual(["is-add|+ a", "is-add|+ b"]);
   });
 
@@ -73,13 +76,24 @@ describe("ApprovalCard rendering", () => {
     await seedFile(app, "Notes/old.md", "bye");
     ask(app, { toolName: "delete", args: { path: "Notes/old.md" } });
     await settle();
-    expect($(".agentic-chat-approval-summary")?.textContent).toBe("Move Notes/old.md to trash");
+    expect($(".agentic-chat-approval-title")?.textContent).toBe("Move Notes/old.md to trash");
     expect(diffLines()).toEqual(["is-remove|- bye"]);
     card?.stop();
 
     ask(app, { toolName: "rename", args: { path: "Notes/old.md", newPath: "Archive/old.md" } });
     await settle();
-    expect($(".agentic-chat-approval-summary")?.textContent).toBe("Rename Notes/old.md → Archive/old.md");
+    expect($(".agentic-chat-approval-title")?.textContent).toBe("Rename Notes/old.md → Archive/old.md");
+  });
+
+  it("an exact edit over a huge region shows the large-change summary instead of throwing", async () => {
+    const app = fakeApp();
+    const oldText = Array.from({ length: 600 }, (_, index) => `old ${index}`).join("\n");
+    const newText = Array.from({ length: 600 }, (_, index) => `new ${index}`).join("\n");
+    await seedFile(app, "Notes/big.md", oldText);
+    ask(app, { toolName: "edit", args: { path: "Notes/big.md", edits: [{ oldText, newText }] } });
+    await settle();
+    expect($(".agentic-chat-approval-title")?.textContent).toBe("Edit Notes/big.md");
+    expect($$(".agentic-chat-approval-summary").map((el) => el.textContent)).toEqual(["Large change: 600 → 600 lines (diff omitted)."]);
   });
 
   it("keeps the raw arguments when an edit no longer matches the file", async () => {
@@ -87,6 +101,8 @@ describe("ApprovalCard rendering", () => {
     await seedFile(app, "Notes/a.md", "current text");
     ask(app, { toolName: "edit", args: { path: "Notes/a.md", edits: [{ oldText: "gone", newText: "x" }] } });
     await settle();
+    // No concrete preview: the generic description stays, so the user knows what the tool does.
+    expect($(".agentic-chat-approval-desc")).not.toBeNull();
     expect($(".agentic-chat-approval-args")?.textContent).toContain('"oldText": "gone"');
     expect($(".agentic-chat-diff-window")).toBeNull();
   });

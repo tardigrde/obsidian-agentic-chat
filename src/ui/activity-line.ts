@@ -85,6 +85,7 @@ export class ActivityLine {
   private readonly head: HTMLButtonElement;
   private readonly iconEl: HTMLElement;
   private readonly summaryEl: HTMLElement;
+  private readonly stateEl: HTMLElement;
   private readonly failEl: HTMLElement;
   private readonly timeEl: HTMLElement;
   private readonly body: HTMLElement;
@@ -114,6 +115,8 @@ export class ActivityLine {
     );
     this.iconEl = this.head.createSpan({ cls: "agentic-chat-status-icon", attr: { "aria-hidden": "true" } });
     this.summaryEl = this.head.createSpan({ cls: "agentic-chat-activity-summary" });
+    // Its own span, outside the ellipsis: a long path must never cut "needs you".
+    this.stateEl = this.head.createSpan({ cls: "agentic-chat-activity-state" });
     this.failEl = this.head.createSpan({ cls: "agentic-chat-activity-fail" });
     this.timeEl = this.head.createSpan({ cls: "agentic-chat-activity-time" });
     const chevron = this.head.createSpan({ cls: "agentic-chat-activity-chevron", attr: { "aria-hidden": "true" } });
@@ -342,10 +345,11 @@ export class ActivityLine {
     const summary = summarizeSteps(steps);
     const running = [...this.order].reverse().find((step) => step.status === "running");
     let text: string;
-    if (state === "needs-you") text = `${summary || (running ? runningLabel(running.name, running.rawArgs) : "Waiting")} · needs you`;
+    if (state === "needs-you") text = summary || (running ? runningLabel(running.name, running.rawArgs) : "Waiting");
     else if (state === "running") text = running ? runningLabel(running.name, running.rawArgs) : summary || "Thinking…";
     else text = summary || (this.reasoning.some((entry) => entry.text.trim()) ? "Thought" : "");
     this.summaryEl.setText(text);
+    this.stateEl.setText(state === "needs-you" ? "· needs you" : "");
     const failed = failedCount(steps);
     this.failEl.setText(failed > 0 ? `· ${failed} failed` : "");
     this.renderTime();

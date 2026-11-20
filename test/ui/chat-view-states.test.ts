@@ -89,6 +89,20 @@ describe("chat view state machine", () => {
     expect(ui.calls()).toBe(1);
   });
 
+  it("send clears the composer and shrinks it back (the cleared value is re-measured)", async () => {
+    await mount([replayTextTurn("ok")]);
+    const input = ui.$<HTMLTextAreaElement>('[data-ac="composer-input"]')!;
+    input.value = "a long prompt";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    // As if the long draft had grown the box.
+    input.style.setProperty("--ac-input-h", "200px");
+    ui.$<HTMLButtonElement>('[data-ac="send"]')!.click();
+    await settle();
+    await ui.idle();
+    expect(input.value).toBe("");
+    expect(input.style.getPropertyValue("--ac-input-h")).not.toBe("200px");
+  });
+
   it("streaming: the Queue button holds the draft as a chip and sends it after the turn", async () => {
     const held = gate();
     await mount([replayTextTurn("first", { hold: true }), replayTextTurn("second")], held);
@@ -185,6 +199,36 @@ describe("chat view state machine", () => {
     expect(ui.app.vault.contentOf("Notes/new.md")).toBe("hello");
     expect(chrome()).toEqual(IDLE);
     expect(ui.calls()).toBe(2);
+  });
+
+  it("two approvals at once in one tab (parallel MCP calls): the first to settle keeps the tab waiting for the second", async () => {
+    const held = gate();
+    await mount([replayTextTurn("working", { hold: true })], held);
+    await ui.send("do two things");
+    const view = ui.view as unknown as {
+      activeTab: unknown;
+      confirmToolCallForTab(tab: unknown, request: { toolName: string; label: string; args: unknown }): Promise<unknown>;
+    };
+    const tab = view.activeTab;
+    const first = view.confirmToolCallForTab(tab, { toolName: "mcp__a__x", label: "Run x", args: {} });
+    const second = view.confirmToolCallForTab(tab, { toolName: "mcp__b__y", label: "Run y", args: {} });
+    await settle();
+    expect(ui.$$('[data-ac="approval"]')).toHaveLength(2);
+
+    ui.$$<HTMLButtonElement>('[data-ac="approval-allow"]')[0]?.click();
+    await first;
+    await settle();
+    expect(ui.$('[data-ac="status"]')?.textContent).toBe("Waiting for your approval");
+    expect(ui.$('[data-ac="tab"]')?.getAttribute("data-ac-state")).toBe("needs-you");
+    expect(ui.$('[data-ac="activity"]')?.getAttribute("data-ac-state")).toBe("needs-you");
+
+    ui.$$<HTMLButtonElement>('[data-ac="approval-allow"]')[0]?.click();
+    await second;
+    await settle();
+    expect(ui.$('[data-ac="status"]')?.textContent).not.toBe("Waiting for your approval");
+    expect(ui.$('[data-ac="tab"]')?.getAttribute("data-ac-state")).not.toBe("needs-you");
+    held.release();
+    await ui.idle();
   });
 
   it("approval pending -> Deny twice with a reason: the tool does not run and the reason reaches the model", async () => {

@@ -83,6 +83,30 @@ describe("activity line and inline approval", function () {
       bodyShown: false,
     });
 
+    // The line is plain text, as in the design: Obsidian's own button chrome
+    // (fill, border, shadow) must not win over the plugin's styles.
+    const chrome = await browser.execute(() => {
+      const head = Array.from(document.querySelectorAll<HTMLElement>('[data-ac="activity-head"]')).at(-1);
+      const style = head ? getComputedStyle(head) : null;
+      return { background: style?.backgroundColor, border: style?.borderTopWidth, shadow: style?.boxShadow };
+    });
+    expect(chrome).toEqual({ background: "rgba(0, 0, 0, 0)", border: "0px", shadow: "none" });
+
+    // An empty composer rests the send button muted; typing lights it up.
+    const sendBackground = async (text: string) =>
+      await browser.execute((value) => {
+        const input = document.querySelector<HTMLTextAreaElement>('[data-ac="composer-input"]');
+        const send = document.querySelector<HTMLElement>('[data-ac="send"]');
+        if (!input || !send) return "missing";
+        input.value = value;
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+        return `${send.getAttribute("data-ac-state")}|${getComputedStyle(send).backgroundColor}`;
+      }, text);
+    const typed = await sendBackground("draft");
+    const empty = await sendBackground("");
+    expect(empty.startsWith("send|")).toBe(true);
+    expect(empty).not.toBe(typed);
+
     await $('[data-ac="activity-head"]').click();
     const rows = await browser.execute(() =>
       Array.from(document.querySelectorAll<HTMLElement>('[data-ac="step"]')).map((row) => ({
@@ -129,6 +153,23 @@ describe("activity line and inline approval", function () {
       status: "Waiting for your approval",
       hint: "⏎ allow · Esc deny",
     });
+    // Compact card, as in the design: the head names the action and the path,
+    // and the diff fits its box (no horizontal scrollbar).
+    await browser.waitUntil(
+      async () =>
+        (await browser.execute((selector) => document.querySelector(`${selector} .agentic-chat-approval-title`)?.textContent, PENDING_APPROVAL)) ===
+        `Create ${WRITE_PATH}`,
+      { timeout: 5_000, timeoutMsg: "the approval head never named the action and path" },
+    );
+    const card = await browser.execute((selector) => {
+      const el = document.querySelector<HTMLElement>(selector);
+      const diff = el?.querySelector<HTMLElement>(".agentic-chat-diff");
+      return {
+        desc: !!el?.querySelector(".agentic-chat-approval-desc"),
+        diffOverflow: diff ? diff.scrollWidth - diff.clientWidth : -1,
+      };
+    }, PENDING_APPROVAL);
+    expect(card).toEqual({ desc: false, diffOverflow: 0 });
     if (process.env.AGENTIC_CHAT_SCREENSHOT_DIR) {
       await browser.saveScreenshot(`${process.env.AGENTIC_CHAT_SCREENSHOT_DIR}/approval-card.png`);
     }
