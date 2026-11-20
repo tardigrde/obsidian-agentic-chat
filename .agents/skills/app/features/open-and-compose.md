@@ -78,7 +78,7 @@ await $(".agentic-chat-send").click();
 | Active note auto-chip | `src/ui/chat-view.ts#private effectiveActiveNote()` | `test/e2e/specs/smoke.e2e.ts#attaches the active note as a chip, but not an ignored note or AGENTS.md` | `covered` |
 | Ignored active note stays out | `src/ui/active-note.ts#autoActiveNotePath` | `test/e2e/specs/runtime-behavior.e2e.ts#does not auto-attach an ignored active note` | `covered` |
 | Remove an attachment chip | `src/ui/chat-view.ts#renderChips` | `test/ui/context-chip-renderer.test.ts#wires remove callbacks to the matching chip` (unit only) | `partial` |
-| Image attachment guard | `src/ui/chat-view.ts#addAttachment` | `test/image-attachments.test.ts#collectUserImageThumbs,` (encoding only) | `partial` |
+| Image attachment guard: one notice per drop; image input from the OpenRouter catalog | `src/ui/composer-controller.ts#noticeNoImages`; `src/llm/models.ts#modelInput` | `test/ui/composer-drop.test.ts#U3 #8: repeated drops of an image on a text-only model show one notice, not one per drop`; `test/models.test.ts#U3 #8: a catalog model with image input is built with image input; others stay text-only` (no real-app drop) | `partial` |
 | Quick Ask accept | `src/ui/quick-ask-modal.ts#onOpen` | `test/e2e/specs/smoke.e2e.ts#applies a Quick Ask edit to selected editor text without a model call` | `covered` |
 | Quick Ask Enter accept | `src/ui/quick-ask-modal.ts#onOpen` | no committed check | `NONE` |
 

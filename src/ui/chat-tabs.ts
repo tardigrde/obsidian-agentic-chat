@@ -181,7 +181,7 @@ export class ChatTabs {
     const [tab] = this.tabs.splice(index, 1);
     tab.unsubscribe();
     for (const card of tab.pendingApprovals ?? []) card.stop();
-    tab.service.dispose();
+    void tab.service.dispose();
     if (index < this.activeIndex) {
       this.activeIndex -= 1;
     } else if (closingActive) {

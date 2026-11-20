@@ -7,7 +7,7 @@ import type { ChatTabWorkingState, StagedPromptContext } from "./chat-tab-state"
 import { stagePromptContext } from "./chat-tab-state";
 import { parseInlineInstruction, resolveComposerAction, stripContextPreamble, type ComposerSubmitSource } from "./composer-input";
 import { parseSlashInput, retiredCommandHint } from "./commands";
-import { assemblePrompt, buildPromptContext, loadImageAttachments as loadContextImageAttachments } from "./context-builder";
+import { assemblePrompt, buildPromptContext, sentUserText, loadImageAttachments as loadContextImageAttachments } from "./context-builder";
 import type { ContextAttachment } from "./context-attachments";
 import { errorMessage } from "../utils/errors";
 import { failedLastTurnIndex, lastUserTurn, toolResultText } from "./message-content";
@@ -178,13 +178,13 @@ export class ChatTurn {
   /**
    * Build the prompt and images for `tab`, bound to the session that was active
    * at the start. Returns null when the tab stopped being the live one or its
-   * session changed during the awaits; the staged context is discarded then.
+   * session changed during the awaits.
    */
   private async preparePromptSend(
     tab: ChatTab,
     staged: StagedPromptContext,
     text: string,
-  ): Promise<{ prompt: string; images: ImageContent[]; sessionToken: number; messageCountBefore: number } | null> {
+  ): Promise<{ prompt: string; images: ImageContent[]; sessionToken: number } | null> {
     const service = tab.service;
     const app = this.deps.app;
     // A fresh tab has no session yet. Create/continue it before sampling the
@@ -196,12 +196,8 @@ export class ChatTurn {
     // route the prompt into a different session.
     const sessionToken = service.getSessionToken();
     const stillBound = (): boolean => {
-      if (!this.deps.isLiveTab(tab)) {
-        staged.discard();
-        return false;
-      }
+      if (!this.deps.isLiveTab(tab)) return false;
       if (service.getSessionToken() !== sessionToken) {
-        staged.discard();
         service.reportSessionChanged();
         this.deps.showServiceError();
         return false;
@@ -209,14 +205,12 @@ export class ChatTurn {
       return true;
     };
     if (!stillBound()) return null;
-    const messageCountBefore = service.getMessages().length;
     const context = await buildPromptContext({
       app,
       attachments: staged.attachments,
       activeNotePath: staged.autoPath,
       isPathIgnored: (path) => service.isPathIgnored(path),
-      activeNoteCache: staged.activeNoteCache,
-      contextCache: staged.contextCache,
+      sentText: sentUserText(service.getMessages()),
     });
     if (!stillBound()) return null;
     const prompt = assemblePrompt(context, text);
@@ -227,7 +221,7 @@ export class ChatTurn {
       supportsImages: service.supportsImages(),
     });
     if (!stillBound()) return null;
-    return { prompt, images, sessionToken, messageCountBefore };
+    return { prompt, images, sessionToken };
   }
 
   async sendPrompt(text: string): Promise<void> {
@@ -240,9 +234,8 @@ export class ChatTurn {
 
   /**
    * One pipeline for a new turn ("send") and for text queued into the running
-   * turn ("steer"): stage context from the active tab, build the prompt, hand it
-   * to the service, then commit or discard the staged context depending on
-   * whether the transcript grew.
+   * turn ("steer"): stage context from the active tab, build the prompt (the
+   * dedupe reads the session's own messages), and hand it to the service.
    */
   private async dispatchPrompt(text: string, kind: "send" | "steer"): Promise<void> {
     const tab = this.deps.activeTab();
@@ -263,13 +256,8 @@ export class ChatTurn {
         this.deps.statusEl().setText("Queued for the active turn.");
         await service.steerPrompt(prepared.prompt, prepared.images, prepared.sessionToken);
       }
-      if (!this.deps.isLiveTab(tab)) {
-        staged.discard();
-        return;
-      }
-      staged.settle(service.getMessages().length > prepared.messageCountBefore);
+      if (!this.deps.isLiveTab(tab)) return;
     } catch (error) {
-      staged.discard();
       if (!this.deps.isLiveTab(tab)) return;
       throw error;
     }

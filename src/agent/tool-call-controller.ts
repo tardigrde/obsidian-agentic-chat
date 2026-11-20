@@ -375,6 +375,7 @@ export class AgentToolCallController {
         label: request.label,
         args: request.args,
         reason: choice.approved ? undefined : (choice.reason ?? deniedReason),
+        ...(choice.approved ? { remember: choice.remember === true } : {}),
       });
     } catch (error) {
       if (!stopped) throw error;

@@ -56,6 +56,8 @@ export interface ActionAuditApprovalEvent extends ActionAuditEventBase {
   toolName: string;
   label?: string;
   reason?: string;
+  /** On a user approval: true for "Always allow", false for "Allow once". */
+  remember?: boolean;
   args?: unknown;
   touchedFiles: readonly string[];
   diff?: ActionAuditDiffSummary;
@@ -117,6 +119,8 @@ export interface ApprovalAuditInput {
   toolName: string;
   label?: string;
   reason?: string;
+  /** On a user approval: true for "Always allow", false for "Allow once". */
+  remember?: boolean;
   args?: unknown;
 }
 
@@ -221,6 +225,7 @@ export function buildApprovalAuditEvent(
     toolName: input.toolName,
     label: input.label,
     reason: input.reason,
+    ...(input.remember !== undefined ? { remember: input.remember } : {}),
     args: redactAuditValue(input.args),
     touchedFiles: touchedFilesForTool(input.toolName, input.args),
     diff: diffSummaryForTool(input.toolName, input.args),

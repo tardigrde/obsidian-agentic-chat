@@ -97,7 +97,7 @@ describe("SessionActivationCoordinator", () => {
     ]);
     expect(ctx.resets).toEqual([
       { queuedPrompt: true },
-      { lastSent: true, activeNoteCache: true, contextCache: true, editing: true, bubble: true, queuedPrompt: true },
+      { lastSent: true, editing: true, bubble: true, queuedPrompt: true },
     ]);
   });
 
@@ -111,8 +111,6 @@ describe("SessionActivationCoordinator", () => {
       attachments: true,
       activeNoteSuppression: true,
       lastSent: true,
-      activeNoteCache: true,
-      contextCache: true,
       history: true,
       editing: true,
       bubble: true,

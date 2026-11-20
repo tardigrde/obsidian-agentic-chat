@@ -15,9 +15,14 @@ export interface CompactModelInfo {
   t: 0 | 1; // supports tools
   re: 0 | 1; // supports reasoning
   tlm: Record<ThinkingLevel, string | null> | null; // thinkingLevelMap
+  im?: 0 | 1; // accepts image input (architecture.input_modalities)
 }
 
+/** Bumped when CompactModelInfo gains a field; an older cache file is refetched. */
+const CACHE_VERSION = 2;
+
 interface PricingCache {
+  version?: number;
   fetchedAt: number;
   models: Record<string, CompactModelInfo>;
 }
@@ -88,7 +93,7 @@ export function isPricingUnknown(
 
 /** Test-only: seed the in-memory catalog cache without a network fetch. */
 export function seedPricingCacheForTests(models: Record<string, CompactModelInfo>): void {
-  memoryCache = { fetchedAt: Date.now(), models };
+  memoryCache = { version: CACHE_VERSION, fetchedAt: Date.now(), models };
 }
 
 /** Test-only: clear the in-memory catalog cache back to the unknown state. */
@@ -116,7 +121,7 @@ async function getCache(): Promise<PricingCache> {
   // Ensure memory cache is loaded first
   await loadCacheIntoMemory();
 
-  if (memoryCache && Date.now() - memoryCache.fetchedAt < CACHE_TTL_MS) {
+  if (memoryCache && memoryCache.version === CACHE_VERSION && Date.now() - memoryCache.fetchedAt < CACHE_TTL_MS) {
     return memoryCache;
   }
 
@@ -161,7 +166,7 @@ async function fetchAndStoreCache(): Promise<PricingCache> {
       throw new Error(`OpenRouter models API returned ${response.status}`);
     }
     const models = compactifyModels(parseModelsPayload(response.json) ?? []);
-    const cache: PricingCache = { fetchedAt: Date.now(), models };
+    const cache: PricingCache = { version: CACHE_VERSION, fetchedAt: Date.now(), models };
     await writeCache(cache);
     memoryCache = cache;
     return cache;
@@ -189,6 +194,7 @@ function compactifyModels(models: ParsedModel[]): Record<string, CompactModelInf
       t: model.supportsTools ? 1 : 0,
       re: model.reasoningMetadata ? 1 : 0,
       tlm: model.thinkingLevelMap,
+      im: model.inputModalities.includes("image") ? 1 : 0,
     };
   }
   return result;

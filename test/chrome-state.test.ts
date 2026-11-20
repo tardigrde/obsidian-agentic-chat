@@ -1,3 +1,4 @@
+import { composerSendState } from "../src/ui/chat-chrome";
 import { describe, expect, it } from "vitest";
 import {
   buildModelPillState,
@@ -37,4 +38,23 @@ describe("chrome state helpers", () => {
     });
   });
 
+});
+
+describe("composerSendState (U3 #12: the send button state machine)", () => {
+  const rows: Array<[running: boolean, queued: boolean, draftEmpty: boolean, action: string, enabled: boolean, label: RegExp]> = [
+    [false, false, true, "send", true, /^Send$/],
+    [false, false, false, "send", true, /^Send$/],
+    [false, true, false, "send", true, /^Send$/],
+    [true, false, true, "queue", false, /type a message/],
+    [true, false, false, "queue", true, /^Queue: send after this turn$/],
+    [true, true, false, "update", true, /^Update the queued message$/],
+    [true, true, true, "update", true, /^Update the queued message$/],
+  ];
+  it.each(rows)("running=%s queued=%s empty=%s -> %s, enabled=%s", (running, queued, draftEmpty, action, enabled, label) => {
+    const state = composerSendState({ running, queued, draftEmpty });
+    expect(state.action).toBe(action);
+    expect(state.enabled).toBe(enabled);
+    expect(state.label).toMatch(label);
+    expect(state.icon).toBe(action === "send" ? "arrow-up" : "list-plus");
+  });
 });

@@ -112,7 +112,7 @@ function buildOpenRouterModel(config: ModelConfig): Model<"openai-completions"> 
     provider: "openrouter",
     baseUrl: OPENROUTER_BASE_URL,
     reasoning: info ? info.re === 1 : true,
-    input: ["text"],
+    input: modelInput(info),
     cost: { input: pricing.input, output: pricing.output, cacheRead: pricing.cacheRead, cacheWrite: pricing.cacheWrite },
     contextWindow: info?.c ?? DEFAULT_CONTEXT_WINDOW,
     maxTokens: info?.m ?? DEFAULT_MAX_TOKENS,
@@ -120,6 +120,11 @@ function buildOpenRouterModel(config: ModelConfig): Model<"openai-completions"> 
   };
   model.compat = { ...model.compat, openRouterRouting: buildOpenRouterRouting(config.privacy) };
   return model;
+}
+
+/** Image input only when the catalog says so; an unknown model stays text-only. */
+function modelInput(info: { im?: 0 | 1 } | undefined): Array<"text" | "image"> {
+  return info?.im === 1 ? ["text", "image"] : ["text"];
 }
 
 function buildOllamaModel(config: ModelConfig): Model<"openai-completions"> {
@@ -155,6 +160,8 @@ function buildOpenAICompatibleModel(config: ModelConfig): Model<"openai-completi
     provider: "openai-compatible",
     baseUrl: normalizeOpenAICompatibleApiBaseUrl(config.openaiCompatibleBaseUrl),
     reasoning: false,
+    // A gateway id that suffix-matches an OpenRouter vision model may still be
+    // text-only behind the gateway; a per-model setting or probe is S5.
     input: ["text"],
     cost: { input: pricing.input, output: pricing.output, cacheRead: pricing.cacheRead, cacheWrite: pricing.cacheWrite },
     contextWindow,

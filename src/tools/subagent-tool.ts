@@ -8,6 +8,7 @@ import { truncateToolOutput } from "../vault/truncate";
 import { wrapToolOutputTruncated } from "./tool-output-wrapper";
 import { toolResult, untrustedToolResult } from "./result";
 import { errorMessage } from "../utils/errors";
+import type { ToolArtifactStoreLike } from "../artifacts/tool-artifact-store";
 
 export const SUBAGENT_TOOL_NAME = "subagent";
 
@@ -15,6 +16,11 @@ export const SUBAGENT_TOOL_NAME = "subagent";
 const MAX_CONCURRENCY = 10;
 /** Per-child summary cap (characters) fed into the parent's context. */
 const PER_CHILD_SUMMARY_CHARS = 8_000;
+/**
+ * How much of a long report the chat shows the user. The model gets none of
+ * it, only the artifact pointer, so it never pays for the same text twice.
+ */
+const REPORT_PREVIEW_CHARS = 3_500; // under the row's 4,000-char cut (subagent-tree.ts), so the note shows
 
 /** Single line in a child's live transcript. */
 export type SubagentTranscriptEntry =
@@ -132,6 +138,8 @@ export interface SubagentToolDeps {
   maxRuntimeSeconds?: () => number;
   /** Per-service registry. Omit only for standalone tools that need no external stop. */
   registry?: SubagentRegistry;
+  /** Keeps a report longer than the inline cap in full, readable with the artifact tool. */
+  artifactStore?: ToolArtifactStoreLike;
 }
 
 export interface SubagentTask {
@@ -217,8 +225,9 @@ export function createSubagentTool(
 
       status.status = "running";
       emit();
+      let fullReport: string | undefined;
       try {
-        await runSingleChild(deps, registry, status, profile, task, toolCallId, signal, scheduleEmit);
+        fullReport = await runSingleChild(deps, registry, status, profile, task, toolCallId, signal, scheduleEmit);
       } catch (error) {
         if (signal?.aborted) {
           status.status = "aborted";
@@ -232,6 +241,20 @@ export function createSubagentTool(
         }
       } finally {
         releaseSlot(slots);
+      }
+      let modelText: string | undefined;
+      if (fullReport !== undefined && fullReport.length > PER_CHILD_SUMMARY_CHARS) {
+        // A pending progress tick must not show "done" with the temporary
+        // truncated summary while the artifact is written (review of #406).
+        if (emitTimer) {
+          window.clearTimeout(emitTimer);
+          emitTimer = null;
+        }
+        const kept = await keepFullReport(deps.artifactStore, agent, fullReport);
+        if (kept) {
+          status.summary = kept.userPreview;
+          modelText = kept.modelText;
+        }
       }
       flushEmit();
 
@@ -249,7 +272,7 @@ export function createSubagentTool(
         );
       }
 
-      return untrustedToolResult(mergeSummaries([status]), snapshot([status]), "subagent");
+      return untrustedToolResult(modelText ?? mergeSummaries([status]), snapshot([status]), "subagent");
     },
   };
 }
@@ -329,7 +352,7 @@ async function runSingleChild(
   parentToolCallId: string,
   signal: AbortSignal | undefined,
   scheduleEmit: () => void,
-): Promise<void> {
+): Promise<string | undefined> {
   const child = deps.createChildAgent(profile);
   const startedAt = Date.now();
 
@@ -426,10 +449,48 @@ async function runSingleChild(
     });
   } else {
     status.status = "done";
-    status.summary = redactText(
-      truncateToolOutput(lastAssistantText(child.state.messages) || "(no output)", PER_CHILD_SUMMARY_CHARS),
-      { redactHighEntropy: true, maxLength: 9000 },
-    );
+    const report = lastAssistantText(child.state.messages) || "(no output)";
+    status.summary = redactText(truncateToolOutput(report, PER_CHILD_SUMMARY_CHARS), {
+      redactHighEntropy: true,
+      maxLength: 9000,
+    });
+    return redactText(report, { redactHighEntropy: true, maxLength: Number.MAX_SAFE_INTEGER });
+  }
+  return undefined;
+}
+
+/**
+ * A report longer than the inline cap is stored whole as an artifact. The
+ * model gets only a pointer (owner, 2026-11-20: no partial text, so a read of
+ * the artifact never repeats what it already saw); the user's subagent row
+ * shows the head of the report. Null without a store or when the write fails:
+ * the truncated summary then stays for both.
+ */
+async function keepFullReport(
+  store: ToolArtifactStoreLike | undefined,
+  agent: string,
+  report: string,
+): Promise<{ modelText: string; userPreview: string } | null> {
+  if (!store) return null;
+  try {
+    const artifact = await store.writeArtifact({
+      label: `${agent} subagent report`,
+      sourceToolName: SUBAGENT_TOOL_NAME,
+      text: report,
+      contentType: "text/markdown",
+    });
+    const total = report.length.toLocaleString("en-US");
+    return {
+      modelText:
+        // `artifact:<id>` is the reference form the artifact prune scan keeps alive.
+        `Subagent "${agent}" finished. Its report is ${total} characters, too long to inline, and is stored in full as artifact:${artifact.id}. ` +
+        `Read it with the artifact tool: action "read", id "${artifact.id}" (it returns chunks; continue with the offset it gives).`,
+      userPreview:
+        `${report.slice(0, REPORT_PREVIEW_CHARS)}\n\n[Showing the first ${REPORT_PREVIEW_CHARS.toLocaleString("en-US")} of ${total} characters. ` +
+        `The full report is artifact "${artifact.id}".]`,
+    };
+  } catch {
+    return null;
   }
 }
 

@@ -1,4 +1,5 @@
 import { type App, TFolder, MarkdownView } from "obsidian";
+import { binaryKindByExtension, binaryReadError, looksBinary } from "../../vault/binary-file";
 import type { AgentTool, AgentToolResult } from "@earendil-works/pi-agent-core";
 import type { IgnoreMatcher } from "../../vault/ignore";
 import { normalizeFolderPath } from "../../vault/path";
@@ -118,6 +119,8 @@ export function createReadTool(app: App, isIgnored: IgnoreMatcher, memo?: ReadMe
       };
       const window = resolveLineWindow(range);
       const readKey = { path, offset: window.offset, limit: window.limit };
+      const binaryKind = binaryKindByExtension(path);
+      if (file && binaryKind) throw binaryReadError(path, binaryKind, file.stat?.size);
       if (file) {
         const mtime = file.stat?.mtime ?? 0;
         // De-dup: a repeat read of the same range in the same turn is handed a
@@ -153,6 +156,7 @@ export function createReadTool(app: App, isIgnored: IgnoreMatcher, memo?: ReadMe
           return textResult(guidance, { path, tooLarge: true });
         }
         const content = await app.vault.cachedRead(file);
+        if (looksBinary(content)) throw binaryReadError(path, null, file.stat?.size);
         return finishRead(path, content, window, readKey, mtime, memo);
       }
       // Stale tree: the file is on disk (e.g. under a dot-folder the vault
@@ -163,6 +167,8 @@ export function createReadTool(app: App, isIgnored: IgnoreMatcher, memo?: ReadMe
       if (memo?.has(readKey)) {
         return textResult(alreadyReadMessage(path), { path, deduplicated: true });
       }
+      // A known binary off the index is refused before its bytes are read.
+      if (binaryKind && (await app.vault.adapter.exists(path))) throw binaryReadError(path, binaryKind, undefined);
       let content: string;
       try {
         content = await app.vault.adapter.read(path);
@@ -174,6 +180,7 @@ export function createReadTool(app: App, isIgnored: IgnoreMatcher, memo?: ReadMe
         }
         throw new Error(`${path} is a folder — use vault_inspect with action "list" to list its contents.`, { cause: readError });
       }
+      if (looksBinary(content)) throw binaryReadError(path, null, undefined);
       const guidance = readSizeGuardrail({ path, size: content.length, ...range });
       if (guidance) {
         return textResult(guidance, { path, tooLarge: true });

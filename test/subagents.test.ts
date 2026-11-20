@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { collectArtifactIdsFromText } from "../src/artifacts/artifact-references";
 import type { App } from "obsidian";
 import { Agent, type StreamFn } from "@earendil-works/pi-agent-core";
 import type { Model } from "@earendil-works/pi-ai";
@@ -319,6 +320,45 @@ describe("createSubagentTool", () => {
     const summary = result.details.children[0].summary ?? "";
     expect(summary.length).toBeLessThan(8_200);
     expect(summary).toContain("[Output truncated");
+  });
+
+  it("U3 #11: keeps the full oversized report as an artifact and tells the parent how to read it", async () => {
+    const report = `${"Finding line with detail.\n".repeat(600)}THE-TAIL-MARKER end of report`;
+    const stored: Array<{ id: string; text: string; label: string }> = [];
+    const artifactStore = {
+      writeArtifact: async (input: { label: string; text: string; sourceToolName: string }) => {
+        const id = `art-${stored.length + 1}`;
+        stored.push({ id, text: input.text, label: input.label });
+        return { id, label: input.label, sourceToolName: input.sourceToolName, contentType: "text/markdown", createdAt: "", charLength: input.text.length };
+      },
+      readArtifact: async (id: string) => {
+        const hit = stored.find((entry) => entry.id === id);
+        if (!hit) throw new Error("missing");
+        return { metadata: { id, label: hit.label, sourceToolName: "subagent", contentType: "text/markdown", createdAt: "", charLength: hit.text.length }, text: hit.text };
+      },
+    };
+    const tool = createSubagentTool({
+      getProfiles: () => [RESEARCHER],
+      createChildAgent: () => makeChild(childStreamFn(report)),
+      artifactStore,
+    });
+    const result = await tool.execute("id", { agent: "researcher", task: "t" }, undefined);
+    const text = unwrapToolOutput(firstText(result.content));
+
+    expect(stored).toHaveLength(1);
+    expect(stored[0].text).toBe(report);
+    // Owner, 2026-11-20: the model gets the pointer only, no part of the report.
+    expect(text).not.toContain("Finding line with detail.");
+    expect(text).not.toContain("THE-TAIL-MARKER");
+    // `artifact:<id>` keeps the report alive in the artifact prune scan.
+    expect(collectArtifactIdsFromText(text)).toEqual(new Set(["art-1"]));
+    expect(text).toMatch(/artifact tool: action "read", id "art-1"/);
+    expect(text.length).toBeLessThan(400);
+    // The user's subagent row still shows the head of the report.
+    const shown = result.details.children[0].summary ?? "";
+    expect(shown.startsWith("Finding line with detail.")).toBe(true);
+    expect(shown).toContain('The full report is artifact "art-1".');
+    expect(shown).not.toContain("THE-TAIL-MARKER");
   });
 
   it("aborts in-flight children when the dispatch signal aborts", async () => {
