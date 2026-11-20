@@ -1,3 +1,4 @@
+import { mkdirSync } from "node:fs";
 import { browser, expect, $ } from "@wdio/globals";
 import { after, before, describe, it } from "mocha";
 import { configureScriptedPlugin, openChat, submitComposer, waitForIdle, waitForTranscript } from "../support/chat";
@@ -42,6 +43,9 @@ describe("composer queue", () => {
     // An empty draft has nothing to queue: the control says so and does nothing.
     expect(await send.isEnabled()).toBe(false);
     expect(await send.getAttribute("aria-label")).toMatch(/queue/i);
+    // One screenshot for the PR (logs/ is git-ignored): Queue disabled on an empty draft.
+    mkdirSync("logs/pr-u3a-shots", { recursive: true });
+    await browser.saveScreenshot("logs/pr-u3a-shots/u3a-queue-empty.png");
 
     // Type like a user, then press Queue.
     const input = await $('[data-ac="composer-input"]');
