@@ -96,9 +96,22 @@ const FIXTURES: Fixture[] = [
 describe("parseModelsPayload", () => {
   for (const fixture of FIXTURES) {
     it(fixture.name, () => {
-      expect(parseModelsPayload({ data: [fixture.row] })).toEqual([fixture.expected]);
+      expect(parseModelsPayload({ data: [fixture.row] })).toEqual([{ inputModalities: [], ...fixture.expected }]);
     });
   }
+
+  it("U3 #8: reads the input modalities from the architecture block", () => {
+    const [vision, text, unknown] = parseModelsPayload({
+      data: [
+        { id: "a/vision", architecture: { input_modalities: ["text", "image"] } },
+        { id: "a/text", architecture: { input_modalities: ["text"] } },
+        { id: "a/unknown" },
+      ],
+    }) ?? [];
+    expect(vision.inputModalities).toEqual(["text", "image"]);
+    expect(text.inputModalities).toEqual(["text"]);
+    expect(unknown.inputModalities).toEqual([]);
+  });
 
   it("returns null for a malformed body and an empty list for a missing data field", () => {
     expect(parseModelsPayload(null)).toBeNull();

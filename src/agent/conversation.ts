@@ -99,6 +99,28 @@ export class AgentConversation {
     this.agent = null;
   }
 
+  /**
+   * Abort a running turn and resolve once the agent is idle, so the listeners
+   * still record its aborted reply and `agent_end`. Bounded: a stream that
+   * ignores the abort cannot hold a close open.
+   */
+  async stopRunningTurn(timeoutMs = 3000): Promise<void> {
+    const agent = this.agent;
+    if (!agent?.state.isStreaming) return;
+    agent.abort();
+    let timer: number | undefined;
+    try {
+      await Promise.race([
+        agent.waitForIdle(),
+        new Promise<void>((resolve) => {
+          timer = window.setTimeout(resolve, timeoutMs);
+        }),
+      ]);
+    } finally {
+      if (timer !== undefined) window.clearTimeout(timer);
+    }
+  }
+
   /** Detach for good; a disposed conversation never creates another agent. */
   dispose(): boolean {
     if (this.disposed) return false;

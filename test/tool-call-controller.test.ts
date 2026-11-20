@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { TFile, TFolder, type App } from "obsidian";
 import type { AgentTool } from "@earendil-works/pi-agent-core";
-import type { ApprovalAuditInput, CheckpointAuditInput } from "../src/agent/action-audit-log";
+import { buildApprovalAuditEvent, type ApprovalAuditInput, type CheckpointAuditInput } from "../src/agent/action-audit-log";
 import type { FileCheckpoint } from "../src/agent/file-checkpoints";
 import {
   AgentToolCallController,
@@ -73,6 +73,32 @@ function fakeApp(): { app: App; vault: FakeVault } {
     vault,
   };
 }
+
+describe("approval audit: Allow once vs Always allow (U3 #1)", () => {
+  it("records remember on the user's approval decision, so a log can tell the two apart", async () => {
+    const approvals: ApprovalAuditInput[] = [];
+    const choices: UserApprovalChoice[] = [
+      { approved: true, remember: false },
+      { approved: true, remember: true },
+    ];
+    const { controller } = makeController({
+      settings: { mode: "safe", approval: { mutating: "ask", perTool: {} } },
+      confirmToolCall: async () => choices.shift() ?? { approved: false, remember: false },
+      recordApproval: (input) => {
+        approvals.push(input);
+      },
+    });
+
+    await controller.beforeToolCall({ toolCall: { id: "once", name: "write" }, args: { path: "A.md", content: "a" } });
+    await controller.beforeToolCall({ toolCall: { id: "always", name: "write" }, args: { path: "B.md", content: "b" } });
+
+    const decided = approvals.filter((approval) => approval.decision === "approved").map((approval) => buildApprovalAuditEvent(approval));
+    expect(decided.map((event) => [event.toolCallId, event.remember])).toEqual([
+      ["once", false],
+      ["always", true],
+    ]);
+  });
+});
 
 describe("AgentToolCallController", () => {
   it("passes the turn abort signal to the approval prompt", async () => {

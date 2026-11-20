@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import { freshChatTabState, resetChatTabState, stagePromptContext } from "../src/ui/chat-tab-state";
 
 describe("freshChatTabState", () => {
@@ -39,7 +39,6 @@ describe("resetChatTabState", () => {
     state.lastSentPrompt = "context\n\nhello";
     state.lastSentDisplay = "hello";
     state.history.record("hello");
-    const contextCache = state.contextCache;
 
     resetChatTabState(state, { attachments: true, lastSent: true, history: true });
 
@@ -47,40 +46,20 @@ describe("resetChatTabState", () => {
     expect(state.lastSentPrompt).toBeNull();
     expect(state.lastSentDisplay).toBeNull();
     expect(state.activeNoteSuppressed).toBe(true);
-    expect(state.contextCache).toBe(contextCache);
     expect(state.history.entries()).toEqual(["hello"]);
   });
 });
 
 describe("stagePromptContext", () => {
-  it("settles the caches it captured, not the ones a session reset installed", () => {
+  it("captures the attachments and active note at send time, not after a reset", () => {
     const state = freshChatTabState();
     state.attachments.push("A.md");
     const staged = stagePromptContext(state, "Active.md");
-    const commitNote = vi.spyOn(staged.activeNoteCache, "commitPending");
-    const commitContext = vi.spyOn(staged.contextCache, "commit");
 
-    // A session reset mid-send swaps the tab's caches and attachments.
-    resetChatTabState(state, { attachments: true, activeNoteCache: true, contextCache: true });
-    staged.settle(true);
+    // A session reset mid-send clears the tab's attachments.
+    resetChatTabState(state, { attachments: true });
 
     expect(staged.attachments).toEqual(["A.md"]);
     expect(staged.autoPath).toBe("Active.md");
-    expect(commitNote).toHaveBeenCalledTimes(1);
-    expect(commitContext).toHaveBeenCalledTimes(1);
-    expect(state.activeNoteCache).not.toBe(staged.activeNoteCache);
-  });
-
-  it("discards staged context when the turn never reached the transcript", () => {
-    const staged = stagePromptContext(freshChatTabState(), null);
-    const discardNote = vi.spyOn(staged.activeNoteCache, "discardPending");
-    const discardContext = vi.spyOn(staged.contextCache, "discard");
-    const commitContext = vi.spyOn(staged.contextCache, "commit");
-
-    staged.settle(false);
-
-    expect(discardNote).toHaveBeenCalledTimes(1);
-    expect(discardContext).toHaveBeenCalledTimes(1);
-    expect(commitContext).not.toHaveBeenCalled();
   });
 });

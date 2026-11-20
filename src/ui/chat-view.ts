@@ -169,6 +169,7 @@ export class ChatView extends ItemView {
         contextRingEl: () => this.contextRingEl,
         contextPercentEl: () => this.contextPercentEl,
         sendButton: () => this.sendButton,
+        composerInput: () => this.inputEl,
         stopButton: () => this.stopButton,
         workingEl: () => this.workingEl,
         statusEl: () => this.statusEl,
@@ -381,14 +382,18 @@ export class ChatView extends ItemView {
     this.cancelAutocomplete();
     this.menu?.detach();
     this.transcript?.dispose();
-    // The view owns its tab services; dispose them so no detached agent keeps running.
-    for (const tab of this.tabs) {
-      tab.unsubscribe();
-      for (const card of tab.pendingApprovals ?? []) card.stop();
-      tab.service.dispose();
-    }
+    // The view owns its tab services; dispose them so no detached agent keeps
+    // running. Each dispose stops a running turn first, so its end is saved.
+    const tabs = this.tabs;
     this.tabs = [];
     this.chatTabs.clear();
+    await Promise.all(
+      tabs.map((tab) => {
+        tab.unsubscribe();
+        for (const card of tab.pendingApprovals ?? []) card.stop();
+        return tab.service.dispose();
+      }),
+    );
   }
 
   /** Add a vault file/folder from an Obsidian context menu to the next prompt. */
@@ -626,6 +631,7 @@ export class ChatView extends ItemView {
 
   /** Keep the queued-prompt chip in step with real typing, but not IME composition. */
   private reconcileQueuedInput(value: string, inputEvent: UIEvent): void {
+    this.chrome.syncSendAvailability();
     if (!this.state.queuedPromptArmed || (inputEvent.instanceOf(InputEvent) && inputEvent.isComposing)) return;
     const text = value.trim();
     if (!text) {

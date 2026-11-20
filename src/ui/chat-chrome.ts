@@ -14,16 +14,42 @@ import type { TranscriptView } from "./transcript-view";
 /** What the send button does now; also its `data-ac-state` test hook. */
 export type SendAction = "send" | "queue" | "update";
 
-export const SEND_LABELS: Record<SendAction, string> = {
-  send: "Send",
-  queue: "Queue",
-  update: "Update",
-};
+export interface ComposerSendInput {
+  /** A turn runs in this tab. */
+  running: boolean;
+  /** A draft is held to send after the turn. */
+  queued: boolean;
+  /** The composer holds no text. */
+  draftEmpty: boolean;
+}
 
-/** Send while idle; while a turn runs, queue the draft (or update the queued one). */
-export function sendAction(running: boolean, queuedPromptArmed: boolean): SendAction {
-  if (!running) return "send";
-  return queuedPromptArmed ? "update" : "queue";
+export interface ComposerSendState {
+  action: SendAction;
+  enabled: boolean;
+  label: string;
+  icon: "arrow-up" | "list-plus";
+}
+
+/**
+ * The send button's state machine, as one table (U3 #12):
+ *
+ * | running | queued | draft | action | enabled | label                                           |
+ * |---------|--------|-------|--------|---------|-------------------------------------------------|
+ * | no      | any    | any   | send   | yes     | Send                                            |
+ * | yes     | no     | empty | queue  | no      | Queue: type a message to send after this turn   |
+ * | yes     | no     | text  | queue  | yes     | Queue: send after this turn                     |
+ * | yes     | yes    | any   | update | yes     | Update the queued message                       |
+ *
+ * Idle Send stays enabled with an empty draft: Enter on nothing is a no-op,
+ * and the muted resting style says so.
+ */
+export function composerSendState(input: ComposerSendInput): ComposerSendState {
+  if (!input.running) return { action: "send", enabled: true, label: "Send", icon: "arrow-up" };
+  if (input.queued) return { action: "update", enabled: true, label: "Update the queued message", icon: "list-plus" };
+  if (input.draftEmpty) {
+    return { action: "queue", enabled: false, label: "Queue: type a message to send after this turn", icon: "list-plus" };
+  }
+  return { action: "queue", enabled: true, label: "Queue: send after this turn", icon: "list-plus" };
 }
 
 /** Context-window fill fractions that trigger a background notification, once each. */
@@ -36,6 +62,8 @@ export interface ChatChromeElements {
   contextRingEl: () => SVGCircleElement;
   contextPercentEl: () => HTMLElement;
   sendButton: () => HTMLButtonElement;
+  /** The composer textarea; an empty draft has nothing to queue. */
+  composerInput: () => HTMLTextAreaElement | undefined;
   stopButton: () => HTMLButtonElement;
   workingEl: () => HTMLElement;
   statusEl: () => HTMLElement;
@@ -59,6 +87,8 @@ export interface ChatChromeDeps {
  * decide what they show.
  */
 export class ChatChrome {
+  /** The running state the toolbar last rendered (from agent events or a sync). */
+  private running = false;
   readonly notifier: Notifier;
   // The service fires onChange synchronously during session transitions; this silences
   // automatic toasts until the new session's notification baseline has been set.
@@ -168,16 +198,8 @@ export class ChatChrome {
   }
 
   setRunning(running: boolean): void {
-    const sendButton = this.deps.elements.sendButton();
-    sendButton.disabled = false;
-    const action = sendAction(running, this.deps.state().queuedPromptArmed);
-    if (sendButton.getAttribute("data-ac-state") !== action) {
-      sendButton.setAttribute("data-ac-state", action);
-      sendButton.setAttr("aria-label", SEND_LABELS[action]);
-      sendButton.setAttr("title", SEND_LABELS[action]);
-      sendButton.empty();
-      setIcon(sendButton, action === "send" ? "arrow-up" : "list-plus");
-    }
+    this.running = running;
+    this.syncSendAvailability();
     const working = this.deps.elements.workingEl();
     working.parentElement?.toggleClass("is-running", running);
     const workingText = working.parentElement?.querySelector(".agentic-chat-working-text");
@@ -189,6 +211,26 @@ export class ChatChrome {
       this.deps.elements.stopButton().hide();
       working.hide();
       this.deps.elements.statusEl().setText("");
+    }
+  }
+
+  /** Render the send button from {@link composerSendState}; on each running change and each input. */
+  syncSendAvailability(): void {
+    const sendButton = this.deps.elements.sendButton();
+    const state = composerSendState({
+      running: this.running,
+      queued: this.deps.state().queuedPromptArmed,
+      draftEmpty: !this.deps.elements.composerInput()?.value.trim(),
+    });
+    if (sendButton.getAttribute("data-ac-state") !== state.action) {
+      sendButton.setAttribute("data-ac-state", state.action);
+      sendButton.empty();
+      setIcon(sendButton, state.icon);
+    }
+    sendButton.disabled = !state.enabled;
+    if (sendButton.getAttribute("aria-label") !== state.label) {
+      sendButton.setAttr("aria-label", state.label);
+      sendButton.setAttr("title", state.label);
     }
   }
 

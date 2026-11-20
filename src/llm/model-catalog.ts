@@ -18,6 +18,8 @@ export interface ParsedModel {
   /** Pricing-cache heuristic: reasoning metadata or an explicit parameter. */
   reasoningMetadata: boolean;
   thinkingLevelMap: Record<ThinkingLevel, string | null> | null;
+  /** `architecture.input_modalities` (for example `["text", "image"]`); empty when unknown. */
+  inputModalities: string[];
 }
 
 interface ModelListItem {
@@ -29,6 +31,7 @@ interface ModelListItem {
   reasoning?: { supported_efforts?: string[] | null } | null;
   pricing?: Record<string, string>;
   top_provider?: Record<string, unknown>;
+  architecture?: { input_modalities?: unknown } | null;
   maxTokens?: number;
 }
 
@@ -62,6 +65,7 @@ function isModelListItem(value: unknown): value is ModelListItem {
     (!("reasoning" in model) || model.reasoning === undefined || typeof model.reasoning === "object") &&
     (!("pricing" in model) || model.pricing === undefined || typeof model.pricing === "object") &&
     (!("top_provider" in model) || model.top_provider === undefined || typeof model.top_provider === "object") &&
+    (!("architecture" in model) || model.architecture === undefined || typeof model.architecture === "object") &&
     (!("maxTokens" in model) || model.maxTokens === undefined || typeof model.maxTokens === "number")
   );
 }
@@ -85,7 +89,13 @@ function parseModel(model: ModelListItem): ParsedModel {
     supportsReasoning: modelSupportsReasoning(model),
     reasoningMetadata: Boolean(reasoning) || supportedParameters.includes("reasoning"),
     thinkingLevelMap: buildThinkingLevelMap(reasoning),
+    inputModalities: inputModalities(model),
   };
+}
+
+function inputModalities(model: ModelListItem): string[] {
+  const raw = model.architecture?.input_modalities;
+  return Array.isArray(raw) ? raw.filter((entry): entry is string => typeof entry === "string") : [];
 }
 
 function maxCompletionTokens(model: ModelListItem): number {
