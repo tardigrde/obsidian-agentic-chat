@@ -203,6 +203,9 @@ export const DEFAULT_SETTINGS: AgenticChatSettings = {
   observability: DEFAULT_OBSERVABILITY_SETTINGS,
 };
 
+/** Upper bound for "Max response tokens": above every model's output limit, below absurd. */
+export const MAX_RESPONSE_TOKENS = 1_000_000;
+
 /**
  * Numeric leaves the settings UI bounds. A persisted value outside its range is
  * treated like a wrong type and falls back to the default. Fields with a
@@ -210,7 +213,7 @@ export const DEFAULT_SETTINGS: AgenticChatSettings = {
  */
 const SETTING_NUMBER_RANGES: Readonly<Record<string, readonly [number, number]>> = {
   temperature: [0, 2],
-  maxTokens: [0, Number.POSITIVE_INFINITY],
+  maxTokens: [0, MAX_RESPONSE_TOKENS],
   requestTimeoutMs: [5_000, Number.POSITIVE_INFINITY],
   maxNetworkRetries: [0, 5],
   "notifications.costAlertUsd": [0, Number.POSITIVE_INFINITY],

@@ -56,7 +56,9 @@ await $(".agentic-chat-send").click();
 | File context menu | `src/main.ts#registerContextMenus` | no committed check | `NONE` |
 | Files context menu (multi-select) | `src/main.ts#registerContextMenus` | no committed check | `NONE` |
 | Composer card mounts | `src/ui/chat-view.ts#buildLayout` | `test/e2e/specs/smoke.e2e.ts#mounts the chat view with a reachable composer and its toolbar` | `covered` |
-| Empty state (no suggestions, removed in UI v2) | `src/ui/chat-view.ts#renderEmptyState` | `test/ui/chat-view-states.test.ts#idle: empty state, Send, no Stop, no working indicator` (happy-dom) | `partial` |
+| Empty state (no suggestions, removed in UI v2) | `src/ui/chat-view.ts#renderEmptyState` | `test/ui/chat-view-states.test.ts#idle: empty state, Send, no Stop, no working indicator` (happy-dom); `test/e2e/specs/design-tokens.e2e.ts#centers the empty state in a 700 px pane` | `covered` |
+| Chat type: answer and user text in the interface font and size | `src/ui/assistant-bubble.ts#"agentic-chat-text"` (styles: `--ac-font-body`) | `test/e2e/specs/design-tokens.e2e.ts#renders the answer and the user turn in the interface font and size, not the editor's` | `covered` |
+| Composer clear of the desktop status bar; 12 px gap on a phone | `src/ui/chat-layout.ts#"composer-card"` (styles: `body:not(.is-phone) .agentic-chat-view`) | `test/e2e/specs/design-tokens.e2e.ts#keeps the composer card clear of the status bar on desktop (U2)` | `covered` |
 | Attach button opens the @ picker | `src/ui/composer-controller.ts#openMentionPicker` | `test/e2e/specs/design-tokens.e2e.ts#opens the @ note picker from the attach button` | `covered` |
 | Per-answer meta (time · tokens · cost) | `src/ui/format.ts#formatTurnMeta` | `test/e2e/specs/design-tokens.e2e.ts#shows the per-answer meta in the turn actions and no global usage line` | `covered` |
 | Context ring (% only, no click) | `src/ui/chat-chrome.ts#syncContextRing` | `test/e2e/specs/smoke.e2e.ts#mounts the chat view with a reachable composer and its toolbar` | `partial` |

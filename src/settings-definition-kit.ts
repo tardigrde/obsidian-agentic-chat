@@ -18,6 +18,48 @@ export function row(
   return { name, render, ...extra };
 }
 
+/**
+ * A whole-number field with bounds the user can see. On commit (blur or Enter)
+ * the value is clamped, saved, and written back into the field, and a short
+ * note says why when the typed value changed. Obsidian's declarative number
+ * control clamps only the stored value, so the field kept showing `-500`.
+ */
+export function boundedNumberRow(options: {
+  name: string;
+  desc: string;
+  min: number;
+  max: number;
+  get: () => number;
+  set: (value: number) => Promise<void>;
+}): SettingDefinitionRender {
+  const { min, max } = options;
+  const range = `${min.toLocaleString("en-US")} to ${max.toLocaleString("en-US")}`;
+  return row(options.name, (setting) => {
+    setting.setDesc(options.desc);
+    const note = setting.descEl.createDiv({ cls: "agentic-chat-settings-note" });
+    setting.addText((text) => {
+      text.inputEl.type = "number";
+      text.inputEl.min = String(min);
+      text.inputEl.max = String(max);
+      text.inputEl.step = "1";
+      text.setValue(String(options.get()));
+      text.inputEl.addEventListener("change", () => {
+        const raw = text.getValue().trim();
+        const parsed = Number(raw);
+        if (raw === "" || !Number.isFinite(parsed)) {
+          text.setValue(String(options.get()));
+          note.setText(`Enter a whole number from ${range}.`);
+          return;
+        }
+        const next = Math.min(max, Math.max(min, Math.round(parsed)));
+        text.setValue(String(next));
+        note.setText(next === parsed ? "" : `${raw} is outside ${range}. Saved ${next.toLocaleString("en-US")}.`);
+        void options.set(next);
+      });
+    });
+  });
+}
+
 export function headingRow(name: string): SettingDefinitionRender {
   return row(name, (setting) => {
     setting.setHeading();

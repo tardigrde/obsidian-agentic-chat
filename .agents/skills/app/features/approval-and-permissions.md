@@ -75,5 +75,7 @@ await allowApproval(); // test/e2e/support/chat.ts
 - The plugin refuses mode changes while any tab streams.
 - A background approval does not take focus or switch tabs. The card waits in
   its tab and shows when the user switches there.
+- A card that settles after the user clicked into another pane does not pull
+  focus back to the composer (`test/ui/chat-view-states.test.ts`).
 - Closing the tab settles its pending card as stopped.
 - WebDriver `clearValue` blurs; type into the deny reason with `browser.keys`.

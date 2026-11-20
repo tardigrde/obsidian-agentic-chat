@@ -3,8 +3,8 @@ import { type ApprovalPolicy, setPerToolApproval } from "./agent/approval";
 import { type AgentMode, MODE_ORDER, MODES } from "./agent/modes";
 import { DEFAULT_SYSTEM_PROMPT } from "./agent/system-prompt";
 import { MAX_TURN_CAP, MIN_TURN_CAP } from "./agent/turn-cap";
-import { controlDef, headingRow, row } from "./settings-definition-kit";
-import { healSubagentTimeout, type AgenticChatSettings } from "./settings-schema";
+import { boundedNumberRow, controlDef, headingRow, row } from "./settings-definition-kit";
+import { healSubagentTimeout, MAX_RESPONSE_TOKENS, type AgenticChatSettings } from "./settings-schema";
 import { MUTATING_TOOLS } from "./tools/tool-contracts";
 import { createVaultTools } from "./tools/vault-tools";
 import { clampRowNumber, type SettingsTabHost } from "./settings-tab-host";
@@ -34,11 +34,17 @@ export function agentDefinitions(settings: AgenticChatSettings, host: SettingsTa
       return host.plugin.onModeChange((mode) => dropdown?.setValue(mode));
     }),
     controlDef("Temperature", { type: "slider", key: "temperature", min: 0, max: 2, step: 0.1 }),
-    controlDef(
-      "Max response tokens",
-      { type: "number", key: "maxTokens", min: 0 },
-      "Per model request. 0 lets the provider decide.",
-    ),
+    boundedNumberRow({
+      name: "Max response tokens",
+      desc: `Per model request, 0 to ${MAX_RESPONSE_TOKENS.toLocaleString("en-US")}. 0 lets the provider decide.`,
+      min: 0,
+      max: MAX_RESPONSE_TOKENS,
+      get: () => settings.maxTokens,
+      set: async (value) => {
+        settings.maxTokens = value;
+        await host.save();
+      },
+    }),
     row("Request timeout (seconds)", (setting) => {
       setting
         .setDesc("How long to wait for the provider to start responding.")
@@ -55,12 +61,19 @@ export function agentDefinitions(settings: AgenticChatSettings, host: SettingsTa
       { type: "slider", key: "maxNetworkRetries", min: 0, max: 5, step: 1 },
       "Automatic retries on rate limits and transient server errors.",
     ),
-    controlDef(
-      "Max turns per prompt",
-      { type: "number", key: "maxTurnsPerPrompt", min: MIN_TURN_CAP, max: MAX_TURN_CAP },
-      `Stop the agent after this many model turns (${MIN_TURN_CAP}-${MAX_TURN_CAP}). ` +
+    boundedNumberRow({
+      name: "Max turns per prompt",
+      desc:
+        `Stop the agent after this many model turns (${MIN_TURN_CAP}-${MAX_TURN_CAP}). ` +
         "Sending or steering a message starts a new count. Send another message to continue.",
-    ),
+      min: MIN_TURN_CAP,
+      max: MAX_TURN_CAP,
+      get: () => settings.maxTurnsPerPrompt,
+      set: async (value) => {
+        settings.maxTurnsPerPrompt = value;
+        await host.save();
+      },
+    }),
     row("System prompt", (setting) => {
       setting
         .setDesc("Sent at the start of every conversation.")

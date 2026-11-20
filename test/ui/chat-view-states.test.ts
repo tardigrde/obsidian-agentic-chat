@@ -257,6 +257,29 @@ describe("chat view state machine", () => {
     expect(ui.calls()).toBe(2);
   });
 
+  it("an approval that settles after the user moved to another pane does not pull focus back to the composer", async () => {
+    await mount([
+      replayToolCallTurn("call-1", "write", { path: "Notes/new.md", content: "hello" }),
+      replayTextTurn("written"),
+    ]);
+    await ui.send("create a note");
+    await settle();
+
+    const card = ui.$<HTMLElement>('[data-ac="approval"]');
+    expect(card?.ownerDocument.activeElement).toBe(card);
+    // Allow is clicked, then, while the settings update is in flight, the user
+    // clicks blank text in a note in another pane: the chat view is no longer
+    // the active view and focus sits on <body>.
+    card?.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+    (ui.app.workspace as unknown as { activeView: unknown }).activeView = null;
+    card?.blur();
+    await settle();
+
+    expect(card?.ownerDocument.activeElement).not.toBe(ui.$('[data-ac="composer-input"]'));
+    await ui.idle();
+    expect(ui.app.vault.contentOf("Notes/new.md")).toBe("hello");
+  });
+
   it("two approvals at once in one tab (parallel MCP calls): the first to settle keeps the tab waiting for the second", async () => {
     const held = gate();
     await mount([replayTextTurn("working", { hold: true })], held);

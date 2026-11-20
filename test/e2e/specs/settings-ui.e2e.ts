@@ -298,13 +298,48 @@ describe("agentic-chat settings UI", function () {
       (settings) => (settings as unknown as { maxTurnsPerPrompt: number }).maxTurnsPerPrompt === 60,
       "Max turns per prompt was not persisted from the settings UI",
     );
-    // Out of range: the number input or the control normalizer must never
-    // store a value above the ceiling.
+    // Out of range: clamped to the ceiling, and the field shows what was saved.
     await setSettingText("Max turns per prompt", "5000");
-    await browser.pause(500);
-    const after = await readAgenticChatSettings<{ maxTurnsPerPrompt: number }>();
-    // Rejected (kept at 60) or clamped (200); never another value such as the default.
-    expect([60, 200]).toContain(after.maxTurnsPerPrompt);
+    await waitForAgenticChatSetting(
+      (settings) => (settings as unknown as { maxTurnsPerPrompt: number }).maxTurnsPerPrompt === 200,
+      "Max turns per prompt was not clamped to 200",
+    );
+    expect(await readSettingText("Max turns per prompt")).toBe("200");
+  });
+
+  it("clamps max response tokens in the field and says why (U2, chaos #3)", async function () {
+    await selectSettingsTab("Agent");
+    await setSettingText("Max response tokens", "4096");
+    await waitForAgenticChatSetting(
+      (settings) => (settings as unknown as { maxTokens: number }).maxTokens === 4096,
+      "Max response tokens was not persisted from the settings UI",
+    );
+    expect(await readSettingsBodyText()).not.toContain("is outside");
+
+    // A negative value: stored as 0, the field shows 0, and a note says why.
+    await setSettingText("Max response tokens", "-500");
+    await waitForAgenticChatSetting(
+      (settings) => (settings as unknown as { maxTokens: number }).maxTokens === 0,
+      "A negative max response tokens value was not clamped to 0",
+    );
+    expect(await readSettingText("Max response tokens")).toBe("0");
+    expect(await readSettingsBodyText()).toContain("-500 is outside 0 to 1,000,000. Saved 0.");
+
+    // An absurd value: clamped to the ceiling, shown in the field.
+    await setSettingText("Max response tokens", "999999999");
+    await waitForAgenticChatSetting(
+      (settings) => (settings as unknown as { maxTokens: number }).maxTokens === 1_000_000,
+      "An absurd max response tokens value was not clamped to the ceiling",
+    );
+    expect(await readSettingText("Max response tokens")).toBe("1000000");
+
+    // Back in range: the note goes away.
+    await setSettingText("Max response tokens", "0");
+    await waitForAgenticChatSetting(
+      (settings) => (settings as unknown as { maxTokens: number }).maxTokens === 0,
+      "Max response tokens did not return to 0",
+    );
+    expect(await readSettingsBodyText()).not.toContain("is outside");
   });
 
   it("persists web access settings through the Advanced tab", async function () {
