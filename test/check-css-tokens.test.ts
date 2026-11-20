@@ -42,4 +42,22 @@ describe("css token rule", () => {
     expect(checkCssTokens(".x { animation: agentic-chat-red-pulse 1s; color: currentColor; }")).toEqual([]);
     expect(checkCssTokens(".x { color: white; }")).toHaveLength(1);
   });
+
+  it("catches every named colour in any case, but allows transparent and currentColor", () => {
+    expect(checkCssTokens(".x { color: Crimson; }")).toHaveLength(1);
+    expect(checkCssTokens(".x { border-color: Teal; }")).toHaveLength(1);
+    expect(checkCssTokens(".x { background: transparent; color: currentColor; }")).toEqual([]);
+  });
+
+  it("allows only --ac-* variables in component rules (any Obsidian variable is caught)", () => {
+    expect(checkCssTokens(".x { color: var(--link-color); }").join("\n")).toMatch(/Obsidian variable/);
+    expect(checkCssTokens(".x { background: var(--code-background); }")).toHaveLength(1);
+    expect(checkCssTokens(".x { color: var(--ac-accent, var(--accent-h)); }")).toHaveLength(1);
+  });
+
+  it("checks declarations in at-rule blocks and keeps a quoted ; inside one value", () => {
+    expect(checkCssTokens("@font-face { font-family: x; size-adjust: 3px; }")).toHaveLength(1);
+    const uri = `.x { background-image: url("data:image/svg+xml;utf8,<path fill='#f00'/>"); }`;
+    expect(checkCssTokens(uri).join("\n")).toMatch(/raw colour/);
+  });
 });

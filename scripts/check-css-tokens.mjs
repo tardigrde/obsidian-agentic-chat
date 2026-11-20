@@ -13,10 +13,11 @@ import { pathToFileURL } from "node:url";
  * A declaration whose property is an `--ac-*` custom property is the token
  * layer: it may hold raw values and Obsidian variables. Every other declaration
  * may not hold:
- *   - a raw colour: `#hex`, `rgb()`, `rgba()`, `hsl()`, `hsla()`, or a named colour
+ *   - a raw colour: `#hex`, a colour function, or any CSS named colour (any
+ *     case); `transparent` and `currentColor` are not theme colours and pass
  *   - a `px` length
- *   - an Obsidian theme variable (`--background-*`, `--text-*`, `--color-*`,
- *     `--interactive-*`, `--size-*`, `--radius-*`, `--font-*`, `--shadow-*`)
+ *   - any `var()` that is not an `--ac-*` token (an Obsidian theme variable
+ *     belongs in the token layer)
  *
  * Media and container query preludes may use `px` (CSS variables do not work
  * there). The allowlist is empty and stays empty: fix the rule, not the list.
@@ -24,10 +25,25 @@ import { pathToFileURL } from "node:url";
 
 export const ALLOWLIST = [];
 
-const NAMED_COLOURS = ["white", "black", "red", "green", "blue", "orange", "yellow", "purple", "gray", "grey", "pink"];
-const OBSIDIAN_VARIABLE = /var\(\s*--(?:background|text|color|interactive|size|radius|font|shadow|layer)-[\w-]*/;
+/** The 148 CSS named colours (CSS Color 4). */
+const NAMED_COLOURS = `aliceblue antiquewhite aqua aquamarine azure beige bisque black blanchedalmond blue blueviolet brown
+burlywood cadetblue chartreuse chocolate coral cornflowerblue cornsilk crimson cyan darkblue darkcyan darkgoldenrod darkgray
+darkgreen darkgrey darkkhaki darkmagenta darkolivegreen darkorange darkorchid darkred darksalmon darkseagreen darkslateblue
+darkslategray darkslategrey darkturquoise darkviolet deeppink deepskyblue dimgray dimgrey dodgerblue firebrick floralwhite
+forestgreen fuchsia gainsboro ghostwhite gold goldenrod gray green greenyellow grey honeydew hotpink indianred indigo ivory
+khaki lavender lavenderblush lawngreen lemonchiffon lightblue lightcoral lightcyan lightgoldenrodyellow lightgray lightgreen
+lightgrey lightpink lightsalmon lightseagreen lightskyblue lightslategray lightslategrey lightsteelblue lightyellow lime
+limegreen linen magenta maroon mediumaquamarine mediumblue mediumorchid mediumpurple mediumseagreen mediumslateblue
+mediumspringgreen mediumturquoise mediumvioletred midnightblue mintcream mistyrose moccasin navajowhite navy oldlace olive
+olivedrab orange orangered orchid palegoldenrod palegreen paleturquoise palevioletred papayawhip peachpuff peru pink plum
+powderblue purple rebeccapurple red rosybrown royalblue saddlebrown salmon sandybrown seagreen seashell sienna silver skyblue
+slateblue slategray slategrey snow springgreen steelblue tan teal thistle tomato turquoise violet wheat white whitesmoke
+yellow yellowgreen`.split(/\s+/);
+/** Any `var()` whose name is not an `--ac-*` token. */
+const NON_TOKEN_VARIABLE = /var\(\s*--(?!ac-)[\w-]+/;
 const RAW_COLOUR = new RegExp(
   String.raw`#[0-9a-fA-F]{3,8}\b|\b(?:rgba?|hsla?|oklch|oklab|lab|lch|hwb|color)\(|(?<![\w-])(?:${NAMED_COLOURS.join("|")})(?![\w-])`,
+  "i",
 );
 // One number form per branch, so the engine never backtracks between them.
 const PX = /(?<![\w-])-?(?:\d+(?:\.\d+)?|\.\d+)px\b/;
@@ -35,6 +51,15 @@ const PX = /(?<![\w-])-?(?:\d+(?:\.\d+)?|\.\d+)px\b/;
 /** Line number of `index` in `text`. */
 function lineOf(text, index) {
   return text.slice(0, index).split("\n").length;
+}
+
+/**
+ * Replace the inside of quoted strings with spaces, keeping offsets: a `;`,
+ * `{`, or `}` in a string (an SVG data URI) must not split a declaration. The
+ * raw text is still checked, from the original css, by offset.
+ */
+function maskStrings(css) {
+  return css.replace(/"(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*'/g, (quoted) => quoted[0] + " ".repeat(quoted.length - 2) + quoted.at(-1));
 }
 
 /** Replace comments with spaces, keeping offsets and line numbers. */
@@ -47,7 +72,8 @@ function stripComments(css) {
  * inside at-rules; a block that holds other blocks is walked, not read.
  */
 export function declarations(css) {
-  const text = stripComments(css);
+  const raw = stripComments(css);
+  const text = maskStrings(raw);
   const found = [];
   const stack = [];
   let start = 0;
@@ -60,9 +86,11 @@ export function declarations(css) {
       const chunk = text.slice(start, index);
       const colon = chunk.indexOf(":");
       const prelude = stack.at(-1) ?? "";
-      if (colon > 0 && !prelude.startsWith("@")) {
+      // At-rule blocks are checked too (@font-face, @property): their
+      // declarations follow the same rule. @media and @container hold rules.
+      if (colon > 0) {
         const property = chunk.slice(0, colon).trim();
-        const value = chunk.slice(colon + 1).trim();
+        const value = raw.slice(start + colon + 1, index).trim();
         const offset = start + chunk.search(/\S/);
         if (/^-?-?[\w-]+$/.test(property)) found.push({ property, value, line: lineOf(text, offset), selector: prelude });
       }
@@ -82,7 +110,7 @@ export function checkCssTokens(css, file = "styles.css") {
     if (ALLOWLIST.includes(where)) continue;
     if (RAW_COLOUR.test(value)) errors.push(`${where}: raw colour; use an --ac-* token`);
     if (PX.test(value)) errors.push(`${where}: px length; use an --ac-* token`);
-    if (OBSIDIAN_VARIABLE.test(value)) errors.push(`${where}: Obsidian variable; map it in the --ac-* layer`);
+    if (NON_TOKEN_VARIABLE.test(value)) errors.push(`${where}: Obsidian variable; map it in the --ac-* layer`);
   }
   return errors;
 }
