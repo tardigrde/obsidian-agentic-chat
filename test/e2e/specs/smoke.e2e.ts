@@ -183,6 +183,13 @@ describe("agentic-chat smoke", function () {
         timeoutMsg: "the active note did not render as a context chip",
       });
 
+      // A real click on the chip's × removes it (chaos run 2026-11-20 reported it did not).
+      await $(".agentic-chat-chip.is-active-note .agentic-chat-chip-remove").click();
+      await browser.waitUntil(async () => (await activeChipText()) === null, {
+        timeout: 5_000,
+        timeoutMsg: "clicking the active-note chip's x did not remove the chip",
+      });
+
       await openNote(PRIVATE_NOTE, "# Secret\nNever attach.");
       await browser.waitUntil(async () => (await activeChipText()) === null, {
         timeout: 5_000,
