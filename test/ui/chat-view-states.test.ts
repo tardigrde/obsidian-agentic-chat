@@ -103,6 +103,28 @@ describe("chat view state machine", () => {
     expect(input.style.getPropertyValue("--ac-input-h")).not.toBe("200px");
   });
 
+  it("a tap on the context ring opens the breakdown (touch has no hover); Esc closes it", async () => {
+    await mount([replayTextTurn("the answer")]);
+    await ui.send("hello");
+    await ui.idle();
+    const ring = ui.$<HTMLElement>('[data-ac="context"]');
+    expect(ring?.style.display).not.toBe("none");
+    expect(ring?.getAttribute("role")).toBe("button");
+    expect(ring?.getAttribute("aria-expanded")).toBe("false");
+    ring?.click();
+    const panel = ui.$<HTMLElement>('[data-ac="context-breakdown"]');
+    expect(panel?.style.display).not.toBe("none");
+    expect(panel?.textContent).toBe(ring?.getAttribute("title"));
+    expect(panel?.textContent).toMatch(/tokens \(estimated\)/);
+    expect(ring?.getAttribute("aria-expanded")).toBe("true");
+    ring?.ownerDocument.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    expect(panel?.style.display).toBe("none");
+    expect(ring?.getAttribute("aria-expanded")).toBe("false");
+    // Enter opens it from the keyboard too.
+    ring?.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+    expect(panel?.style.display).not.toBe("none");
+  });
+
   it("streaming: the Queue button holds the draft as a chip and sends it after the turn", async () => {
     const held = gate();
     await mount([replayTextTurn("first", { hold: true }), replayTextTurn("second")], held);

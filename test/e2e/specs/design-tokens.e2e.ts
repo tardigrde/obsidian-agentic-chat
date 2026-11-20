@@ -146,6 +146,25 @@ describe("UI v2 design tokens and restyle", function () {
     expect(gap).toBe(12);
   });
 
+  it("opens the context breakdown above the card on a tap, and Esc closes it", async function () {
+    await $('[data-ac="context"]').click();
+    const panel = await browser.execute(() => {
+      const el = document.querySelector<HTMLElement>('[data-ac="context-breakdown"]');
+      const card = document.querySelector<HTMLElement>('[data-ac="composer-card"]');
+      if (!el || !card) return null;
+      const box = el.getBoundingClientRect();
+      return {
+        shown: getComputedStyle(el).display !== "none" && box.height > 0,
+        aboveCard: box.bottom <= card.getBoundingClientRect().top + 8,
+        estimate: /tokens \(estimated\)/.test(el.textContent ?? ""),
+      };
+    });
+    expect(panel).toEqual({ shown: true, aboveCard: true, estimate: true });
+    await browser.keys("Escape");
+    const closed = await browser.execute(() => getComputedStyle(document.querySelector('[data-ac="context-breakdown"]') as Element).display);
+    expect(closed).toBe("none");
+  });
+
   it("keeps the context % readable in a 320px sidebar (the ring glyph goes first)", async function () {
     const narrow = await browser.execute(async () => {
       const view = document.querySelector<HTMLElement>('[data-ac="view"]');

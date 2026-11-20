@@ -26,6 +26,6 @@ YOLO auto-approves most mutating tools until you switch back. Recursive folder d
 
 Long sessions compact automatically before they overflow the configured context window. Run `/compact [instructions]` to summarize older turns immediately. Anything after the command is passed as guidance for what the summary should preserve.
 
-The context ring in the toolbar reports the full next-request load: the transcript, the system prompt and loaded skills, the active tool schemas, and the response reserve. On desktop, hover the ring to see the breakdown (a phone shows the % only): instructions and skills, built-in and MCP tools, tool results, and the reserve. Deferred MCP tools are not sent, so they show as a count. The numbers are estimates; the last line shows the provider's count for the last reply, when the provider reported one.
+The context ring in the toolbar reports the full next-request load: the transcript, the system prompt and loaded skills, the active tool schemas, and the response reserve. Hover the ring, or tap it (on a phone too), to see the breakdown: instructions and skills, built-in and MCP tools, tool results, and the reserve. Deferred MCP tools are not sent, so they show as a count. The numbers are estimates; the last line shows the provider's count for the last reply, when the provider reported one.
 
 Compaction summaries preserve artifact references for large tool outputs, so you can reopen exact source snapshots with the `artifact` tool (`action=read` or `action=search`) after older turns are summarized away.

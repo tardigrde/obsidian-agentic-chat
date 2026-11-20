@@ -2,6 +2,7 @@ import { setIcon, type App, type Component } from "obsidian";
 import type { AcItem } from "./autocomplete";
 import { AutocompleteMenu } from "./autocomplete-menu";
 import type { ComposerSubmitSource } from "./composer-input";
+import { wireContextBreakdownPanel } from "./context-breakdown-panel";
 import type { TabHeaderElements } from "./tab-strip";
 import { acHook } from "./test-hooks";
 import { TranscriptView } from "./transcript-view";
@@ -251,11 +252,9 @@ export function buildLayout(deps: ChatLayoutDeps): ChatLayoutElements {
   toolbar.createSpan({ cls: "agentic-chat-toolbar-spacer" });
 
   // Context ring: % of the model's window the next request uses. Shown once
-  // usage is known; the tooltip carries the breakdown. No click action.
-  const contextEl = acHook(
-    toolbar.createDiv({ cls: "agentic-chat-ctx", attr: { role: "img", "aria-label": "Context window used" } }),
-    "context",
-  );
+  // usage is known. The breakdown is the hover tooltip on desktop, and a tap
+  // (or Enter) opens it as a panel above the card, for touch.
+  const contextEl = acHook(toolbar.createDiv({ cls: "agentic-chat-ctx", attr: { "aria-label": "Context window used" } }), "context");
   const ring = contextEl.createSvg("svg", { cls: "agentic-chat-ctx-ring", attr: { viewBox: "0 0 20 20", "aria-hidden": "true" } });
   ring.createSvg("circle", { cls: "agentic-chat-ctx-track", attr: { cx: "10", cy: "10", r: String(CONTEXT_RING_RADIUS) } });
   const contextRingEl = ring.createSvg("circle", {
@@ -270,6 +269,7 @@ export function buildLayout(deps: ChatLayoutDeps): ChatLayoutElements {
   });
   const contextPercentEl = contextEl.createSpan({ cls: "agentic-chat-ctx-percent" });
   contextEl.hide();
+  wireContextBreakdownPanel(contextEl, composer);
 
   // Safe / YOLO: one shield button. Orange while YOLO; icon only on phones.
   const modeToggleEl = toolbar.createDiv({

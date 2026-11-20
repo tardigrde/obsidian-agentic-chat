@@ -187,10 +187,11 @@ turn:
   ring** with its %, **Safe / YOLO** (a shield, orange while YOLO, icon only on
   touch), and the round **send / stop**. While a turn runs, Stop shows and send
   queues (`data-ac-state` `send`, `queue`, `update`).
-- **Context ring:** % only, no click action. On desktop the tooltip shows the
-  estimated breakdown, and the provider's count for the last reply when it
-  reported one. Known limit: the tooltip is hover-only, so a phone shows the %
-  only. Sample (real output):
+- **Context ring:** % only. The breakdown is the hover tooltip on desktop; a
+  tap, Enter, or Space opens it as a panel above the card (touch has no
+  hover). Esc or a tap outside closes it. It shows the estimate, and the
+  provider's count for the last reply when it reported one. Sample (real
+  output):
 
   ```
   38% · 48.6k / 128k tokens (estimated)

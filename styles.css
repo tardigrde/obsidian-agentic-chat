@@ -2027,6 +2027,7 @@ body.is-mobile,
 .agentic-chat-model-pill:focus-visible,
 .agentic-chat-effort:focus-visible,
 .agentic-chat-mode-toggle:focus-visible,
+.agentic-chat-ctx:focus-visible,
 .agentic-chat-round:focus-visible,
 .agentic-chat-tab:focus-visible,
 .agentic-chat-tab-close:focus-visible {
@@ -2041,6 +2042,28 @@ body.is-mobile,
 }
 
 /* Context ring + %: muted until the window fills up. No click action. */
+/* The context breakdown panel: above the composer card, opened by a tap on
+   the ring (touch has no hover tooltip). */
+.agentic-chat-ctx-panel {
+  position: absolute;
+  bottom: calc(100% - var(--ac-space-1));
+  right: var(--ac-space-3);
+  z-index: var(--ac-layer-popover);
+  max-width: calc(100% - var(--ac-space-3) * 2);
+  max-height: var(--ac-scroll-l);
+  margin: 0;
+  padding: var(--ac-space-2) var(--ac-space-2h);
+  overflow: auto;
+  border: var(--ac-line) solid var(--ac-border);
+  border-radius: var(--ac-radius-m);
+  background-color: var(--ac-surface);
+  box-shadow: var(--ac-shadow-menu);
+  color: var(--ac-text);
+  font-family: var(--ac-font-mono);
+  font-size: var(--ac-font-small);
+  white-space: pre;
+}
+
 .agentic-chat-ctx {
   display: inline-flex;
   align-items: center;
@@ -2051,7 +2074,7 @@ body.is-mobile,
   color: var(--ac-text-muted);
   font-size: var(--ac-font-small);
   font-variant-numeric: tabular-nums;
-  cursor: default;
+  cursor: pointer;
 }
 
 .agentic-chat-ctx-ring {
