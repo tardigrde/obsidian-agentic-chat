@@ -1,6 +1,8 @@
 import {
   ItemView,
   Notice,
+  Platform,
+  Scope,
   TFile,
   TFolder,
   type WorkspaceLeaf,
@@ -51,6 +53,11 @@ import { TranscriptView } from "./transcript-view";
 import type { SlashContext } from "./slash/context";
 import { persistEffortLevel } from "./slash/model";
 import { acHook } from "./test-hooks";
+import { deletePreviousWord } from "./composer-keys";
+
+/** What a click must leave alone: controls, links, fields, and the approval card. */
+const INTERACTIVE_SELECTOR =
+  'a, button, input, textarea, select, summary, label, [role="button"], [role="link"], [role="menuitem"], [role="tab"], [contenteditable="true"], .agentic-chat-approval, .agentic-chat-ask-user';
 
 export { VIEW_TYPE_AGENT_CHAT };
 
@@ -86,6 +93,8 @@ export class ChatView extends ItemView {
   private contextRingEl!: SVGCircleElement;
   private contextPercentEl!: HTMLElement;
   private workingEl!: HTMLElement;
+  /** A pointer press in this view is being handled; its click decides focus. */
+  private pointerActivation = false;
   private closed = true;
 
   constructor(
@@ -93,6 +102,41 @@ export class ChatView extends ItemView {
     private readonly plugin: AgenticChatPlugin,
   ) {
     super(leaf);
+  }
+
+  /**
+   * Obsidian binds Ctrl+W to "close tab" before the textarea sees the key.
+   * While the composer has focus, Ctrl+W deletes the previous word, as in a
+   * terminal (U3 #7). The scope exists only while the composer is focused, so
+   * Ctrl+W anywhere else still closes the tab; on macOS Cmd+W is untouched.
+   */
+  private wireComposerKeyScope(input: HTMLTextAreaElement): void {
+    if (Platform.isMacOS) return;
+    const scope = new Scope(this.app.scope);
+    scope.register(["Ctrl"], "w", (event) => {
+      // Mid-composition (IME) the key belongs to the IME: neither delete nor close.
+      if (!event.isComposing) deletePreviousWord(input);
+      return false;
+    });
+    let pushed = false;
+    const pop = () => {
+      if (!pushed) return;
+      pushed = false;
+      this.app.keymap?.popScope(scope);
+    };
+    this.registerDomEvent(input, "focus", () => {
+      if (pushed) return;
+      if (!this.app.keymap) return;
+      pushed = true;
+      this.app.keymap.pushScope(scope);
+    });
+    this.registerDomEvent(input, "blur", pop);
+    // A popout window that loses OS focus keeps its DOM focus (no blur), and
+    // the keymap is one stack for all windows: pop on window blur too. The
+    // composer's focus event fires again when its window comes back.
+    const win = input.ownerDocument.defaultView;
+    if (win) this.registerDomEvent(win, "blur", pop);
+    this.register(pop);
   }
 
   getViewType(): string {
@@ -369,12 +413,64 @@ export class ChatView extends ItemView {
     this.registerEvent(this.app.vault.on("rename", invalidate));
     this.registerEvent(this.app.vault.on("modify", invalidate));
     // Keep the auto-attached active note in sync as the focused leaf/file changes.
-    this.registerEvent(this.app.workspace.on("active-leaf-change", () => this.syncActiveNote()));
+    this.registerEvent(
+      this.app.workspace.on("active-leaf-change", (leaf) => {
+        this.syncActiveNote();
+        this.focusComposerOnReturn(leaf);
+      }),
+    );
+    this.registerDomEvent(this.contentEl, "pointerdown", () => {
+      this.pointerActivation = true;
+    });
+    // A drag that ends without a click must not leave the flag set: clear it
+    // after the click (if any) had its turn.
+    // On the document, so a press released outside the view clears it too.
+    this.registerDomEvent(this.contentEl.ownerDocument, "pointerup", () => {
+      window.setTimeout(() => (this.pointerActivation = false), 0);
+    });
+    this.registerDomEvent(this.contentEl, "pointercancel", () => {
+      this.pointerActivation = false;
+    });
+    this.registerDomEvent(this.contentEl, "click", (event) => this.focusComposerOnChromeClick(event));
     this.registerEvent(this.app.workspace.on("file-open", () => this.syncActiveNote()));
     await this.createSessionActivationCoordinator().initializeActiveSession(
       () => this.service.initialize(),
       (error) => new Notice(`Agentic chat: ${errorMessage(error)}`),
     );
+  }
+
+  /**
+   * Back to this pane by keyboard or command (Ctrl+Tab, a hotkey): the
+   * composer takes focus. A pointer activation is left to the click handler,
+   * which knows what was clicked (U3 #6).
+   */
+  private focusComposerOnReturn(leaf: WorkspaceLeaf | null): void {
+    if (leaf !== this.leaf || this.closed || Platform.isMobile) return;
+    if (this.pointerActivation) return;
+    // Obsidian focuses the leaf itself right after this event; focus after it.
+    window.setTimeout(() => {
+      if (this.app.workspace.getActiveViewOfType(ChatView) === this) this.focusComposerIfFree();
+    }, 0);
+  }
+
+  /** A click on plain chat chrome (not a control, not a text selection) focuses the composer. */
+  private focusComposerOnChromeClick(event: MouseEvent): void {
+    this.pointerActivation = false;
+    if (this.closed || Platform.isMobile || event.defaultPrevented || event.button !== 0) return;
+    const node = event.target as Node | null;
+    const target = node?.instanceOf(Element) ? node : null;
+    if (!target || target.closest(INTERACTIVE_SELECTOR)) return;
+    const selection = this.contentEl.ownerDocument.getSelection();
+    if (selection && !selection.isCollapsed) return;
+    this.focusComposerIfFree();
+  }
+
+  private focusComposerIfFree(): void {
+    // A waiting approval owns Enter and Esc; never pull focus away from it.
+    if ((this.activeTab?.pendingApprovals ?? []).some((card) => !card.settled)) return;
+    const active = this.contentEl.ownerDocument.activeElement;
+    if (active && active !== this.inputEl && this.contentEl.contains(active) && active.matches(INTERACTIVE_SELECTOR)) return;
+    this.inputEl?.focus();
   }
 
   async onClose(): Promise<void> {
@@ -615,6 +711,7 @@ export class ChatView extends ItemView {
     this.chipsEl = layout.chipsEl;
     this.fieldEl = layout.fieldEl;
     this.inputEl = layout.inputEl;
+    this.wireComposerKeyScope(this.inputEl);
     this.modeToggleEl = layout.modeToggleEl;
     this.modeLabelEl = layout.modeLabelEl;
     this.menu = layout.menu;

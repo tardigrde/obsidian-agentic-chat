@@ -365,6 +365,9 @@ async function runSingleChild(
     stoppedLocally = true;
     child.abort();
   });
+  // Publish the stop id at once: a child that is quiet for a while (a long
+  // first model call) must still show its Stop on the row head (U3 #10).
+  scheduleEmit();
 
   const onAbort = (): void => child.abort();
   signal?.addEventListener("abort", onAbort);

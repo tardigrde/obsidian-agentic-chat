@@ -87,9 +87,9 @@ describe("activity line", () => {
     expect(text(last(".agentic-chat-thought.is-done .agentic-chat-thought-label"))).toBe("Thought for 1.5s:");
     expect(head()).toBe("Thought");
     expect(last('[data-ac="activity"]')?.classList.contains("is-hidden")).toBe(false);
-    // The reasoning is the first entry of the body, before the steps.
-    const body = last('[data-ac="activity-body"]');
-    expect(body?.firstElementChild?.classList.contains("agentic-chat-activity-thoughts")).toBe(true);
+    // U3 #3: the reasoning is a row of the step timeline, in event order.
+    const steps = last('[data-ac="activity-body"] .agentic-chat-activity-steps');
+    expect(steps?.firstElementChild?.classList.contains("agentic-chat-thought")).toBe(true);
   });
 
   it("a near-instant trace settles to Thought with no time", async () => {
@@ -267,13 +267,20 @@ describe("subagent dispatch card", () => {
     tick("");
     const activity = last('[data-ac="activity"]');
     const child = last(".agentic-chat-subagent") as HTMLDetailsElement;
-    expect(activity?.classList.contains("is-open")).toBe(true);
-    expect(child.open).toBe(true);
-    // The user collapses both to read the transcript.
+    // U3 #10: a running subagent starts collapsed, like any tool row; Stop is on the row head.
+    expect(activity?.classList.contains("is-open")).toBe(false);
+    expect(child.open).toBe(false);
+    expect(last('[data-ac="step"] .agentic-chat-step-head .agentic-chat-subagent-head-stop')).not.toBeNull();
+    // The user opens the line and the row: the row opens the child's log too.
     (last('[data-ac="activity-head"]') as HTMLElement).click();
-    child.open = false;
+    (last('[data-ac="step"] .agentic-chat-step-head') as HTMLElement).click();
+    expect(child.open).toBe(true);
     tick("still going");
-    expect(last('[data-ac="activity"]')?.classList.contains("is-open")).toBe(false);
+    expect(last('[data-ac="activity"]')?.classList.contains("is-open")).toBe(true);
+    expect((last(".agentic-chat-subagent") as HTMLDetailsElement).open).toBe(true);
+    // And closes both again; a later tick does not re-open them.
+    (last('[data-ac="step"] .agentic-chat-step-head') as HTMLElement).click();
+    tick("more");
     expect((last(".agentic-chat-subagent") as HTMLDetailsElement).open).toBe(false);
   });
 

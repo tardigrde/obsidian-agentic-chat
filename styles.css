@@ -352,6 +352,8 @@ body.is-mobile,
 }
 
 .agentic-chat-text {
+  /* Obsidian sizes tables from the editor font; in chat they follow the answer (U3 #2). */
+  --table-text-size: var(--ac-font-body);
   font-family: var(--ac-font-family);
   font-size: var(--ac-font-body);
   line-height: var(--ac-line-body);
@@ -904,17 +906,25 @@ body.is-mobile,
 }
 
 /* Reasoning: muted italic, folded to three lines; click shows all. */
+/* A thought is its own row in the step timeline, in event order, one line
+   until opened (U3 #3). The rule above it keeps two thoughts apart. */
 .agentic-chat-thought {
-  padding: var(--ac-space-0) 0 var(--ac-space-1h);
+  padding: var(--ac-space-1) 0;
   color: var(--ac-text-muted);
   font-size: var(--ac-font-ui);
   font-style: italic;
   cursor: pointer;
   display: -webkit-box;
   -webkit-box-orient: vertical;
-  -webkit-line-clamp: 3;
+  -webkit-line-clamp: 1;
   overflow: hidden;
   white-space: pre-wrap;
+}
+
+.agentic-chat-thought + .agentic-chat-thought,
+.agentic-chat-step + .agentic-chat-thought,
+.agentic-chat-thought + .agentic-chat-step {
+  border-top: var(--ac-line) solid var(--ac-border);
 }
 
 .agentic-chat-thought.is-expanded {
@@ -984,6 +994,25 @@ body.is-mobile,
 
 .agentic-chat-step-arg.is-link:hover {
   text-decoration: underline;
+}
+
+/* A folder is not a note: plain text with a folder icon, no link (U3 #4). */
+.agentic-chat-step-arg-icon,
+.agentic-chat-approval-path-icon {
+  display: inline-flex;
+  vertical-align: middle;
+  margin-right: var(--ac-space-1);
+  color: var(--ac-text-muted);
+}
+
+.agentic-chat-step-arg-icon svg,
+.agentic-chat-approval-path-icon svg {
+  width: var(--ac-icon-s);
+  height: var(--ac-icon-s);
+}
+
+.agentic-chat-approval-path.is-folder {
+  color: var(--ac-text);
 }
 
 .agentic-chat-step-time {
@@ -1371,6 +1400,22 @@ body.is-mobile,
   max-height: var(--ac-scroll-m);
   overflow-y: auto;
   font-size: var(--ac-font-tiny);
+}
+
+/* An answered ask_user, kept where it happened in the transcript (U3 #15). */
+.agentic-chat-ask-record {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--ac-space-1) var(--ac-space-2);
+  padding: var(--ac-space-1h) var(--ac-space-2h);
+  border-left: var(--ac-line-accent) solid var(--ac-accent);
+  color: var(--ac-text);
+  font-size: var(--ac-font-ui);
+}
+
+.agentic-chat-ask-record-label {
+  color: var(--ac-text-muted);
 }
 
 .agentic-chat-subagent-stop {

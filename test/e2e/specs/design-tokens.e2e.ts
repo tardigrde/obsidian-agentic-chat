@@ -312,7 +312,7 @@ describe("UI v2 empty state and chat type in a wide pane", function () {
     );
 
   before(async function () {
-    await installScriptedTurns([textTurn("type answer", "A plain answer for the type check.")]);
+    await installScriptedTurns([textTurn("type answer", "A plain answer for the type check.\n\n| Note | Status |\n|---|---|\n| Test Note 1 | done |\n\nRun `vault_inspect` next.")]);
     await configureScriptedPlugin("allow");
     await openChat();
     const original = await browser.execute(() => ({ windowWidth: window.outerWidth, windowHeight: window.outerHeight }));
@@ -385,7 +385,9 @@ describe("UI v2 empty state and chat type in a wide pane", function () {
       const view = document.querySelector<HTMLElement>('[data-ac="view"]');
       const answer = document.querySelector<HTMLElement>('[data-ac="assistant-text"] p');
       const user = document.querySelector<HTMLElement>(".agentic-chat-user");
-      if (!view || !answer || !user) return null;
+      const cell = document.querySelector<HTMLElement>('[data-ac="assistant-text"] td');
+      const code = document.querySelector<HTMLElement>('[data-ac="assistant-text"] p code');
+      if (!view || !answer || !user || !cell || !code) return null;
       const probe = view.createDiv();
       probe.style.fontFamily = "var(--font-interface)";
       probe.style.fontSize = "var(--font-ui-medium)";
@@ -397,6 +399,9 @@ describe("UI v2 empty state and chat type in a wide pane", function () {
         answerSize: getComputedStyle(answer).fontSize,
         userFamily: getComputedStyle(user).fontFamily,
         userSize: getComputedStyle(user).fontSize,
+        // U3 #2: Obsidian sizes tables from the editor font; in chat they follow the answer.
+        cellSize: getComputedStyle(cell).fontSize,
+        codeSize: getComputedStyle(code).fontSize,
       };
       probe.remove();
       return result;
@@ -407,5 +412,7 @@ describe("UI v2 empty state and chat type in a wide pane", function () {
     expect(type!.answerSize).toBe(type!.uiMedium);
     expect(type!.userSize).toBe(type!.uiMedium);
     expect(type!.answerSize).not.toBe("26px");
+    expect(type!.cellSize).toBe(type!.uiMedium);
+    expect(parseFloat(type!.codeSize)).toBeLessThanOrEqual(parseFloat(type!.uiMedium));
   });
 });

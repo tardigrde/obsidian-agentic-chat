@@ -52,13 +52,15 @@ function chrome() {
   return {
     send: ui.$<HTMLButtonElement>('[data-ac="send"]')?.getAttribute("data-ac-state") ?? "",
     stop: shown(ui.$(".agentic-chat-stop")),
-    working: shown(ui.$(".agentic-chat-working")),
+    working: ui.$(".agentic-chat-status-line")?.classList.contains("is-running") ?? false,
+    // U3 #5: the activity line owns the spinner; the status line never adds a second one.
+    statusSpinner: shown(ui.$(".agentic-chat-working")),
     modeDisabled: ui.$(".agentic-chat-mode-toggle")?.classList.contains("is-disabled") ?? false,
   };
 }
 
-const IDLE = { send: "send", stop: false, working: false, modeDisabled: false };
-const STREAMING = { send: "queue", stop: true, working: true, modeDisabled: true };
+const IDLE = { send: "send", stop: false, working: false, statusSpinner: false, modeDisabled: false };
+const STREAMING = { send: "queue", stop: true, working: true, statusSpinner: false, modeDisabled: true };
 
 async function mount(turns: ReplayTurn[], held?: Gate, settings = {}): Promise<void> {
   ui = await mountChatView({ turns, waitForRelease: held?.wait, settings });
@@ -234,6 +236,28 @@ describe("chat view state machine", () => {
     await ui.idle();
     expect(ui.calls()).toBe(2);
     expect(ui.$(".agentic-chat-assistant:last-child .agentic-chat-text")?.textContent).toContain("recovered");
+  });
+
+  it("U3 #15: an approval card mounts after the text the turn already wrote", async () => {
+    await mount([
+      {
+        stopReason: "toolUse",
+        content: [
+          { type: "text", text: "TEXT-BEFORE-WRITE here is the plan." },
+          { type: "toolCall", id: "call-1", name: "write", arguments: { path: "Notes/new.md", content: "hello" } },
+        ],
+      },
+      replayTextTurn("written"),
+    ]);
+    await ui.send("create a note");
+    await settle();
+    const card = ui.$('[data-ac="approval"]');
+    const text = Array.from(ui.$$('[data-ac="assistant-message"]')).find((el) => el.textContent?.includes("TEXT-BEFORE-WRITE"));
+    expect(card).not.toBeNull();
+    expect(text).toBeDefined();
+    expect(text!.compareDocumentPosition(card!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    card?.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+    await ui.idle();
   });
 
   it("streaming -> approval pending -> Allow -> idle: the inline card blocks the tool until allowed", async () => {

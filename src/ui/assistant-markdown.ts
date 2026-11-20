@@ -10,6 +10,7 @@ import {
   rewriteMarkdownImages,
   stripImageQueryFragment,
 } from "./image-attachments";
+import { openVaultPath } from "./vault-open";
 
 export type RenderedChatLink =
   | { kind: "vault"; target: string }
@@ -85,7 +86,7 @@ export function installRenderedLinkHandlers(
     event.preventDefault();
     event.stopPropagation();
     if (link.kind === "vault") {
-      void app.workspace.openLinkText(link.target, "", event.instanceOf(MouseEvent) && (event.metaKey || event.ctrlKey));
+      openVaultPath(app, link.target, event.instanceOf(MouseEvent) && (event.metaKey || event.ctrlKey));
     } else if (onOpenExternalLink) {
       onOpenExternalLink(link.target);
     } else {

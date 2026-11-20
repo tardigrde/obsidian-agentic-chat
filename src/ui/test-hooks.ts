@@ -29,6 +29,7 @@ export const AC_HOOKS = [
   "ask-user",
   "ask-input",
   "ask-submit",
+  "ask-record",
   "activity",
   "activity-head",
   "activity-body",
