@@ -22,6 +22,7 @@ describe("context breakdown", () => {
     const parts = { instructions, skills, deferredNotLoaded: 14 };
     const load = estimateContextLoad({ messages, systemPrompt, tools, reserveTokens: 3000, parts });
     const withoutDeferred = estimateContextLoad({ messages, systemPrompt, tools, reserveTokens: 3000, parts: { instructions, skills } });
+    expect(load.breakdown).toBeDefined();
     const b = load.breakdown!;
 
     expect(b.instructionsTokens).toBe(estimateTextTokens(instructions));
@@ -56,6 +57,7 @@ describe("context breakdown", () => {
       contextWindow: 128_000,
       parts: { instructions, skills, deferredNotLoaded: 14 },
     });
+    expect(typeof formatContextBreakdown).toBe("function");
     const text = formatContextBreakdown(readout!, 46_900);
     const lines = text.split("\n");
     expect(lines[0]).toMatch(/^\d+% · [\d.]+k \/ 128k tokens \(estimated\)$/);
