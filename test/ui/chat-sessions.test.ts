@@ -87,7 +87,7 @@ describe("chat sessions", () => {
     ui = await mountChatView({
       turns: [replayTextTurn("a1"), replayTextTurn("a2"), replayTextTurn("a3"), replayTextTurn("b1"), replayTextTurn("a4")],
     });
-    const body = "PLAN-BODY-7f3a long working note";
+    const body = `PLAN-BODY-7f3a\n${"A line of a long working note.\n".repeat(40)}`;
     const plan = await seedFile(ui.app, "Inbox/Plan.md", body);
     const other = await seedFile(ui.app, "Other.md", "other note body");
     const open = async (file: typeof plan) => {

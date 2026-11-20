@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { App } from "obsidian";
 import { FOLDER_PREFIX } from "../src/ui/autocomplete";
-import { ActiveNoteContextCache, MAX_ACTIVE_NOTE_CHARS } from "../src/ui/active-note";
-import { buildPromptContext, loadImageAttachments, visibleEditorRange, PromptContextCache } from "../src/ui/context-builder";
+import { MAX_ACTIVE_NOTE_CHARS } from "../src/ui/active-note";
+import { buildPromptContext, loadImageAttachments, sentUserText, visibleEditorRange } from "../src/ui/context-builder";
 import { createTextContextAttachment, MAX_TEXT_CONTEXT_CHARS } from "../src/ui/context-attachments";
 import { FakeApp } from "./helpers/fake-vault";
 
@@ -249,90 +249,57 @@ describe("buildPromptContext", () => {
     expect(context).not.toContain("x".repeat(MAX_ACTIVE_NOTE_CHARS + 1));
   });
 
-  it("does not inline an unchanged active note repeatedly", async () => {
+  it("sends a stub for an active note whose exact text the model already holds", async () => {
     const fake = app();
-    await fake.vault.create("Iac.md", "stable body");
-    const activeNoteCache = new ActiveNoteContextCache();
+    await fake.vault.create("Iac.md", `stable body\n${"line of a long note\n".repeat(20)}`);
+    const options = { app: fake, activeNotePath: "Iac.md", attachments: [], isPathIgnored: () => false };
 
-    const first = await buildPromptContext({
-      app: fake,
-      activeNotePath: "Iac.md",
-      attachments: [],
-      isPathIgnored: () => false,
-      activeNoteCache,
-    });
-    activeNoteCache.commitPending();
-    const second = await buildPromptContext({
-      app: fake,
-      activeNotePath: "Iac.md",
-      attachments: [],
-      isPathIgnored: () => false,
-      activeNoteCache,
-    });
+    const first = await buildPromptContext(options);
+    const second = await buildPromptContext({ ...options, sentText: `${first}\n\nhello` });
 
     expect(first).toContain("stable body");
     expect(second).toContain('Active note "Iac.md" is unchanged');
     expect(second).not.toContain("stable body");
   });
 
-  it("does not treat a rendered active note as sent until the cache is committed", async () => {
-    const fake = app();
-    await fake.vault.create("Iac.md", "stable body");
-    const activeNoteCache = new ActiveNoteContextCache();
-
-    const first = await buildPromptContext({
-      app: fake,
-      activeNotePath: "Iac.md",
-      attachments: [],
-      isPathIgnored: () => false,
-      activeNoteCache,
-    });
-    const secondBeforeCommit = await buildPromptContext({
-      app: fake,
-      activeNotePath: "Iac.md",
-      attachments: [],
-      isPathIgnored: () => false,
-      activeNoteCache,
-    });
-    activeNoteCache.commitPending();
-    const thirdAfterCommit = await buildPromptContext({
-      app: fake,
-      activeNotePath: "Iac.md",
-      attachments: [],
-      isPathIgnored: () => false,
-      activeNoteCache,
-    });
-
-    expect(first).toContain("stable body");
-    expect(secondBeforeCommit).toContain("stable body");
-    expect(thirdAfterCommit).toContain('Active note "Iac.md" is unchanged');
-    expect(thirdAfterCommit).not.toContain("stable body");
-  });
-
   it("re-inlines an active note after its content changes", async () => {
     const fake = app();
     const file = await fake.vault.create("Iac.md", "version one");
-    const activeNoteCache = new ActiveNoteContextCache();
+    const options = { app: fake, activeNotePath: "Iac.md", attachments: [], isPathIgnored: () => false };
 
-    await buildPromptContext({
-      app: fake,
-      activeNotePath: "Iac.md",
-      attachments: [],
-      isPathIgnored: () => false,
-      activeNoteCache,
-    });
-    activeNoteCache.commitPending();
+    const first = await buildPromptContext(options);
     await fake.vault.modify(file, "version two");
-    const changed = await buildPromptContext({
-      app: fake,
-      activeNotePath: "Iac.md",
-      attachments: [],
-      isPathIgnored: () => false,
-      activeNoteCache,
-    });
+    const changed = await buildPromptContext({ ...options, sentText: first });
 
     expect(changed).toContain("version two");
     expect(changed).not.toContain("is unchanged");
+  });
+
+  it("dedupes each section on its own: a held note becomes a stub, a new one stays full", async () => {
+    const fake = app();
+    await fake.vault.create("A.md", `alpha body text\n${"a long line\n".repeat(30)}`);
+    await fake.vault.create("B.md", `beta body text\n${"a long line\n".repeat(30)}`);
+    const held = await buildPromptContext({ app: fake, activeNotePath: null, attachments: ["A.md"], isPathIgnored: () => false });
+
+    const next = await buildPromptContext({
+      app: fake,
+      activeNotePath: null,
+      attachments: ["A.md", "B.md"],
+      isPathIgnored: () => false,
+      sentText: held,
+    });
+
+    expect(next).toContain('Note "A.md" is unchanged');
+    expect(next).not.toContain("alpha body text");
+    expect(next).toContain("beta body text");
+  });
+
+  it("keeps a section that is shorter than its stub", async () => {
+    const fake = app();
+    await fake.vault.create("S.md", "x");
+    const options = { app: fake, activeNotePath: "S.md", attachments: [], isPathIgnored: () => false };
+    const first = await buildPromptContext(options);
+    expect(await buildPromptContext({ ...options, sentText: first })).toBe(first);
   });
 
   it("returns an empty string when no context sections are present", async () => {
@@ -383,68 +350,15 @@ describe("visibleEditorRange", () => {
   });
 });
 
-describe("PromptContextCache", () => {
-  it("returns full context on first call", () => {
-    const cache = new PromptContextCache();
-    const context = "<context>Active note \"Note.md\"</context>";
-    const result = cache.compress(context);
-    expect(result).toBe(context);
-  });
-
-  it("compresses unchanged context on second call after commit", () => {
-    const cache = new PromptContextCache();
-    const context = "<context>Active note \"Note.md\"</context>";
-    cache.compress(context);
-    cache.commit();
-    const result = cache.compress(context);
-    expect(result).toContain("context unchanged since previous turn");
-    expect(result).toContain("Note.md");
-    expect(result).not.toContain("Active note");
-  });
-
-  it("returns full context again after discard", () => {
-    const cache = new PromptContextCache();
-    const context = "<context>Active note \"Note.md\"</context>";
-    cache.compress(context);
-    cache.discard();
-    const result = cache.compress(context);
-    expect(result).toBe(context);
-  });
-
-  it("returns full context when content changes", () => {
-    const cache = new PromptContextCache();
-    const first = "<context>Active note \"Note.md\"</context>";
-    cache.compress(first);
-    cache.commit();
-    const second = "<context>Active note \"Other.md\"</context>";
-    const result = cache.compress(second);
-    expect(result).toBe(second);
-  });
-
-  it("extracts multiple attached paths for the compressed message", () => {
-    const cache = new PromptContextCache();
-    const context =
-      '<context>Active note "A.md"\n\n---\n\nContents of note "B.md"\n\n---\n\nFolder listing for "C"</context>';
-    cache.compress(context);
-    cache.commit();
-    const result = cache.compress(context);
-    expect(result).toContain("A.md");
-    expect(result).toContain("B.md");
-    expect(result).toContain("C");
-  });
-
-  it("returns empty string unchanged", () => {
-    const cache = new PromptContextCache();
-    expect(cache.compress("")).toBe("");
-  });
-
-  it("returns full context after clear", () => {
-    const cache = new PromptContextCache();
-    const context = "<context>Active note \"Note.md\"</context>";
-    cache.compress(context);
-    cache.commit();
-    expect(cache.compress(context)).toContain("context unchanged since previous turn");
-    cache.clear();
-    expect(cache.compress(context)).toBe(context);
+describe("sentUserText", () => {
+  it("joins the text of user messages only", () => {
+    const text = sentUserText([
+      { role: "user", content: "plain", timestamp: 0 },
+      { role: "user", content: [{ type: "text", text: "part" }, { type: "image", data: "x", mimeType: "image/png" }], timestamp: 0 },
+      { role: "assistant", content: [{ type: "text", text: "reply" }] } as never,
+    ]);
+    expect(text).toContain("plain");
+    expect(text).toContain("part");
+    expect(text).not.toContain("reply");
   });
 });

@@ -1,7 +1,5 @@
-import { ActiveNoteContextCache } from "./active-note";
 import { ComposerHistory } from "./composer-history";
 import type { ContextAttachment } from "./context-attachments";
-import { PromptContextCache } from "./context-builder";
 
 /**
  * Per-conversation working state, owned by one chat tab. ChatView reads and
@@ -11,8 +9,6 @@ import { PromptContextCache } from "./context-builder";
  */
 export interface ChatTabWorkingState {
   attachments: ContextAttachment[];
-  activeNoteCache: ActiveNoteContextCache;
-  contextCache: PromptContextCache;
   activeNoteSuppressed: boolean;
   /** Composer text while the tab is in the background. */
   draft: string;
@@ -33,8 +29,6 @@ export interface ChatTabWorkingState {
 export function freshChatTabState(): ChatTabWorkingState {
   return {
     attachments: [],
-    activeNoteCache: new ActiveNoteContextCache(),
-    contextCache: new PromptContextCache(),
     activeNoteSuppressed: false,
     draft: "",
     queuedPromptArmed: false,
@@ -51,8 +45,6 @@ export function freshChatTabState(): ChatTabWorkingState {
 export interface ChatTabStateReset {
   attachments?: boolean;
   activeNoteSuppression?: boolean;
-  activeNoteCache?: boolean;
-  contextCache?: boolean;
   lastSent?: boolean;
   history?: boolean;
 }
@@ -60,8 +52,6 @@ export interface ChatTabStateReset {
 /** Reset the selected parts of a tab's state in place. */
 export function resetChatTabState(state: ChatTabWorkingState, reset: ChatTabStateReset): void {
   if (reset.attachments) state.attachments = [];
-  if (reset.activeNoteCache) state.activeNoteCache = new ActiveNoteContextCache();
-  if (reset.contextCache) state.contextCache = new PromptContextCache();
   if (reset.activeNoteSuppression) state.activeNoteSuppressed = false;
   if (reset.lastSent) {
     state.lastSentPrompt = null;
@@ -70,42 +60,12 @@ export function resetChatTabState(state: ChatTabWorkingState, reset: ChatTabStat
   if (reset.history) state.history.resetNavigation();
 }
 
-/**
- * The context one send reads from its tab, captured when the send starts. The
- * caches are captured by reference: a session reset during the send replaces
- * the tab's caches, and this send must settle the ones it staged into, not the
- * fresh ones.
- */
+/** The context one send reads from its tab, captured when the send starts. */
 export interface StagedPromptContext {
   attachments: ContextAttachment[];
   autoPath: string | null;
-  activeNoteCache: ActiveNoteContextCache;
-  contextCache: PromptContextCache;
-  /** Drop what this send staged without changing the transcript. */
-  discard(): void;
-  /** Commit the staged context when the turn reached the transcript, else discard it. */
-  settle(delivered: boolean): void;
 }
 
 export function stagePromptContext(state: ChatTabWorkingState, autoPath: string | null): StagedPromptContext {
-  const { activeNoteCache, contextCache } = state;
-  const discard = (): void => {
-    activeNoteCache.discardPending();
-    contextCache.discard();
-  };
-  return {
-    attachments: [...state.attachments],
-    autoPath,
-    activeNoteCache,
-    contextCache,
-    discard,
-    settle: (delivered) => {
-      if (!delivered) {
-        discard();
-        return;
-      }
-      activeNoteCache.commitPending();
-      contextCache.commit();
-    },
-  };
+  return { attachments: [...state.attachments], autoPath };
 }

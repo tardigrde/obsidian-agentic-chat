@@ -1,4 +1,3 @@
-import { fnv1a32 } from "../utils/hash";
 /**
  * Pure helpers for the "active note attached by default" composer behavior. The
  * active leaf is auto-attached as a removable context chip; this module decides
@@ -66,48 +65,6 @@ export interface ActiveNoteContent {
   limit: number;
 }
 
-interface ActiveNoteCacheEntry {
-  renderedBodyHash: string;
-}
-
-/**
- * Per-session cache for the auto-attached active note. It prevents unchanged
- * active-note bodies from being injected into every turn while still keeping a
- * small path reference in context so the model knows which note is active.
- */
-export class ActiveNoteContextCache {
-  private readonly entries = new Map<string, ActiveNoteCacheEntry>();
-  private readonly pendingEntries = new Map<string, ActiveNoteCacheEntry>();
-
-  render(content: ActiveNoteContent): string {
-    const body = renderedActiveNoteBody(content);
-    if (!body) return buildActiveNoteSection(content);
-
-    const renderedBodyHash = hashActiveNoteBody(body);
-    const previous = this.entries.get(content.path);
-    if (previous?.renderedBodyHash === renderedBodyHash) {
-      return `Active note "${content.path}" is unchanged since it was already attached earlier in this session. Use the read tool to open it if you need the full content.`;
-    }
-
-    this.pendingEntries.set(content.path, { renderedBodyHash });
-    return buildActiveNoteSection(content);
-  }
-
-  commitPending(): void {
-    for (const [path, entry] of this.pendingEntries) this.entries.set(path, entry);
-    this.pendingEntries.clear();
-  }
-
-  discardPending(): void {
-    this.pendingEntries.clear();
-  }
-
-  clear(): void {
-    this.entries.clear();
-    this.pendingEntries.clear();
-  }
-}
-
 /**
  * Truncation ladder for the auto-attached active note:
  *  1. the full note when it fits the budget,
@@ -126,14 +83,4 @@ export function buildActiveNoteSection(content: ActiveNoteContent): string {
     );
   }
   return `Active note "${path}" (attached by reference — too long to inline; use the read tool to open it).`;
-}
-
-function renderedActiveNoteBody(content: ActiveNoteContent): string | null {
-  if (content.full !== null && content.full.length <= content.limit) return content.full;
-  if (content.visibleRange?.trim()) return content.visibleRange;
-  return null;
-}
-
-function hashActiveNoteBody(text: string): string {
-  return `${text.length}:${fnv1a32(text, { codePoints: true }).toString(16)}`;
 }

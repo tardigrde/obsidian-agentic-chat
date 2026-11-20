@@ -24,8 +24,6 @@ export interface SessionActivationCoordinatorOptions {
 const CLEAN_CONVERSATION_RESET: SessionUiResetOptions = {
   attachments: true,
   activeNoteSuppression: true,
-  activeNoteCache: true,
-  contextCache: true,
   lastSent: true,
   history: true,
   editing: true,
@@ -108,8 +106,6 @@ export class SessionActivationCoordinator {
     await this.runMuted(loadSession, true);
     this.options.resetUiState({
       lastSent: true,
-      activeNoteCache: true,
-      contextCache: true,
       editing: true,
       bubble: true,
       queuedPrompt: true,

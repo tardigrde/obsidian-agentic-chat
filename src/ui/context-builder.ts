@@ -1,8 +1,9 @@
 import { MarkdownView, TFile, TFolder, type App } from "obsidian";
 import type { ImageContent } from "@earendil-works/pi-ai";
+import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import { isInstructionFilePath } from "../agent/instructions";
 import { buildAttachmentSection } from "./attachments";
-import { buildActiveNoteSection, MAX_ACTIVE_NOTE_CHARS, type ActiveNoteContextCache } from "./active-note";
+import { buildActiveNoteSection, MAX_ACTIVE_NOTE_CHARS } from "./active-note";
 import { attachmentDisplayPath, parseVaultAttachmentRef } from "./attachment-ref";
 import { FOLDER_PREFIX } from "./autocomplete";
 import { isTextContextAttachment, textContextSection, type ContextAttachment } from "./context-attachments";
@@ -15,8 +16,12 @@ export interface PromptContextOptions {
   attachments: ContextAttachment[];
   activeNotePath: string | null;
   isPathIgnored: (path: string) => boolean;
-  activeNoteCache?: ActiveNoteContextCache;
-  contextCache?: PromptContextCache;
+  /**
+   * The user-message text the model already holds in this session
+   * ({@link sentUserText}). A context section that appears in it verbatim is
+   * sent as a one-line "unchanged" stub instead of the full text again.
+   */
+  sentText?: string;
 }
 
 export interface ImageAttachmentOptions {
@@ -26,57 +31,43 @@ export interface ImageAttachmentOptions {
 }
 
 /**
- * Per-session cache for the full `<context>` preamble. Prevents unchanged
- * context blocks from being injected into every turn while still keeping a
- * one-line reference so the model knows which files are attached.
+ * All user-message text in the model's current context, joined. The dedupe
+ * reads the conversation itself, not a cache, so a reload, a history load, or a
+ * dropped turn cannot make it forget what was sent; after compaction the old
+ * text is gone and the section is sent in full once more.
  */
-export class PromptContextCache {
-  private lastContext: string | null = null;
-  private pendingContext: string | null = null;
-
-  /** Return a compressed reference when the context is unchanged. */
-  compress(context: string): string {
-    this.pendingContext = context;
-
-    if (context && this.lastContext === context) {
-      const paths = extractAttachedPaths(context);
-      return `<context unchanged since previous turn. Attached: ${paths.join(", ") || "(none)"}. Use the read tool to open any attached note if you need the full content.</context>`;
-    }
-
-    return context;
+export function sentUserText(messages: readonly AgentMessage[]): string {
+  const parts: string[] = [];
+  for (const message of messages) {
+    if (message.role !== "user") continue;
+    const content = message.content;
+    if (typeof content === "string") parts.push(content);
+    else for (const part of content) if (part.type === "text") parts.push(part.text);
   }
-
-  commit(): void {
-    if (this.pendingContext !== null) {
-      this.lastContext = this.pendingContext;
-    }
-    this.pendingContext = null;
-  }
-
-  discard(): void {
-    this.pendingContext = null;
-  }
-
-  clear(): void {
-    this.lastContext = null;
-    this.discard();
-  }
+  return parts.join("\n");
 }
 
-function extractAttachedPaths(context: string): string[] {
-  const paths: string[] = [];
-  // Match "Active note \"path\"" or "Contents of note \"path\"" or "Folder listing for \"path\""
-  const regex = /(?:Active note|Contents of note|Folder listing for) "([^"]+)"/g;
-  let match;
-  while ((match = regex.exec(context)) !== null) {
-    paths.push(match[1]);
-  }
-  // Also match selected text sources
-  const selectedRegex = /Selected text from "([^"]+)"/g;
-  while ((match = selectedRegex.exec(context)) !== null) {
-    paths.push(match[1]);
-  }
-  return [...new Set(paths)];
+const SECTION_HEAD = /^(Active note|Contents of note|Selected text from|Folder listing for) "([^"\n]+)"/;
+
+/** The one-line stand-in for a section the model already holds verbatim, or null to keep it. */
+function unchangedStub(section: string): string | null {
+  const head = SECTION_HEAD.exec(section);
+  if (!head) return null;
+  const [, kind, path] = head;
+  const stub =
+    kind === "Active note"
+      ? `Active note "${path}" is unchanged since it was already attached earlier in this session. Use the read tool to open it if you need the full content.`
+      : kind === "Contents of note"
+        ? `Note "${path}" is unchanged since it was already attached earlier in this session. Use the read tool to open it if you need the full content.`
+        : kind === "Selected text from"
+          ? `Selected text from "${path}" is the same as attached earlier in this session.`
+          : `Folder listing for "${path}" is unchanged since it was already attached earlier in this session.`;
+  return stub.length < section.length ? stub : null;
+}
+
+function dedupeSection(section: string, sentText: string | undefined): string {
+  if (!sentText || !sentText.includes(section)) return section;
+  return unchangedStub(section) ?? section;
 }
 
 /** Build the `<context>` preamble sent before a user prompt. */
@@ -100,13 +91,9 @@ export async function buildPromptContext(options: PromptContextOptions): Promise
     }
   }
 
-  if (sections.length === 0) {
-    options.contextCache?.compress("");
-    return "";
-  }
-  const escapedSections = sections.map(escapeContextSection);
-  const context = `<context>\nThe user attached the following from their vault:\n\n${escapedSections.join("\n\n---\n\n")}\n</context>`;
-  return options.contextCache?.compress(context) ?? context;
+  if (sections.length === 0) return "";
+  const escapedSections = sections.map((section) => dedupeSection(escapeContextSection(section), options.sentText));
+  return `<context>\nThe user attached the following from their vault:\n\n${escapedSections.join("\n\n---\n\n")}\n</context>`;
 }
 
 /** Encode image attachments as multimodal content parts for the model. */
@@ -158,23 +145,16 @@ async function loadActiveNoteSection(options: PromptContextOptions, path: string
   }
 
   const file = options.app.vault.getAbstractFileByPath(path);
-  if (!(file instanceof TFile)) return renderActiveNote(options, { path, full: null, limit: MAX_ACTIVE_NOTE_CHARS });
+  if (!(file instanceof TFile)) return buildActiveNoteSection({ path, full: null, limit: MAX_ACTIVE_NOTE_CHARS });
 
   let full: string;
   try {
     full = await options.app.vault.cachedRead(file);
   } catch {
-    return renderActiveNote(options, { path, full: null, limit: MAX_ACTIVE_NOTE_CHARS });
+    return buildActiveNoteSection({ path, full: null, limit: MAX_ACTIVE_NOTE_CHARS });
   }
   const visibleRange = full.length > MAX_ACTIVE_NOTE_CHARS ? visibleEditorRange(options.app, file) : null;
-  return renderActiveNote(options, { path, full, visibleRange, limit: MAX_ACTIVE_NOTE_CHARS });
-}
-
-function renderActiveNote(
-  options: PromptContextOptions,
-  content: Parameters<typeof buildActiveNoteSection>[0],
-): string {
-  return options.activeNoteCache?.render(content) ?? buildActiveNoteSection(content);
+  return buildActiveNoteSection({ path, full, visibleRange, limit: MAX_ACTIVE_NOTE_CHARS });
 }
 
 function folderListing(options: PromptContextOptions, folderPath: string): string | null {
