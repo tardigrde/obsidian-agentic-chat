@@ -364,15 +364,16 @@ async function answerAskUser(answer: string): Promise<void> {
   await askUser.waitForExist({ reverse: true, timeout: 10_000 });
 }
 
+/** The pending inline approval card (a resolved one stays as a record). */
 async function waitForApprovalModal() {
-  const modal = await $('[data-ac="approval"]');
+  const modal = await $('[data-ac="approval"]:not(.is-resolved)');
   await modal.waitForExist({ timeout: 10_000 });
   return modal;
 }
 
 async function allowApproval(): Promise<void> {
   const modal = await waitForApprovalModal();
-  const allow = await modal.$("button=Allow");
+  const allow = await modal.$('[data-ac="approval-allow"]');
   await allow.waitForExist({ timeout: 5_000 });
   await allow.click();
   await modal.waitForExist({ reverse: true, timeout: 5_000 });
@@ -380,16 +381,16 @@ async function allowApproval(): Promise<void> {
 
 async function denyApprovalAndWaitForNextTarget(path: string): Promise<void> {
   const modal = await waitForApprovalModal();
-  const deny = await modal.$("button=Deny");
+  const deny = await modal.$('[data-ac="approval-deny"]');
   await deny.waitForExist({ timeout: 5_000 });
   await deny.click();
   // Deny is two-step: the first click arms the optional reason field.
-  const confirmDeny = await modal.$("button=Confirm Deny");
+  const confirmDeny = await modal.$("button=Confirm deny");
   await confirmDeny.waitForExist({ timeout: 5_000 });
   await confirmDeny.click();
   await browser.waitUntil(
     async () => {
-      const next = await $('[data-ac="approval"]');
+      const next = await $('[data-ac="approval"]:not(.is-resolved)');
       if (!(await next.isExisting().catch(() => false))) return false;
       return (await next.getText()).includes(path);
     },
@@ -397,16 +398,26 @@ async function denyApprovalAndWaitForNextTarget(path: string): Promise<void> {
   );
 }
 
+/** Esc starts the two-step deny on the focused card; Enter in the reason confirms it. */
 async function closeApprovalWithEscape(): Promise<void> {
-  const modal = await waitForApprovalModal();
+  const card = await waitForApprovalModal();
+  await browser.waitUntil(
+    async () => await browser.execute((selector) => document.activeElement === document.querySelector(selector), '[data-ac="approval"]:not(.is-resolved)'),
+    { timeout: 3_000, timeoutMsg: "the approval card did not take focus" },
+  );
   await browser.keys("Escape");
-  await modal.waitForExist({ reverse: true, timeout: 5_000 });
+  await browser.waitUntil(async () => (await card.getAttribute("data-ac-state")) === "deny-armed", {
+    timeout: 3_000,
+    timeoutMsg: "Esc did not arm the deny",
+  });
+  await browser.keys("Enter");
+  await card.waitForExist({ reverse: true, timeout: 5_000 });
 }
 
 async function doubleClickAllowApproval(): Promise<void> {
   const modal = await waitForApprovalModal();
   await browser.execute(() => {
-    const root = document.querySelector<HTMLElement>('[data-ac="approval"]');
+    const root = document.querySelector<HTMLElement>('[data-ac="approval"]:not(.is-resolved)');
     const allow = Array.from(root?.querySelectorAll<HTMLButtonElement>("button") ?? []).find(
       (button) => button.innerText.trim() === "Allow",
     );
@@ -435,7 +446,7 @@ async function waitForTurnToFinish(): Promise<void> {
   await browser.waitUntil(
     async () => {
       const stopVisible = await $('[data-ac="stop"]').isDisplayed().catch(() => false);
-      const approvalOpen = await $('[data-ac="approval"]').isExisting().catch(() => false);
+      const approvalOpen = await $('[data-ac="approval"]:not(.is-resolved)').isExisting().catch(() => false);
       const askUserOpen = await $('[data-ac="ask-user"]').isExisting().catch(() => false);
       return !stopVisible && !approvalOpen && !askUserOpen;
     },

@@ -154,12 +154,13 @@ swap; `compactionRecoveryError` is gone.
 
 Owner: `AgentToolCallController` owns the turn-scoped stop latch (`stopTurn` /
 `currentTurn`), the pending undo map, and the undo stack. `approval.ts` is the
-single writer for the per-tool policy map. The approval modal owns one request in
+single writer for the per-tool policy map. The inline approval card
+(`src/ui/approval-card.ts`) owns one request in
 the UI.
 
 Invariants:
 
-- One modal per tool request.
+- One card per tool request, in the transcript of the tab that asked.
 - Allow, deny, and stop are three distinct outcomes.
 - A deny never stops the turn. Only Stop stops the turn.
 - Remembered choices change settings only through `setPerToolApproval`.
@@ -178,12 +179,12 @@ turn`, `blocks sibling calls in the same batch after a stopped approval`, `does
 not block the next turn after an unconsumed stop`).
 
 Fixed: an approval is bound to its turn's abort signal. A session swap detaches
-the old agent and aborts that signal, so the modal settles as a stopped denial;
-closing the tab closes the modal and settles it as a denial. A decision that
-arrives after the modal settled is ignored. Pinned by
-`test/approval-modal.test.ts` (`closes and settles with a denial when the turn
-aborts`, `ignores a late answer after its turn was aborted`, `settles as denied
-when its tab closes`).
+the old agent and aborts that signal, so the inline approval card settles as a
+stopped denial; closing the tab settles it the same way. A decision that
+arrives after the card settled is ignored. Pinned by
+`test/ui/approval-card.test.ts` (`settles as stopped when the turn aborts, and a
+late click does not change it`, `settles at once when the turn was already
+aborted, and stop() (a closing tab) settles once`).
 
 ## Chat view
 

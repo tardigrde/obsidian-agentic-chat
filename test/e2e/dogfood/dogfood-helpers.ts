@@ -17,7 +17,7 @@ export async function waitForTurnEnd(timeoutMs: number): Promise<void> {
   await browser.waitUntil(
     async () => {
       const stopVisible = await $('[data-ac="stop"]').isDisplayed().catch(() => false);
-      const approvalOpen = await $('[data-ac="approval"]').isExisting().catch(() => false);
+      const approvalOpen = await $('[data-ac="approval"]:not(.is-resolved)').isExisting().catch(() => false);
       const askUserOpen = await $('[data-ac="ask-user"]').isExisting().catch(() => false);
       return !stopVisible && !approvalOpen && !askUserOpen;
     },

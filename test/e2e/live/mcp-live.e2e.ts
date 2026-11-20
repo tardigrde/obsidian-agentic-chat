@@ -157,11 +157,11 @@ async function sendPrompt(prompt: string): Promise<void> {
 }
 
 async function allowApproval(localToolName: string): Promise<void> {
-  const modal = await $('[data-ac="approval"]');
+  const modal = await $('[data-ac="approval"]:not(.is-resolved)');
   await modal.waitForExist({ timeout: 20_000 });
   await expect(modal).toHaveText(new RegExp(localToolName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
   await expect(modal).toHaveText(/obsidian/);
-  const allow = await modal.$("button=Allow");
+  const allow = await modal.$('[data-ac="approval-allow"]');
   await allow.waitForExist({ timeout: 5_000 });
   await allow.click();
   await modal.waitForExist({ reverse: true, timeout: 5_000 });

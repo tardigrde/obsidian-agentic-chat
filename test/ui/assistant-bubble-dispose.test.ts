@@ -1,37 +1,35 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { AssistantBubble } from "../../src/ui/assistant-bubble";
 import type { App, Component } from "obsidian";
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import { TranscriptView } from "../../src/ui/transcript-view";
 
-class CountingResizeObserver {
-  static live = new Set<CountingResizeObserver>();
+/**
+ * A live turn's activity line runs a one-second clock. No clock may outlive
+ * its turn: the turn ending, a transcript re-render (tab switch, session load),
+ * and the view closing all stop it.
+ */
 
-  constructor(_callback: ResizeObserverCallback) {}
+const live = new Set<number>();
+let nextId = 1;
 
-  observe(): void {
-    CountingResizeObserver.live.add(this);
-  }
-
-  unobserve(): void {
-    CountingResizeObserver.live.delete(this);
-  }
-
-  disconnect(): void {
-    CountingResizeObserver.live.delete(this);
-  }
+function useCountingTimers(): void {
+  vi.stubGlobal("requestAnimationFrame", () => 1);
+  vi.stubGlobal("cancelAnimationFrame", () => {});
+  vi.spyOn(window, "setInterval").mockImplementation((() => {
+    const id = nextId++;
+    live.add(id);
+    return id;
+  }) as unknown as typeof window.setInterval);
+  vi.spyOn(window, "clearInterval").mockImplementation(((id: number) => {
+    live.delete(id);
+  }) as unknown as typeof window.clearInterval);
 }
 
 afterEach(() => {
-  CountingResizeObserver.live.clear();
+  live.clear();
+  vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
-
-function useCountingObserver(): void {
-  vi.stubGlobal("ResizeObserver", CountingResizeObserver);
-  vi.stubGlobal("requestAnimationFrame", () => 1);
-  vi.stubGlobal("cancelAnimationFrame", () => {});
-}
 
 function transcript(): TranscriptView {
   return new TranscriptView(document.createElement("div"), {
@@ -44,29 +42,32 @@ function transcript(): TranscriptView {
   });
 }
 
-describe("AssistantBubble observer lifecycle", () => {
-  it("keeps the rail observer on a settled history bubble, so its toggles still resize the rail", () => {
-    useCountingObserver();
-    const bubble = new AssistantBubble(document.createElement("div"));
-    bubble.beginThinking();
-
-    // TranscriptView disposes the previous live bubble when the next turn
-    // starts, but that bubble stays on screen and interactive.
-    bubble.dispose();
-    expect(CountingResizeObserver.live.size).toBe(1);
-
-    bubble.destroy();
-    expect(CountingResizeObserver.live.size).toBe(0);
+describe("activity line clock lifecycle", () => {
+  it("a live turn starts one clock and the turn ending stops it", () => {
+    useCountingTimers();
+    const view = transcript();
+    view.beginRun();
+    view.beginAssistantMessage();
+    view.beginAssistantMessage();
+    expect(live.size).toBe(1);
+    view.endRun();
+    expect(live.size).toBe(0);
   });
 
-  it("a transcript re-render leaves no observer from the cleared bubbles", () => {
-    useCountingObserver();
+  it("a transcript re-render leaves no clock from the cleared turn", () => {
+    useCountingTimers();
     const view = transcript();
-    view.beginAssistantMessage();
-    view.beginAssistantMessage();
-    expect(CountingResizeObserver.live.size).toBe(2);
-
+    view.beginRun();
+    expect(live.size).toBe(1);
     view.renderTranscript([] as AgentMessage[]);
-    expect(CountingResizeObserver.live.size).toBe(0);
+    expect(live.size).toBe(0);
+  });
+
+  it("closing the view stops a running turn's clock", () => {
+    useCountingTimers();
+    const view = transcript();
+    view.beginRun();
+    view.dispose();
+    expect(live.size).toBe(0);
   });
 });

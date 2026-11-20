@@ -3,6 +3,8 @@ import type { ImageContent, Usage } from "@earendil-works/pi-ai";
 import { type App, type Component, Notice } from "obsidian";
 import { errorMessage } from "../utils/errors";
 import { AssistantBubble } from "./assistant-bubble";
+import { ActivityLine } from "./activity-line";
+import type { ApprovalCard } from "./approval-card";
 import { FOLDER_PREFIX } from "./autocomplete";
 import { stripContextPreamble } from "./composer-input";
 import { contextAttachmentLabel, type ContextAttachment } from "./context-attachments";
@@ -37,6 +39,8 @@ export interface TranscriptViewHost {
   beginEdit(index: number, text: string, el: HTMLElement): void;
   retryLast(): void;
   abortSubagentChild(id: string): void;
+  /** Whether the tab that owns this transcript has a turn in flight. */
+  isStreaming?(): boolean;
 }
 
 /**
@@ -46,6 +50,10 @@ export interface TranscriptViewHost {
  */
 export class TranscriptView {
   private bubble: AssistantBubble | null = null;
+  // The current turn's activity line (one per user turn) and its messages.
+  private activity: ActivityLine | null = null;
+  private turnBubbles: AssistantBubble[] = [];
+  private turnError = false;
   private locallyRenderedUserMessages = 0;
   // Last error message rendered inside an assistant bubble. Used to suppress the
   // duplicate standalone error panel that showServiceError() would otherwise
@@ -68,8 +76,55 @@ export class TranscriptView {
   beginRun(): void {
     this.bubble?.dispose();
     this.bubble = null;
-    this.turnUsage = null;
+    // A re-render during this run (tab switch) left its activity open; keep it.
+    if (!this.activity) {
+      this.turnUsage = null;
+      this.startTurn(true);
+    }
     this.runStartedAt = performance.now();
+  }
+
+  /** A new turn: one activity line, then the turn's messages below it. */
+  private startTurn(live: boolean): ActivityLine {
+    this.finishTurn();
+    this.turnBubbles = [];
+    this.turnError = false;
+    this.activity = new ActivityLine(this.messagesEl, {
+      live,
+      onOpenNote: (path) => void this.host.app.workspace.openLinkText(path, "", false),
+      onStopSubagentChild: (id) => this.host.abortSubagentChild(id),
+      onChange: () => this.scrollToBottom(),
+    });
+    return this.activity;
+  }
+
+  /** The turn is over: settle its activity line and put its sources under the answer. */
+  private finishTurn(): void {
+    const activity = this.activity;
+    if (!activity) return;
+    this.activity = null;
+    activity.finish({ error: this.turnError });
+    const answer = [...this.turnBubbles].reverse().find((bubble) => bubble.hasText) ?? this.turnBubbles.at(-1);
+    answer?.renderSourceChips(activity.sourcePaths);
+    this.turnBubbles = [];
+  }
+
+  /** The activity line of the turn in flight, if any. */
+  get currentActivity(): ActivityLine | null {
+    return this.activity;
+  }
+
+  /** Show an approval below the current turn's activity line. */
+  mountApproval(card: ApprovalCard): void {
+    const slot = this.activity?.approvalSlot ?? this.messagesEl;
+    if (card.el.parentElement !== slot) slot.appendChild(card.el);
+    this.activity?.setNeedsYou(!card.settled);
+    this.scrollToBottom({ force: true });
+  }
+
+  /** An approval settled: the activity line drops its needs-you state. */
+  approvalSettled(): void {
+    this.activity?.setNeedsYou(false);
   }
 
   /** message_start for an assistant message. */
@@ -94,6 +149,7 @@ export class TranscriptView {
   /** agent_end: settle a bubble that never got final text. */
   endRun(): void {
     this.bubble?.finalizeWithoutText();
+    this.finishTurn();
     this.runStartedAt = null;
   }
 
@@ -103,6 +159,8 @@ export class TranscriptView {
   }
 
   dispose(): void {
+    this.activity?.dispose();
+    this.activity = null;
     this.destroyMountedBubbles();
     this.bubble = null;
     if (this.userScrollIntentTimer !== null) window.clearTimeout(this.userScrollIntentTimer);
@@ -125,6 +183,9 @@ export class TranscriptView {
 
   renderTranscript(messages: AgentMessage[]): void {
     this.destroyMountedBubbles();
+    this.activity?.dispose();
+    this.activity = null;
+    this.turnBubbles = [];
     this.messagesEl.empty();
     this.bubble = null;
     this.lastBubbleError = undefined;
@@ -139,6 +200,7 @@ export class TranscriptView {
         this.renderSummaryMessage(messageText(message));
         rendered += 1;
       } else if (message.role === "user") {
+        this.finishTurn();
         // Hide the attachment <context> preamble so history reads like the
         // live transcript (which renders the user's text, not the prompt).
         // Vision attachments persist as image blocks — render them as thumbnails.
@@ -151,6 +213,9 @@ export class TranscriptView {
         rendered += 1;
       }
     });
+    // A turn still in flight (a tab switch mid-run) keeps its activity open,
+    // so the live steps that follow land in it.
+    if (!(this.host.isStreaming?.() ?? false)) this.finishTurn();
     if (rendered === 0) this.host.renderEmptyState();
     this.scrollToBottom();
   }
@@ -160,6 +225,7 @@ export class TranscriptView {
     toolResults: Map<string, ToolResultLite>,
     isLast: boolean,
   ): void {
+    if (!this.activity) this.startTurn(false);
     const bubble = this.newBubble();
     // Mirror the live path: every assistant turn gets its Thinking → Thought
     // status pill (mount eagerly, settle on finalize) so history replay renders
@@ -204,6 +270,7 @@ export class TranscriptView {
     }
     const errorMessage = (message as { errorMessage?: string }).errorMessage;
     if (errorMessage) {
+      this.turnError = true;
       bubble.showError(errorMessage);
       if (options.canRetry) this.lastBubbleError = errorMessage;
     }
@@ -311,16 +378,17 @@ export class TranscriptView {
   private newBubble(): AssistantBubble {
     const bubble = this.createBubble();
     this.mountedBubbles.add(bubble);
+    this.turnBubbles.push(bubble);
     return bubble;
   }
 
   private createBubble(): AssistantBubble {
-    return new AssistantBubble(this.messagesEl, {
+    const activity = this.activity ?? this.startTurn((this.host.isStreaming?.() ?? false));
+    return new AssistantBubble(this.messagesEl, activity, {
       onRetry: () => this.host.retryLast(),
       onOpenExternalLink: (target) => void this.openRenderedExternalLink(target),
       onOpenNote: (path) => void this.host.app.workspace.openLinkText(path, "", false),
       onContentChange: () => this.scrollToBottom(),
-      onStopSubagentChild: (id) => this.host.abortSubagentChild(id),
     });
   }
 

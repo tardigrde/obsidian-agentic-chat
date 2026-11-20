@@ -113,47 +113,71 @@ export async function trashPaths(paths: string[]): Promise<void> {
   }, paths);
 }
 
+/**
+ * An approval card that still waits for a choice. A resolved card stays in
+ * the transcript as a one-line record, so "gone" means "no pending card".
+ */
+export const PENDING_APPROVAL = '[data-ac="approval"]:not(.is-resolved)';
+
+export async function waitForApproval(timeout = 10_000): Promise<void> {
+  await $(PENDING_APPROVAL).waitForExist({ timeout, timeoutMsg: "no approval card appeared" });
+}
+
+export async function waitForApprovalSettled(timeout = 5_000): Promise<void> {
+  await $(PENDING_APPROVAL).waitForExist({ reverse: true, timeout, timeoutMsg: "the approval card never settled" });
+}
+
+/** The outcome of the newest resolved card: allowed, always, denied, or stopped. */
+export async function lastApprovalOutcome(): Promise<string | null> {
+  return await browser.execute(
+    () => Array.from(document.querySelectorAll('[data-ac="approval"].is-resolved')).at(-1)?.getAttribute("data-ac-state") ?? null,
+  );
+}
+
 export async function allowApproval(): Promise<void> {
-  const modal = await $('[data-ac="approval"]');
-  await modal.waitForExist({ timeout: 10_000 });
-  const allow = await modal.$("button=Allow");
+  await waitForApproval();
+  const allow = await $(`${PENDING_APPROVAL} [data-ac="approval-allow"]`);
   await allow.waitForExist({ timeout: 5_000 });
   await allow.click();
-  await modal.waitForExist({ reverse: true, timeout: 5_000 });
+  await waitForApprovalSettled();
+}
+
+/** Allow and stop asking for this tool. */
+export async function alwaysAllowApproval(): Promise<void> {
+  await waitForApproval();
+  const always = await $(`${PENDING_APPROVAL} [data-ac="approval-always"]`);
+  await always.waitForExist({ timeout: 5_000 });
+  await always.click();
+  await waitForApprovalSettled();
 }
 
 /** Deny is two-step: the first click arms the optional reason field. */
-export async function denyApproval(): Promise<void> {
-  const modal = await $('[data-ac="approval"]');
-  await modal.waitForExist({ timeout: 10_000 });
-  const deny = await modal.$("button=Deny");
+export async function denyApproval(reason?: string): Promise<void> {
+  await waitForApproval();
+  const deny = await $(`${PENDING_APPROVAL} [data-ac="approval-deny"]`);
   await deny.waitForExist({ timeout: 5_000 });
   await deny.click();
-  const confirmDeny = await modal.$("button=Confirm Deny");
-  await confirmDeny.waitForExist({ timeout: 5_000 });
-  const title = await browser.execute(
-    () => document.querySelector('[data-ac="approval"]')?.closest(".modal")?.querySelector(".modal-title")?.textContent ?? "",
+  await browser.waitUntil(
+    async () => (await $(PENDING_APPROVAL).getAttribute("data-ac-state")) === "deny-armed",
+    { timeout: 5_000, timeoutMsg: "the deny never armed" },
   );
-  expect(title).toMatch(/^Deny "/);
-  await confirmDeny.click();
-  await modal.waitForExist({ reverse: true, timeout: 5_000 });
+  expect(await deny.getText()).toBe("Confirm deny");
+  if (reason) await browser.keys(reason);
+  await deny.click();
+  await waitForApprovalSettled();
 }
 
-/** Close an approval modal a failed test left open, so the next test fails on
- * its own assertion and not on an intercepted click. */
+/** Stop the turn from the composer while an approval waits. */
+export async function stopFromComposer(): Promise<void> {
+  await $('[data-ac="stop"]').click();
+  await waitForApprovalSettled();
+}
+
+/** Settle an approval card a failed test left open, so the next test fails on
+ * its own assertion and not on a turn that never ends. */
 export async function dismissOpenApproval(): Promise<void> {
-  const modal = await $('[data-ac="approval"]');
-  if (!(await modal.isExisting())) return;
-  const deny = await modal.$("button=Deny");
-  if (await deny.isExisting()) {
-    await deny.click();
-    const confirm = await modal.$("button=Confirm Deny");
-    if (await confirm.isExisting()) await confirm.click();
-  }
-  await modal.waitForExist({ reverse: true, timeout: 5_000 }).catch(() => {});
-  if (await modal.isExisting()) {
-    const stop = await modal.$("button=Stop turn");
-    if (await stop.isExisting()) await stop.click();
-  }
-  await modal.waitForExist({ reverse: true, timeout: 5_000 }).catch(() => {});
+  if (!(await $(PENDING_APPROVAL).isExisting())) return;
+  const stop = await $('[data-ac="stop"]');
+  if (await stop.isDisplayed().catch(() => false)) await stop.click();
+  await $(PENDING_APPROVAL).waitForExist({ reverse: true, timeout: 5_000 }).catch(() => {});
 }

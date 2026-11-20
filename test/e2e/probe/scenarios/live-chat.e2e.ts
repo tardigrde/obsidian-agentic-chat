@@ -73,13 +73,13 @@ describe("probe: live chat", function () {
 
     await sendPrompt(`Create a note named ${NOTE} containing exactly: hello from probe`);
 
-    const approval = await $('[data-ac="approval"]');
+    const approval = await $('[data-ac="approval"]:not(.is-resolved)');
     await approval.waitForExist({ timeout: 120_000 });
     await browser.pause(500);
     await mark("approval prompt visible");
     await browser.pause(1_500);
 
-    const allow = await approval.$("button=Allow");
+    const allow = await approval.$('[data-ac="approval-allow"]');
     await allow.waitForExist({ timeout: 5_000 });
     await allow.click();
     await browser.pause(800);

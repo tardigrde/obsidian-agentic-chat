@@ -1,4 +1,5 @@
 import { browser, expect, $ } from "@wdio/globals";
+import { allowApproval, PENDING_APPROVAL, waitForApproval } from "../support/chat";
 import { after, before, describe, it } from "mocha";
 import { clearScriptedTurns, installScriptedTurns } from "../support/scripted-stream";
 
@@ -86,7 +87,7 @@ describe("multi-tab background approval (effort + notify+label)", function () {
     expect(styles.valueFont).toBeLessThanOrEqual(styles.nameFont);
   });
 
-  it("surfaces background tab approval with tab badge and session label (no auto-switch)", async function () {
+  it("keeps a background tab's approval in that tab with an orange dot (no auto-switch)", async function () {
     // Ensure we have 2 tabs
     await browser.execute(() => document.querySelector<HTMLElement>('[data-ac="tab-add"]')?.click());
     await browser.waitUntil(
@@ -117,30 +118,34 @@ describe("multi-tab background approval (effort + notify+label)", function () {
     });
     await browser.execute(() => document.querySelectorAll<HTMLElement>('[data-ac="tab"]')[1]?.click());
     await browser.waitUntil(async () => await browser.execute(() => document.querySelectorAll<HTMLElement>('[data-ac="tab"]')[1]?.classList.contains("is-active")), { timeout: 2_000 });
-    const modal = await $('[data-ac="approval"]');
-    await modal.waitForExist({ timeout: 10_000 });
-
-    // Modal title should contain Tab 1 session label, and content Session line — check via DOM, no click behind overlay
-    const title = await browser.execute(() => document.querySelector<HTMLElement>(".modal-title")?.innerText ?? "");
-    expect(title).toContain("Tab 1");
-    const sessionLine = await browser.execute(() => document.querySelector<HTMLElement>(".agentic-chat-approval-session")?.innerText ?? "");
-    expect(sessionLine).toContain("Tab 1");
-
-    // Background Tab1 pill should pulse needs-approval, Tab2 should be active — inspect via execute, not click (modal blocks)
-    const { tab1Class, activeIndex } = await browser.execute(() => {
+    // The card waits in tab one's transcript; tab two shows none.
+    await browser.waitUntil(async () => (await browser.execute(() => document.querySelectorAll<HTMLElement>('[data-ac="tab"]')[0]?.getAttribute("data-ac-state") ?? "")) === "needs-you", {
+      timeout: 10_000,
+      timeoutMsg: "tab one never showed the needs-you dot",
+    });
+    expect(await $(PENDING_APPROVAL).isExisting()).toBe(false);
+    expect(await $(".modal-container").isExisting()).toBe(false);
+    const { tab1Class, tab1Label, activeIndex } = await browser.execute(() => {
       const pills = Array.from(document.querySelectorAll<HTMLElement>('[data-ac="tab"]'));
       return {
         tab1Class: pills[0]?.className ?? "",
+        tab1Label: pills[0]?.getAttribute("aria-label") ?? "",
         activeIndex: pills.findIndex((p) => p.classList.contains("is-active")),
       };
     });
     expect(tab1Class).toContain("is-needs-approval");
+    expect(tab1Label).toBe("Tab 1, needs approval");
     expect(activeIndex).toBe(1);
 
-    // Approve from background — should create file and clear badge
-    const allow = await modal.$("button=Allow");
-    await allow.click();
-    await modal.waitForExist({ reverse: true, timeout: 5_000 });
+    // Switching back shows the waiting card in tab one, below its activity line.
+    await browser.execute(() => document.querySelectorAll<HTMLElement>('[data-ac="tab"]')[0]?.click());
+    await waitForApproval();
+    const placement = await browser.execute((selector) => {
+      const card = document.querySelector(selector);
+      return card?.parentElement?.previousElementSibling?.getAttribute("data-ac") ?? "";
+    }, PENDING_APPROVAL);
+    expect(placement).toBe("activity");
+    await allowApproval();
 
     await browser.waitUntil(async () => {
       const exists = await browser.executeObsidian(async ({ app }, p) => !!app.vault.getAbstractFileByPath(p), MULTI_TAB_WRITE_PATH);
@@ -148,15 +153,12 @@ describe("multi-tab background approval (effort + notify+label)", function () {
     }, { timeout: 10_000 });
 
     await browser.waitUntil(
-      async () =>
-        !(await browser.execute(() => document.querySelectorAll<HTMLElement>('[data-ac="tab"]')[0]?.className ?? "")).includes(
-          "is-needs-approval",
-        ),
-      { timeout: 5_000, timeoutMsg: "the approval badge stayed on tab one" },
+      async () => !(await browser.execute(() => document.querySelectorAll<HTMLElement>('[data-ac="tab"]')[0]?.getAttribute("data-ac-state") ?? "")).includes("needs-you"),
+      { timeout: 5_000, timeoutMsg: "the approval dot stayed on tab one" },
     );
   });
 
-  it("clears pending modal and badge when background tab is closed", async function () {
+  it("settles the pending card and drops the dot when the background tab is closed", async function () {
     // Wait for previous turn to settle before starting next scenario
     await browser.waitUntil(async () => (await $('[data-ac="send"]').getAttribute("data-ac-state")) === "send", { timeout: 8_000 });
     await browser.execute(() => document.querySelectorAll<HTMLElement>('[data-ac="tab"]')[0]?.click());
@@ -175,16 +177,23 @@ describe("multi-tab background approval (effort + notify+label)", function () {
     });
     await browser.execute(() => document.querySelectorAll<HTMLElement>('[data-ac="tab"]')[1]?.click());
     await browser.waitUntil(async () => await browser.execute(() => document.querySelectorAll<HTMLElement>('[data-ac="tab"]')[1]?.classList.contains("is-active")), { timeout: 2_000 });
-    await $('[data-ac="approval"]').waitForExist({ timeout: 12_000 });
+    await browser.waitUntil(async () => (await browser.execute(() => document.querySelectorAll<HTMLElement>('[data-ac="tab"]')[0]?.getAttribute("data-ac-state") ?? "")) === "needs-you", {
+      timeout: 12_000,
+      timeoutMsg: "tab one never asked for approval",
+    });
 
-    // Close Tab1 while its approval modal is open — use direct JS (modal blocks tab clicks) to close tab, modal should close
+    // Close tab one while its approval waits: the card settles as stopped.
     await browser.executeObsidian(async ({ app }) => {
       const leaves = app.workspace.getLeavesOfType("agentic-chat-chat-view");
       const view = leaves[0]?.view as unknown as { closeTab?: (index: number) => void };
       view?.closeTab?.(0);
     });
-    await $('[data-ac="approval"]').waitForExist({ reverse: true, timeout: 5_000 });
-    expect(await $('[data-ac="approval"]').isExisting()).toBe(false);
+    await browser.waitUntil(async () => (await browser.execute(() => document.querySelectorAll('[data-ac="tab"]').length)) === 1, {
+      timeout: 5_000,
+      timeoutMsg: "tab one did not close",
+    });
+    expect(await $(PENDING_APPROVAL).isExisting()).toBe(false);
+    expect(await browser.execute(() => document.querySelector('[data-ac="tab-overflow"] .agentic-chat-dot.is-needs-you'))).toBeNull();
   });
 
   after(async function () {

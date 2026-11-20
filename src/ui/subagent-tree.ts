@@ -70,12 +70,15 @@ export function renderSubagentChildren(
 }
 
 function renderSubagentAggregate(card: HTMLElement, children: SubagentChildStatus[]): void {
-  // `card` is the step BODY; the status pill lives in the step HEADER, which is
-  // a child of the step card (the body's parent).
-  const header = card.parentElement?.querySelector<HTMLElement>(".agentic-chat-step-header");
+  // `card` is the row's detail; the status pill lives in the row's head (a
+  // sibling of the detail), before the time.
+  const header = card.parentElement?.querySelector<HTMLElement>(".agentic-chat-step-head");
   if (!header) return;
   let pill = header.querySelector<HTMLElement>(".agentic-chat-step-status");
-  pill ??= header.createSpan({ cls: "agentic-chat-step-status" });
+  if (!pill) {
+    pill = header.createSpan({ cls: "agentic-chat-step-status" });
+    header.insertBefore(pill, header.querySelector(".agentic-chat-step-time"));
+  }
   const running = children.some((child) => child.status === "running");
   const queued = !running && children.some((child) => child.status === "queued");
   const failed = children.some((child) => child.status === "error");

@@ -32,8 +32,17 @@ function startAssistantTurn(): void {
   ui.emit({ type: "message_start", message: { role: "assistant", content: [] } });
 }
 
-const last = (selector: string) => ui.$(`.agentic-chat-assistant:last-child ${selector}`);
-const lastAll = (selector: string) => ui.$$(`.agentic-chat-assistant:last-child ${selector}`);
+// Each test mounts a fresh view, so "last" is the newest match in the transcript.
+const last = <T extends HTMLElement = HTMLElement>(selector: string) => (ui.$$(selector).at(-1) as T | undefined) ?? null;
+// The newest turn: its activity line and the messages after it.
+const lastAll = (selector: string) => {
+  const all = ui.$$(selector);
+  const turns = ui.$$('[data-ac="activity"]');
+  const start = turns.at(-1);
+  return start ? all.filter((el) => !!(start.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_FOLLOWING) || start.contains(el)) : all;
+};
+const head = () => text(last('[data-ac="activity-head"] .agentic-chat-activity-summary'));
+const activityState = () => last('[data-ac="activity"]')?.getAttribute("data-ac-state");
 
 beforeEach(async () => {
   // Fake only the clocks the reasoning and step timers read; DOM tasks stay real.
@@ -46,66 +55,89 @@ afterEach(async () => {
   vi.useRealTimers();
 });
 
-describe("reasoning pill", () => {
-  it("mounts Thinking at message_start and flips to Thought on the first answer delta", async () => {
+describe("activity line", () => {
+  it("shows Thinking with a spinner at message_start; a text-only turn hides the line when it ends", async () => {
     startAssistantTurn();
-    expect(ui.$$(".agentic-chat-reasoning")).toHaveLength(1);
-    expect(ui.$$(".agentic-chat-loading")).toHaveLength(0);
-    expect(text(ui.$(".agentic-chat-reasoning-label"))).toBe("Thinking");
-    expect(cls(ui.$(".agentic-chat-reasoning"))).not.toContain("is-done");
-
-    vi.advanceTimersByTime(300);
-    expect(text(ui.$(".agentic-chat-reasoning-time"))).not.toBe("");
+    expect(ui.$$('[data-ac="activity"]')).toHaveLength(1);
+    expect(head()).toBe("Thinking…");
+    expect(activityState()).toBe("running");
+    expect(ui.$$('[data-ac="activity-head"] .agentic-chat-spinner')).toHaveLength(1);
 
     ui.emit(streamDelta("text_delta", "first token"));
+    ui.emit(assistantEndText("first token"));
+    ui.emit({ type: "agent_end" });
     await settle();
-    expect(ui.$(".agentic-chat-reasoning.is-done")).not.toBeNull();
-    expect(text(last(".agentic-chat-reasoning-label"))).toBe("Thought");
+    expect(activityState()).toBe("done");
+    expect(last('[data-ac="activity"]')?.classList.contains("is-hidden")).toBe(true);
+    expect(ui.$$(".agentic-chat-spinner")).toHaveLength(0);
   });
 
-  it("instant replies flip straight to Thought with no loader ever", async () => {
-    startAssistantTurn();
-    ui.emit(streamDelta("text_delta", "instant reply"));
-    await settle();
-    expect(ui.$$(".agentic-chat-loading")).toHaveLength(0);
-    expect(last(".agentic-chat-reasoning.is-done")).not.toBeNull();
-    expect(text(last(".agentic-chat-reasoning-label"))).toBe("Thought");
-  });
-
-  it("settles a live trace to Thought with a final elapsed time and one check icon", async () => {
+  it("folds reasoning in as the first body entry, settled with its time", async () => {
     startAssistantTurn();
     ui.emit(streamDelta("thinking_delta", "trace reasoning step one"));
     vi.advanceTimersByTime(1_500);
     await settle();
-    expect(text(last(".agentic-chat-reasoning-time"))).toBe("1.5s");
+    expect(text(last(".agentic-chat-thought-label"))).toBe("Thinking…");
+    expect(text(last(".agentic-chat-thought-text"))).toBe("trace reasoning step one");
 
     ui.emit(streamDelta("text_delta", "measured answer"));
     ui.emit(assistantEndText("measured answer"));
+    ui.emit({ type: "agent_end" });
     await settle();
-    expect(text(ui.$(".agentic-chat-reasoning.is-done .agentic-chat-reasoning-label"))).toBe("Thought");
-    expect(text(ui.$(".agentic-chat-reasoning-time"))).toBe("1.5s");
-    expect(lastAll(".agentic-chat-reasoning.is-done .agentic-chat-reasoning-dot svg")).toHaveLength(1);
-    expect(cls(last(".agentic-chat-reasoning-dot svg"))).toContain("check-circle-2");
+    expect(text(last(".agentic-chat-thought.is-done .agentic-chat-thought-label"))).toBe("Thought for 1.5s:");
+    expect(head()).toBe("Thought");
+    expect(last('[data-ac="activity"]')?.classList.contains("is-hidden")).toBe(false);
+    // The reasoning is the first entry of the body, before the steps.
+    const body = last('[data-ac="activity-body"]');
+    expect(body?.firstElementChild?.classList.contains("agentic-chat-activity-thoughts")).toBe(true);
   });
 
-  it("collapses a near-instant (history-style) turn to a static Thought pill with no timer", async () => {
+  it("a near-instant trace settles to Thought with no time", async () => {
     startAssistantTurn();
     ui.emit(streamDelta("thinking_delta", "cached trace"));
     ui.emit(assistantEndText("cached answer"));
     await settle();
-    expect(text(last(".agentic-chat-reasoning.is-done .agentic-chat-reasoning-label"))).toBe("Thought");
-    expect(text(last(".agentic-chat-reasoning-time"))).toBe("");
+    expect(text(last(".agentic-chat-thought.is-done .agentic-chat-thought-label"))).toBe("Thought:");
   });
 
-  it("settles the pill and leaves no loader when the turn aborts mid-thinking", async () => {
+  it("an abort mid-thinking leaves no spinner and no empty entry", async () => {
     startAssistantTurn();
-    expect(text(last(".agentic-chat-reasoning-label"))).toBe("Thinking");
     ui.emit(assistantEndEmpty);
     ui.emit({ type: "agent_end" });
     await settle();
-    expect(ui.$$(".agentic-chat-loading")).toHaveLength(0);
-    expect(text(last(".agentic-chat-reasoning-label"))).toBe("Thought");
-    expect(ui.$$(".agentic-chat-assistant").length).toBeGreaterThan(0);
+    expect(ui.$$(".agentic-chat-spinner")).toHaveLength(0);
+    expect(ui.$$(".agentic-chat-thought:not(.is-empty)")).toHaveLength(0);
+    expect(activityState()).toBe("done");
+  });
+
+  it("is one line per turn: 3 reads and 1 failed fetch read `Read 3 notes · 1 failed` with 4 rows", async () => {
+    startAssistantTurn();
+    for (const [id, name, args, error] of [
+      ["r1", "read", { path: "A.md" }, false],
+      ["r2", "read", { path: "B.md" }, false],
+      ["f1", "fetch_url", { url: "https://x.example/p" }, true],
+      ["r3", "read", { path: "C.md" }, false],
+    ] as const) {
+      ui.emit(toolStart(id, name, args));
+      expect(head()).toMatch(/^(Reading|Fetching) /);
+      ui.emit(toolEnd(id, error ? "timed out" : "ok", error));
+    }
+    ui.emit(assistantEndEmpty);
+    // A second assistant message in the same turn shares the line.
+    ui.emit({ type: "message_start", message: { role: "assistant", content: [] } });
+    ui.emit(assistantEndText("done reading"));
+    ui.emit({ type: "agent_end" });
+    await settle();
+    expect(ui.$$('[data-ac="activity"]')).toHaveLength(1);
+    expect(head()).toBe("Read 3 notes");
+    expect(text(last(".agentic-chat-activity-fail"))).toBe("· 1 failed");
+    expect(ui.$$('[data-ac="step"]').map((row) => row.getAttribute("data-ac-state"))).toEqual(["done", "done", "error", "done"]);
+    // Collapsed by default; the failed row is open to show why.
+    expect(last('[data-ac="activity-head"]')?.getAttribute("aria-expanded")).toBe("false");
+    expect(ui.$$('[data-ac="step"].is-open')).toHaveLength(1);
+    expect(text(ui.$('[data-ac="step"].is-error .agentic-chat-step-section-label'))).toBe("Error");
+    last<HTMLButtonElement>('[data-ac="activity-head"]')?.click();
+    expect(last('[data-ac="activity-head"]')?.getAttribute("aria-expanded")).toBe("true");
   });
 });
 
@@ -125,6 +157,7 @@ describe("source chips", () => {
       ui.emit(toolEnd(id));
     }
     ui.emit(assistantEndText("summarised the notes"));
+    ui.emit({ type: "agent_end" });
     await settle();
 
     expect(ui.$$(".agentic-chat-source-chip-name").map(text)).toEqual(["SourceA.md", "SourceB.md", "SourceC.md"]);
@@ -140,6 +173,7 @@ describe("source chips", () => {
       ui.emit(toolEnd(`t-cap-${index}`));
     }
     ui.emit(assistantEndText("ten reads"));
+    ui.emit({ type: "agent_end" });
     await settle();
     expect(lastAll(".agentic-chat-source-chip")).toHaveLength(8);
     expect(text(last(".agentic-chat-sources-more"))).toBe("+2");
@@ -154,8 +188,8 @@ describe("source chips", () => {
     await settle();
     expect(lastAll(".agentic-chat-source-chip")).toHaveLength(1);
     expect(lastAll(".agentic-chat-sources")).toHaveLength(1);
-    expect(cls(last(".agentic-chat-reasoning"))).toContain("is-done");
-    expect(text(last(".agentic-chat-reasoning-label"))).toBe("Thought");
+    expect(activityState()).toBe("done");
+    expect(head()).toBe("Read 1 note");
     expect(text(last(".agentic-chat-source-chip-name"))).toBe("SourceA.md");
     expect(text(last(".agentic-chat-text"))).toBe("");
   });
@@ -234,7 +268,7 @@ describe("subagent dispatch card", () => {
       result: { content: [{ type: "text", text: 'Subagent "explorer" was stopped: Stopped by user' }], details: { kind: "subagent", children: stopped } },
       isError: false,
     });
-    expect(cls(last(".agentic-chat-step-icon svg"))).toContain("x-circle");
+    expect(cls(last('[data-ac="step"] .agentic-chat-status-icon svg'))).toContain("alert-circle");
     expect(cls(last(".agentic-chat-step"))).toContain("is-error");
   });
 
@@ -250,7 +284,7 @@ describe("subagent dispatch card", () => {
     expect(text(last(".agentic-chat-subagent pre"))).toContain("found 3 notes");
     expect(text(last(".agentic-chat-step-status"))).toBe("Done");
     expect(lastAll(".agentic-chat-subagent-stop")).toHaveLength(0);
-    expect(last(".agentic-chat-step-toggle")?.getAttribute("aria-expanded")).toBe("false");
+    expect(last(".agentic-chat-step-head")?.getAttribute("aria-expanded")).toBe("false");
   });
 
   it("rehydrates an aborted dispatch as stopped (red) and an error dispatch as failed", () => {
@@ -260,7 +294,7 @@ describe("subagent dispatch card", () => {
       isError: false,
       children: [{ agent: "explorer", task: "hang", status: "aborted", summary: "Stopped by user", durationMs: 5000 }],
     });
-    expect(cls(last(".agentic-chat-step-icon svg"))).toContain("x-circle");
+    expect(cls(last('[data-ac="step"] .agentic-chat-status-icon svg'))).toContain("alert-circle");
     expect(text(last(".agentic-chat-step-status"))).toBe("Stopped");
     expect(text(last(".agentic-chat-subagent-status"))).toBe("stopped");
 
@@ -281,10 +315,10 @@ describe("subagent dispatch card", () => {
       isError: false,
       children: [{ agent: "explorer", task: "toggle me", status: "done", summary: "toggle summary", durationMs: 1000 }],
     });
-    const toggle = last(".agentic-chat-step-toggle");
+    const toggle = last(".agentic-chat-step-head");
     expect(toggle?.getAttribute("aria-expanded")).toBe("false");
     toggle?.click();
-    expect(last(".agentic-chat-step-toggle")?.getAttribute("aria-expanded")).toBe("true");
+    expect(last(".agentic-chat-step-head")?.getAttribute("aria-expanded")).toBe("true");
     expect(lastAll(".agentic-chat-subagent-stop")).toHaveLength(0);
     expect(text(last(".agentic-chat-subagent pre"))).toContain("toggle summary");
   });

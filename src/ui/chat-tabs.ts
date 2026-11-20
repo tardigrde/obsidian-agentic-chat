@@ -3,7 +3,7 @@ import { Notice } from "obsidian";
 import type { AgentService } from "../agent/agent-service";
 import type { ToolApprovalRequest, UserApprovalChoice } from "../agent/tool-call-controller";
 import type { AskUserRequest } from "../tools/ask-user-tool";
-import type { ApprovalModal } from "./approval-modal";
+import type { ApprovalCard } from "./approval-card";
 import { freshChatTabState, type ChatTabWorkingState } from "./chat-tab-state";
 import { TabStrip, type TabHeaderElements, type TabView } from "./tab-strip";
 import { tabStatus } from "./tab-status";
@@ -18,7 +18,8 @@ export interface ChatTab {
   needsApproval?: boolean;
   /** A background turn finished and the user has not looked at it yet. */
   unread?: boolean;
-  pendingApprovalModal?: ApprovalModal;
+  /** The approval card waiting in this tab's transcript, if any. */
+  pendingApproval?: ApprovalCard;
 }
 
 /** Maximum independent sessions ("tabs") in one chat leaf. Each tab owns an AgentService. */
@@ -167,7 +168,7 @@ export class ChatTabs {
     if (closingActive) this.deps.endEditing();
     const [tab] = this.tabs.splice(index, 1);
     tab.unsubscribe();
-    tab.pendingApprovalModal?.close();
+    tab.pendingApproval?.stop();
     tab.service.dispose();
     if (index < this.activeIndex) {
       this.activeIndex -= 1;

@@ -48,19 +48,23 @@ await browser.waitUntil(async () =>
 - Approval: wait for `.agentic-chat-approval`, then `button=Allow` or
   `button=Deny`.
 - Side effect: `browser.executeObsidian(({ app, obsidian }, path) => ...)`.
-- Tool steps: `.agentic-chat-tool`, `.agentic-chat-diff-line.is-add`,
-  `.agentic-chat-diff-line.is-del`.
+- Activity line: `[data-ac="activity"]` (`data-ac-state` running, needs-you,
+  done, error), `activity-head` (`aria-expanded`), `activity-body`, and one
+  `[data-ac="step"]` row per tool call (`data-ac-state` running, done, error).
+  The body is collapsed by default, so its text is not in `innerText`.
 
 ## Proof
 
 | entry point | source | proof | status |
 |---|---|---|---|
 | Send a prompt and render a reply | `src/ui/chat-turn.ts#submit` | `test/e2e/specs/composer-paths.e2e.ts#sends with Enter while the agent is idle` | `covered` |
-| Stream text deltas | `src/ui/transcript-view.ts#renderTranscript` | `test/ui/chat-render.test.ts#settles a live trace to Thought with a final elapsed time and one check icon` (synthetic stream) | `partial` |
-| Reasoning section | `src/ui/transcript-view.ts#updateScrollPinning` | `test/ui/chat-render.test.ts#settles a live trace to Thought with a final elapsed time and one check icon` | `partial` |
+| Stream text deltas | `src/ui/transcript-view.ts#renderTranscript` | `test/ui/chat-render.test.ts#folds reasoning in as the first body entry, settled with its time` (synthetic stream) | `partial` |
+| Reasoning folds into the activity line | `src/ui/activity-line.ts#ReasoningEntry` | `test/ui/chat-render.test.ts#folds reasoning in as the first body entry, settled with its time` | `partial` |
+| One activity line per turn, `· N failed`, rows on expand | `src/ui/activity-line.ts#ActivityLine` | `test/e2e/specs/activity-line.e2e.ts#shows one collapsed line per turn and four rows when expanded` | `covered` |
+| Activity summary grammar | `src/ui/activity-summary.ts#summarizeSteps` | `test/activity-summary.test.ts#groups verbs in the order they first happen and merges counts` (unit) | `partial` |
 | Markdown rendering | `src/ui/assistant-bubble.ts#MarkdownRenderer.render` | `test/ui/assistant-bubble-rendering.test.ts#converts Obsidian callout blockquotes when MarkdownRenderer leaves them plain` (unit only) | `partial` |
-| Tool step cards and diffs | `src/ui/transcript-view.ts#renderTranscript` | `test/e2e/specs/approval-deterministic.e2e.ts#asks before a scripted edit and undo restores the prior text` | `covered` |
-| Tool-step vault path link | `src/ui/step-card.ts#appendPathLink` | no committed check | `NONE` |
+| Tool step rows and diffs | `src/ui/activity-line.ts#startStep` | `test/e2e/specs/approval-deterministic.e2e.ts#asks before a scripted edit and undo restores the prior text` | `covered` |
+| Tool-step vault path link | `src/ui/activity-line.ts#startStep` | no committed check | `NONE` |
 | Stop the active turn (toolbar) | `src/ui/chat-view.ts#stopActiveTurn` | `test/e2e/specs/composer-paths.e2e.ts#stops, then sends the draft as a replacement turn` | `covered` |
 | Stop one tab without aborting the other | `src/ui/chat-view.ts#buildLayout` | `test/e2e/specs/two-tab-stop.e2e.ts#stopping one tab does not abort the other tab's turn` | `covered` |
 | Stop clears queued steering | `src/agent/steering-queue.ts#stop(agent: Agent)` | `test/agent-service.test.ts#clears queued steering when the spend cap stops a run` (unit only) | `partial` |

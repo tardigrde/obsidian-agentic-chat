@@ -329,13 +329,13 @@ function assertHeadingRowReadable(metrics: HeadingRowMetrics, label: string): vo
 }
 
 async function allowApproval(): Promise<void> {
-  const modal = await $('[data-ac="approval"]');
-  await modal.waitForExist({ timeout: 10_000 });
-  await expect(modal.$("button=Allow")).toBeDisplayed();
-  await expect(modal.$("button=Deny")).toBeDisplayed();
-  await assertFits(".modal-container .modal", "approval modal");
-  await modal.$("button=Allow").click();
-  await modal.waitForExist({ reverse: true, timeout: 5_000 });
+  const card = await $('[data-ac="approval"]:not(.is-resolved)');
+  await card.waitForExist({ timeout: 10_000 });
+  await expect(card.$('[data-ac="approval-allow"]')).toBeDisplayed();
+  await expect(card.$('[data-ac="approval-deny"]')).toBeDisplayed();
+  await assertFits('[data-ac="approval"]:not(.is-resolved)', "approval card");
+  await card.$('[data-ac="approval-allow"]').click();
+  await card.waitForExist({ reverse: true, timeout: 5_000 });
 }
 
 async function noteExists(path: string): Promise<boolean> {
@@ -404,7 +404,7 @@ describe("agentic-chat mobile viewport", function () {
     await openChat();
   });
 
-  it("keeps approval modals visible and touchable at phone width", async function () {
+  it("keeps the approval card visible and touchable at phone width", async function () {
     await sendPrompt("mobile approval write");
     await allowApproval();
     await browser.waitUntil(async () => await noteExists(MOBILE_WRITE_PATH), {
@@ -420,6 +420,31 @@ describe("agentic-chat mobile viewport", function () {
     await assertFits(".modal-container .modal", "session modal");
     await assertFits(".agentic-chat-session-list", "session list");
     await closeOpenModals();
+  });
+
+  it("keeps the composer above the floating navbar when the chat is in the main area", async function () {
+    await browser.executeObsidian(async ({ app }, viewType) => {
+      const leaf = app.workspace.getLeaf(true);
+      await leaf.setViewState({ type: viewType, active: true });
+    }, VIEW_TYPE_AGENT_CHAT);
+    await browser.waitUntil(
+      async () => await browser.execute(() => !!document.querySelector('.mod-root [data-ac="view"] [data-ac="composer-card"]')),
+      { timeout: 10_000, timeoutMsg: "no chat view in the main area" },
+    );
+    await browser.pause(500);
+    const layout = await browser.execute(() => {
+      const card = document.querySelector<HTMLElement>('.mod-root [data-ac="view"] [data-ac="composer-card"]')?.getBoundingClientRect();
+      const navbar = document.querySelector<HTMLElement>(".mobile-navbar")?.getBoundingClientRect();
+      return { cardBottom: card?.bottom ?? 0, navbarTop: navbar && navbar.height > 0 ? navbar.top : null };
+    });
+    if (layout.navbarTop !== null) expect(layout.cardBottom).toBeLessThanOrEqual(layout.navbarTop);
+    await browser.executeObsidian(({ app }, viewType) => {
+      const leaves = app.workspace.getLeavesOfType(viewType);
+      for (const leaf of leaves) if (leaf.getRoot() === app.workspace.rootSplit) leaf.detach();
+    }, VIEW_TYPE_AGENT_CHAT);
+    // Detaching the main-area leaf leaves no visible chat; later tests type
+    // into the sidebar chat, so reveal it again.
+    await openChat();
   });
 
   it("wraps long assistant output without horizontal overflow", async function () {

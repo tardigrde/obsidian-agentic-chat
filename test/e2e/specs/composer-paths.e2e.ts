@@ -145,7 +145,7 @@ describe("agentic-chat composer paths", function () {
     });
     assertOrdered(await transcriptText(), [
       "steer start prompt",
-      "Read: Welcome.md",
+      "Read 1 note",
       "keep the answer concise",
       "Steered answer used the added constraint.",
     ]);
@@ -240,11 +240,15 @@ describe("agentic-chat composer paths", function () {
       async () => (await transcriptText()).includes("Provider connection lost mid-stream."),
       { timeout: 10_000, timeoutMsg: "the scripted error never rendered" },
     );
+    // The turn's reasoning lives in its activity line, above the message.
     const readTrace = async () =>
       await browser.execute(() => {
         const banner = Array.from(document.querySelectorAll('[data-ac="turn-error"]')).pop();
-        const turn = banner?.closest('[data-ac="assistant-message"]');
-        return Array.from(turn?.querySelectorAll(".agentic-chat-reasoning-body") ?? []).map((body) => (body.textContent ?? "").trim());
+        let node = banner?.closest('[data-ac="assistant-message"]')?.previousElementSibling ?? null;
+        while (node && node.getAttribute("data-ac") !== "activity") node = node.previousElementSibling;
+        return Array.from(node?.querySelectorAll(".agentic-chat-thought:not(.is-empty) .agentic-chat-thought-text") ?? []).map(
+          (body) => (body.textContent ?? "").trim(),
+        );
       });
     await browser.waitUntil(async () => JSON.stringify(await readTrace()) === JSON.stringify(["I should check the config first."]), {
       timeout: 3_000,
@@ -266,11 +270,13 @@ describe("agentic-chat composer paths", function () {
     await error.waitForExist({ timeout: 10_000 });
     const bubble = await browser.execute(() => {
       const banner = Array.from(document.querySelectorAll('[data-ac="turn-error"]')).pop();
-      const turn = banner?.closest('[data-ac="assistant-message"]');
-      const pills = Array.from(turn?.querySelectorAll(".agentic-chat-reasoning") ?? []);
+      let node = banner?.closest('[data-ac="assistant-message"]')?.previousElementSibling ?? null;
+      while (node && node.getAttribute("data-ac") !== "activity") node = node.previousElementSibling;
+      // A shown (not .is-empty) entry with no text would be an empty "Thought".
+      const shown = Array.from(node?.querySelectorAll<HTMLElement>(".agentic-chat-thought:not(.is-empty)") ?? []);
       return {
         bannerText: banner?.textContent ?? "",
-        emptyPills: pills.filter((pill) => !pill.querySelector(".agentic-chat-reasoning-body")?.textContent?.trim()).length,
+        emptyPills: shown.filter((entry) => !entry.querySelector(".agentic-chat-thought-text")?.textContent?.trim()).length,
       };
     });
     expect(bubble.bannerText.length).toBeGreaterThan(0);

@@ -334,7 +334,7 @@ function collectWindow(windowNumber: number, limit: number): RawWindow {
       running: Boolean(stop && stop.offsetParent !== null),
       composer: flat(view.querySelector<HTMLTextAreaElement>('[data-ac="composer-input"]')?.value).slice(0, 200),
       errorPanels: view.querySelectorAll('[data-ac="error"], [data-ac="turn-error"]').length,
-      approvalOpen: Boolean(document.querySelector('[data-ac="approval"]')),
+      approvalOpen: Boolean(document.querySelector('[data-ac="approval"]:not(.is-resolved)')),
       overflowX: Boolean(messagesEl && messagesEl.scrollWidth > messagesEl.clientWidth + 2),
       lastMessages: messages,
     };
@@ -452,7 +452,7 @@ async function waitForTurn(maxMs: number): Promise<string> {
   await browser.pause(400);
   while (Date.now() < deadline) {
     if (!(await chatRunning())) return "turn finished";
-    if (await $('[data-ac="approval"]').isExisting()) return "approval requested";
+    if (await $('[data-ac="approval"]:not(.is-resolved)').isExisting()) return "approval requested";
     await browser.pause(700);
   }
   return `turn still running after ${Math.round(maxMs / 1000)}s`;

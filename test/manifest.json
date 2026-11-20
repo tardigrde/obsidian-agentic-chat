@@ -148,7 +148,7 @@
       "runner": "vitest",
       "globs": [
         "test/{chat-*,composer-*,assistant-bubble-*}.test.ts",
-        "test/{approval-modal,autocomplete,confirm-modal,context-bar,context-chip-renderer,diff-css-scope,diff-renderers,drag-drop,edit-preview,folder-suggest,info-panel-renderer,model-suggest-modal,notifications,quick-ask,scroll-pinning,transcript-view,prompt-edit-state,readouts,chrome-state,e2e-stream,tab-status}.test.ts"
+        "test/{activity-summary,autocomplete,confirm-modal,context-bar,context-chip-renderer,diff-css-scope,diff-renderers,drag-drop,edit-preview,folder-suggest,info-panel-renderer,model-suggest-modal,notifications,quick-ask,scroll-pinning,transcript-view,prompt-edit-state,readouts,chrome-state,e2e-stream,tab-status}.test.ts"
       ],
       "triggers": [
         "src/ui/**",

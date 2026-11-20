@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { renderStepEditDiff } from "../../src/ui/assistant-markdown";
-import { renderApprovalDiffLines } from "../../src/ui/approval-modal";
+import { renderApprovalDiffLines } from "../../src/ui/approval-card";
 import { renderQuickAskDiff } from "../../src/ui/quick-ask-modal";
 
 function container(): HTMLElement {

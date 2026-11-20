@@ -28,6 +28,8 @@ export interface ChatLayoutCallbacks {
   addTab(): void;
   openHistory(): void;
   isEditing(): boolean;
+  /** Whether the active tab has a turn in flight. */
+  isStreaming(): boolean;
   reconcileQueuedInput(value: string, event: UIEvent): void;
 }
 
@@ -129,6 +131,7 @@ export function buildLayout(deps: ChatLayoutDeps): ChatLayoutElements {
     beginEdit: (index, text, el) => callbacks.beginEdit(index, text, el),
     retryLast: () => callbacks.retryLast(),
     abortSubagentChild: (id) => callbacks.abortSubagentChild(id),
+    isStreaming: () => callbacks.isStreaming(),
   });
   deps.registerDomEvent(messagesEl, "wheel", () => transcript.markUserScrollIntent());
   deps.registerDomEvent(messagesEl, "touchmove", () => transcript.markUserScrollIntent());

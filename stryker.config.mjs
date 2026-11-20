@@ -10,7 +10,7 @@ const configured = process.env.STRYKER_MUTATE
  */
 export const HOT_SPOTS = [
   "src/ui/chat-view.ts",
-  "src/ui/approval-modal.ts",
+  "src/ui/approval-card.ts",
   "src/main.ts",
   "src/ui/assistant-bubble.ts",
   "src/ui/session-list-modal.ts",

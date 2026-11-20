@@ -58,7 +58,7 @@ describe("chat view test hooks", () => {
     await settle();
 
     expect(has("approval")).toBe(true);
-    for (const hook of ["approval-allow", "approval-deny", "approval-stop"] satisfies AcHook[]) {
+    for (const hook of ["approval-allow", "approval-always", "approval-deny"] satisfies AcHook[]) {
       expect(ui.$(acSelector(hook))?.tagName, hook).toBe("BUTTON");
     }
     expect(ui.$(acSelector("approval-allow"))?.textContent).toBe("Allow");

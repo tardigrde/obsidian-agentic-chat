@@ -269,18 +269,18 @@ async function waitForStableAnswer(previous: string, timeoutMs: number): Promise
 async function approveIfPresent(timeoutMs: number, allowed: boolean): Promise<boolean> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
-    const modal = await $('[data-ac="approval"]');
+    const modal = await $('[data-ac="approval"]:not(.is-resolved)');
     if (await modal.isExisting()) {
       await modal.waitForDisplayed({ timeout: 5_000 }).catch(() => undefined);
       if (allowed) {
-        const allow = await modal.$("button=Allow");
+        const allow = await modal.$('[data-ac="approval-allow"]');
         if (await allow.isExisting()) {
           await allow.click();
           return true;
         }
       } else {
         const clicked = await browser.execute(() => {
-          const modalEl = document.querySelector<HTMLElement>('[data-ac="approval"]');
+          const modalEl = document.querySelector<HTMLElement>('[data-ac="approval"]:not(.is-resolved)');
           if (!modalEl) return false;
           const buttons = Array.from(modalEl.querySelectorAll<HTMLButtonElement>("button"));
           const deny = buttons.find((button) => button.innerText.trim() === "Deny");
@@ -293,10 +293,10 @@ async function approveIfPresent(timeoutMs: number, allowed: boolean): Promise<bo
         if (!clicked) continue;
         await browser.pause(200);
         const confirmed = await browser.execute(() => {
-          const modalEl = document.querySelector<HTMLElement>('[data-ac="approval"]');
+          const modalEl = document.querySelector<HTMLElement>('[data-ac="approval"]:not(.is-resolved)');
           if (!modalEl) return false;
           const buttons = Array.from(modalEl.querySelectorAll<HTMLButtonElement>("button"));
-          const confirm = buttons.find((button) => button.innerText.trim() === "Confirm Deny");
+          const confirm = buttons.find((button) => button.innerText.trim() === "Confirm deny");
           if (confirm) {
             confirm.click();
             return true;
@@ -306,7 +306,7 @@ async function approveIfPresent(timeoutMs: number, allowed: boolean): Promise<bo
         if (!confirmed) {
           // Some builds deny in one click; treat the disappearing modal as success.
           await browser.pause(200);
-          const stillOpen = await $('[data-ac="approval"]').isExisting();
+          const stillOpen = await $('[data-ac="approval"]:not(.is-resolved)').isExisting();
           if (!stillOpen) return true;
           continue;
         }

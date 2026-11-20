@@ -25,7 +25,7 @@ The default matrix is the five UI hot spots: the files with the most fix
 commits (#393 T18).
 
 - `src/ui/chat-view.ts`
-- `src/ui/approval-modal.ts`
+- `src/ui/approval-card.ts`
 - `src/main.ts`
 - `src/ui/assistant-bubble.ts`
 - `src/ui/session-list-modal.ts`

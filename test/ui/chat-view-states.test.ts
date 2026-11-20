@@ -10,8 +10,9 @@ import { mountChatView, seedFile, settle, type MountedChatView } from "./support
  *                             -> stopped -> idle
  *                             -> error -> idle (Ask again)
  *
- * Each state is read from what the user sees: the Send label, the Stop button,
- * the working indicator, the mode toggle, the approval modal, and the transcript.
+ * Each state is read from what the user sees: the send state, the Stop button,
+ * the working indicator, the mode toggle, the inline approval card, and the
+ * transcript.
  */
 
 interface Gate {
@@ -157,7 +158,7 @@ describe("chat view state machine", () => {
     expect(ui.$(".agentic-chat-assistant:last-child .agentic-chat-text")?.textContent).toContain("recovered");
   });
 
-  it("streaming -> approval pending -> Allow -> idle: the modal blocks the tool until allowed", async () => {
+  it("streaming -> approval pending -> Allow -> idle: the inline card blocks the tool until allowed", async () => {
     await mount([
       replayToolCallTurn("call-1", "write", { path: "Notes/new.md", content: "hello" }),
       replayTextTurn("written"),
@@ -165,16 +166,22 @@ describe("chat view state machine", () => {
     await ui.send("create a note");
     await settle();
 
-    const modal = ui.$(".modal-container .agentic-chat-approval");
-    expect(modal).not.toBeNull();
-    expect(ui.$(".modal-title")?.textContent).toMatch(/write|Notes\/new\.md/i);
+    const card = ui.$('[data-ac="approval"]');
+    expect(card).not.toBeNull();
+    // In the transcript, below the turn's activity line, not in a modal.
+    expect(ui.$(".modal-container")).toBeNull();
+    expect(card?.closest('[data-ac="messages"]')).not.toBeNull();
+    expect(card?.parentElement?.previousElementSibling?.getAttribute("data-ac")).toBe("activity");
+    expect(ui.$('[data-ac="activity"]')?.getAttribute("data-ac-state")).toBe("needs-you");
+    expect(ui.$('[data-ac="status"]')?.textContent).toBe("Waiting for your approval");
+    expect(ui.$('[data-ac="tab"]')?.getAttribute("data-ac-state")).toBe("needs-you");
     expect(chrome()).toEqual(STREAMING);
     expect(ui.app.vault.contentOf("Notes/new.md")).toBeUndefined();
 
-    const allow = ui.$$<HTMLButtonElement>(".modal-container button").find((button) => button.textContent === "Allow");
-    allow?.click();
+    ui.$<HTMLButtonElement>('[data-ac="approval-allow"]')?.click();
     await ui.idle();
-    expect(ui.$(".modal-container")).toBeNull();
+    expect(ui.$('[data-ac="approval"]')?.getAttribute("data-ac-state")).toBe("allowed");
+    expect(ui.$(".agentic-chat-approval-outcome")?.textContent).toBe("Allowed once");
     expect(ui.app.vault.contentOf("Notes/new.md")).toBe("hello");
     expect(chrome()).toEqual(IDLE);
     expect(ui.calls()).toBe(2);
@@ -188,36 +195,36 @@ describe("chat view state machine", () => {
     await ui.send("create a note");
     await settle();
 
-    const deny = () => ui.$$<HTMLButtonElement>(".modal-container button").find((button) => /Deny/.test(button.textContent ?? ""));
+    const deny = () => ui.$<HTMLButtonElement>('[data-ac="approval-deny"]');
     deny()?.click();
-    expect(deny()?.textContent).toBe("Confirm Deny");
-    expect(ui.$(".modal-title")?.textContent).toMatch(/deny/i);
+    expect(deny()?.textContent).toBe("Confirm deny");
+    expect(ui.$('[data-ac="approval"]')?.getAttribute("data-ac-state")).toBe("deny-armed");
     const reason = ui.$<HTMLTextAreaElement>(".agentic-chat-deny-reason-input");
     expect(reason).not.toBeNull();
     reason!.value = "wrong folder";
     deny()?.click();
     await ui.idle();
 
-    expect(ui.$(".modal-container")).toBeNull();
+    expect(ui.$('[data-ac="approval"]')?.getAttribute("data-ac-state")).toBe("denied");
     expect(ui.app.vault.contentOf("Notes/new.md")).toBeUndefined();
     expect(ui.$(".agentic-chat-step")?.className).toContain("is-error");
     expect(ui.root.textContent).toContain("wrong folder");
     expect(chrome()).toEqual(IDLE);
   });
 
-  it("approval pending -> Stop turn in the modal: the turn stops and nothing is written", async () => {
+  it("approval pending -> Stop in the composer: the card resolves as stopped and nothing is written", async () => {
     await mount([replayToolCallTurn("call-1", "write", { path: "Notes/new.md", content: "hello" })]);
     await ui.send("create a note");
     await settle();
-    ui.$$<HTMLButtonElement>(".modal-container button").find((button) => button.textContent === "Stop turn")?.click();
+    ui.$<HTMLButtonElement>('[data-ac="stop"]')?.click();
     await ui.idle();
-    expect(ui.$(".modal-container")).toBeNull();
+    expect(ui.$('[data-ac="approval"]')?.getAttribute("data-ac-state")).toBe("stopped");
     expect(ui.app.vault.contentOf("Notes/new.md")).toBeUndefined();
     expect(chrome()).toEqual(IDLE);
     expect(ui.calls()).toBe(1);
   });
 
-  it("YOLO mode skips the approval modal", async () => {
+  it("YOLO mode skips the approval card", async () => {
     await mount(
       [replayToolCallTurn("call-1", "write", { path: "Notes/yolo.md", content: "fast" }), replayTextTurn("done")],
       undefined,
@@ -226,7 +233,7 @@ describe("chat view state machine", () => {
     expect(ui.$(".agentic-chat-mode-toggle")?.getAttribute("aria-checked")).toBe("true");
     await ui.send("write it");
     await ui.idle();
-    expect(ui.$(".modal-container")).toBeNull();
+    expect(ui.$('[data-ac="approval"]')).toBeNull();
     expect(ui.app.vault.contentOf("Notes/yolo.md")).toBe("fast");
   });
 

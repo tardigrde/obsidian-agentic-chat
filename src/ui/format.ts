@@ -122,8 +122,6 @@ function formatReadCallBody(parsed: Record<string, unknown>): string {
 /** Tools whose success result is just file contents already on disk / in context — hide it. */
 export const HIDE_RESULT_TOOLS = new Set(["read", "get_active_note", "write", "subagent"]);
 
-/** Tools whose primary arg is a vault path — render it as a clickable link in the step title. */
-export const PATH_TOOLS = new Set(["read", "write", "edit", "delete", "rename", "get_active_note", "ls"]);
 
 /** Extract the vault path (path, else newPath) from tool args, or "" if none/invalid. */
 export function callPath(rawArgs: string): string {

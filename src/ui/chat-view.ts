@@ -13,7 +13,7 @@ import type { AgentService } from "../agent/agent-service";
 import type { AskUserRequest } from "../tools/ask-user-tool";
 import type { ToolApprovalRequest, UserApprovalChoice } from "../agent/tool-call-controller";
 import { applyRememberedApprovalChoice } from "../agent/approval-memory";
-import { ApprovalModal } from "./approval-modal";
+import { ApprovalCard } from "./approval-card";
 import { VIEW_TYPE_AGENT_CHAT } from "../constants";
 import { errorMessage } from "../utils/errors";
 import { Notifier } from "./notifications";
@@ -53,6 +53,9 @@ import { persistEffortLevel } from "./slash/model";
 import { acHook } from "./test-hooks";
 
 export { VIEW_TYPE_AGENT_CHAT };
+
+/** Status line text while an approval card waits in the active tab. */
+const APPROVAL_STATUS = "Waiting for your approval";
 
 export class ChatView extends ItemView {
   private chatTabsOwner?: ChatTabs;
@@ -382,7 +385,7 @@ export class ChatView extends ItemView {
     // The view owns its tab services; dispose them so no detached agent keeps running.
     for (const tab of this.tabs) {
       tab.unsubscribe();
-      tab.pendingApprovalModal?.close();
+      tab.pendingApproval?.stop();
       tab.service.dispose();
     }
     this.tabs = [];
@@ -417,6 +420,13 @@ export class ChatView extends ItemView {
   /** Re-render the transcript + chrome for the active tab (after a switch/close). */
   private renderActiveTab(): void {
     this.createSessionActivationCoordinator().renderActiveTab();
+    // A pending approval waits in its tab's transcript: put the card back.
+    const pending = this.activeTab.pendingApproval;
+    if (pending && !pending.settled) {
+      this.transcript.mountApproval(pending);
+      this.statusEl.setText(APPROVAL_STATUS);
+      pending.focus(this.inputEl.value.trim().length > 0);
+    }
     // Chips depend on the newly active tab's state; the
     // coordinator only syncs chrome, so re-render them here or a queued-prompt
     // chip (and context chips) would stay stale/invisible after a tab switch.
@@ -430,7 +440,11 @@ export class ChatView extends ItemView {
     return await this.renderAskUserPrompt(request, signal);
   }
 
-  /** Notify + label for background tool approvals (no auto-switch). */
+  /**
+   * An inline approval card in the tab's transcript, below the turn's activity
+   * line. A background tab gets the orange dot and a notice; its card waits in
+   * that tab and shows when the user switches to it (no auto-switch).
+   */
   private async confirmToolCallForTab(
     tab: ChatTab,
     request: ToolApprovalRequest,
@@ -438,28 +452,31 @@ export class ChatView extends ItemView {
   ): Promise<UserApprovalChoice> {
     const index = this.tabs.indexOf(tab);
     if (index === -1) throw new Error("The chat tab that requested approval is no longer open.");
-    const isBackground = tab !== this.activeTab;
-    const sessionLabel = `Tab ${index + 1} • ${this.tabLabel(tab)}`;
-    const labeledRequest: ToolApprovalRequest = isBackground ? { ...request, sessionLabel } : request;
-    if (isBackground) {
-      tab.needsApproval = true;
-      this.syncTabStrip();
-      this.notifier.notify("approval", `${sessionLabel} needs approval: ${request.label}`);
+    const card = new ApprovalCard({ app: this.app, request, signal });
+    tab.pendingApproval = card;
+    tab.needsApproval = true;
+    this.syncTabStrip();
+    if (tab === this.activeTab) {
+      this.transcript.mountApproval(card);
+      this.statusEl.setText(APPROVAL_STATUS);
+      card.focus(this.inputEl.value.trim().length > 0);
+    } else {
+      this.notifier.notify("approval", `Tab ${index + 1} • ${this.tabLabel(tab)} needs approval: ${request.label}`);
     }
-    const modal = new ApprovalModal(this.app, labeledRequest, () => tab.service.abort());
-    tab.pendingApprovalModal = modal;
     try {
-      const choice = await modal.ask(signal);
+      const choice = await card.choice;
       await this.plugin.settingsStore.update((settings) =>
         applyRememberedApprovalChoice(settings, request.toolName, choice),
       );
       return choice;
     } finally {
-      tab.pendingApprovalModal = undefined;
-      if (tab.needsApproval) {
-        tab.needsApproval = false;
-        this.syncTabStrip();
+      if (tab.pendingApproval === card) tab.pendingApproval = undefined;
+      tab.needsApproval = false;
+      if (tab === this.activeTab && !this.closed) {
+        this.transcript.approvalSettled();
+        if (this.statusEl.textContent === APPROVAL_STATUS) this.statusEl.setText("");
       }
+      this.syncTabStrip();
     }
   }
 
@@ -568,6 +585,7 @@ export class ChatView extends ItemView {
         addTab: () => void this.chatTabs.addTab(),
         openHistory: () => void this.actions.createSessionWorkflow().run(""),
         isEditing: () => this.composer.isEditing,
+        isStreaming: () => this.service.isStreaming(),
         reconcileQueuedInput: (value, event) => this.reconcileQueuedInput(value, event),
       },
     });
