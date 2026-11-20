@@ -16,9 +16,12 @@ export type SendAction = "send" | "queue" | "update";
 
 export const SEND_LABELS: Record<SendAction, string> = {
   send: "Send",
-  queue: "Queue",
-  update: "Update",
+  queue: "Queue: send after this turn",
+  update: "Update the queued message",
 };
+
+/** Label of the Queue control while there is no draft to queue. */
+export const QUEUE_EMPTY_LABEL = "Queue: type a message to send after this turn";
 
 /** Send while idle; while a turn runs, queue the draft (or update the queued one). */
 export function sendAction(running: boolean, queuedPromptArmed: boolean): SendAction {
@@ -36,6 +39,8 @@ export interface ChatChromeElements {
   contextRingEl: () => SVGCircleElement;
   contextPercentEl: () => HTMLElement;
   sendButton: () => HTMLButtonElement;
+  /** The composer textarea; an empty draft has nothing to queue. */
+  composerInput: () => HTMLTextAreaElement | undefined;
   stopButton: () => HTMLButtonElement;
   workingEl: () => HTMLElement;
   statusEl: () => HTMLElement;
@@ -169,15 +174,13 @@ export class ChatChrome {
 
   setRunning(running: boolean): void {
     const sendButton = this.deps.elements.sendButton();
-    sendButton.disabled = false;
     const action = sendAction(running, this.deps.state().queuedPromptArmed);
     if (sendButton.getAttribute("data-ac-state") !== action) {
       sendButton.setAttribute("data-ac-state", action);
-      sendButton.setAttr("aria-label", SEND_LABELS[action]);
-      sendButton.setAttr("title", SEND_LABELS[action]);
       sendButton.empty();
       setIcon(sendButton, action === "send" ? "arrow-up" : "list-plus");
     }
+    this.syncSendAvailability();
     const working = this.deps.elements.workingEl();
     working.parentElement?.toggleClass("is-running", running);
     const workingText = working.parentElement?.querySelector(".agentic-chat-working-text");
@@ -189,6 +192,23 @@ export class ChatChrome {
       this.deps.elements.stopButton().hide();
       working.hide();
       this.deps.elements.statusEl().setText("");
+    }
+  }
+
+  /**
+   * Queue with an empty draft does nothing, so it is disabled and its label
+   * says what to do. Called on every running-state change and on each input.
+   */
+  syncSendAvailability(): void {
+    const sendButton = this.deps.elements.sendButton();
+    const action = (sendButton.getAttribute("data-ac-state") ?? "send") as SendAction;
+    const empty = !this.deps.elements.composerInput()?.value.trim();
+    const nothingToQueue = action === "queue" && empty;
+    sendButton.disabled = nothingToQueue;
+    const label = nothingToQueue ? QUEUE_EMPTY_LABEL : SEND_LABELS[action];
+    if (sendButton.getAttribute("aria-label") !== label) {
+      sendButton.setAttr("aria-label", label);
+      sendButton.setAttr("title", label);
     }
   }
 

@@ -169,6 +169,7 @@ export class ChatView extends ItemView {
         contextRingEl: () => this.contextRingEl,
         contextPercentEl: () => this.contextPercentEl,
         sendButton: () => this.sendButton,
+        composerInput: () => this.inputEl,
         stopButton: () => this.stopButton,
         workingEl: () => this.workingEl,
         statusEl: () => this.statusEl,
@@ -630,6 +631,7 @@ export class ChatView extends ItemView {
 
   /** Keep the queued-prompt chip in step with real typing, but not IME composition. */
   private reconcileQueuedInput(value: string, inputEvent: UIEvent): void {
+    this.chrome.syncSendAvailability();
     if (!this.state.queuedPromptArmed || (inputEvent.instanceOf(InputEvent) && inputEvent.isComposing)) return;
     const text = value.trim();
     if (!text) {

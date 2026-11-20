@@ -159,8 +159,13 @@ describe("chat view state machine", () => {
     await mount([replayTextTurn("first", { hold: true }), replayTextTurn("second")], held);
     await ui.send("first prompt");
     expect(chrome()).toEqual(STREAMING);
+    // U3 #12: an empty draft has nothing to queue.
+    const send = ui.$<HTMLButtonElement>('[data-ac="send"]');
+    expect(send?.disabled).toBe(true);
+    expect(send?.getAttribute("aria-label")).toMatch(/type a message/i);
 
     await ui.queue("follow-up prompt");
+    expect(send?.disabled).toBe(false);
     expect(chrome().send).toBe("update");
     expect(ui.$(".agentic-chat-chips")?.textContent).toContain("follow-up prompt");
 

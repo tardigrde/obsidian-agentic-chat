@@ -411,7 +411,7 @@ export class ChatComposer {
 
   queueComposerPrompt(): void {
     this.deps.state().queuedPromptArmed = true;
-    this.deps.statusEl().setText("Queued next.");
+    this.deps.statusEl().setText("Queued. It sends when this turn ends.");
     this.deps.renderChips();
     this.deps.syncChrome();
   }
