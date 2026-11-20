@@ -135,15 +135,43 @@ describe("UI v2 design tokens and restyle", function () {
     expect(layout.statusAboveCard).toBe(true);
   });
 
-  it("sits the composer card one spacing step above the bottom of the view", async function () {
-    const gap = await browser.execute(() => {
+  it("keeps the composer card clear of the status bar on desktop (U2)", async function () {
+    const layout = await browser.execute(() => {
       const view = document.querySelector<HTMLElement>('[data-ac="view"]');
       const card = view?.querySelector<HTMLElement>('[data-ac="composer-card"]');
-      if (!view || !card) return null;
-      return Math.round(view.getBoundingClientRect().bottom - card.getBoundingClientRect().bottom);
+      const bar = document.querySelector<HTMLElement>(".status-bar");
+      if (!view || !card || !bar) return null;
+      const c = card.getBoundingClientRect();
+      const b = bar.getBoundingClientRect();
+      return {
+        barVisible: getComputedStyle(bar).display !== "none" && b.height > 0,
+        // The chat is the bottom-right pane, so the floating bar sits under its right end.
+        sharesColumns: c.right > b.left && c.left < b.right,
+        cardBottom: Math.round(c.bottom),
+        barTop: Math.round(b.top),
+      };
     });
-    // 12 px (--ac-space-3), not 12 px plus Obsidian's own view padding.
-    expect(gap).toBe(12);
+    expect(layout).not.toBeNull();
+    expect(layout?.barVisible).toBe(true);
+    expect(layout?.sharesColumns).toBe(true);
+    // Obsidian keeps 32 px under every desktop view for the status bar; the card stays above it.
+    expect(layout!.cardBottom).toBeLessThanOrEqual(layout!.barTop);
+  });
+
+  it("sits the composer card one spacing step above the bottom on a phone", async function () {
+    await browser.execute(() => document.body.classList.add("is-phone"));
+    try {
+      const gap = await browser.execute(() => {
+        const view = document.querySelector<HTMLElement>('[data-ac="view"]');
+        const card = view?.querySelector<HTMLElement>('[data-ac="composer-card"]');
+        if (!view || !card) return null;
+        return Math.round(view.getBoundingClientRect().bottom - card.getBoundingClientRect().bottom);
+      });
+      // 12 px (--ac-space-3): a phone has no status bar, and the safe area is not counted twice.
+      expect(gap).toBe(12);
+    } finally {
+      await browser.execute(() => document.body.classList.remove("is-phone"));
+    }
   });
 
   it("opens the context breakdown above the card on a tap, and Esc closes it", async function () {
@@ -260,5 +288,124 @@ describe("UI v2 design tokens and restyle", function () {
     });
     await setMobileClass(false);
     expect(hits).toEqual({ source: true, retry: true, step: true, remove: true });
+  });
+});
+
+/**
+ * U2 (owner, 2026-11-20, real vault): a wide sidebar and a large editor font.
+ * The empty state sits in the middle of the pane, and chat text uses the
+ * interface font and size, not the editor's reading size.
+ */
+describe("UI v2 empty state and chat type in a wide pane", function () {
+  let restore: { width: string; windowWidth: number; windowHeight: number } | null = null;
+
+  const resizeWindow = async (width: number, height: number): Promise<boolean> =>
+    await browser.execute(
+      (w, h) => {
+        const win = (window as unknown as { electronWindow?: { setSize?: (w: number, h: number) => void } }).electronWindow;
+        if (!win?.setSize) return false;
+        win.setSize(w, h);
+        return true;
+      },
+      width,
+      height,
+    );
+
+  before(async function () {
+    await installScriptedTurns([textTurn("type answer", "A plain answer for the type check.")]);
+    await configureScriptedPlugin("allow");
+    await openChat();
+    const original = await browser.execute(() => ({ windowWidth: window.outerWidth, windowHeight: window.outerHeight }));
+    if ((await browser.execute(() => window.innerWidth)) < 1300) {
+      if (!(await resizeWindow(1400, Math.max(original.windowHeight, 800)))) {
+        throw new Error("this runtime cannot resize its window; the wide-pane cases cannot run");
+      }
+      await browser.waitUntil(async () => (await browser.execute(() => window.innerWidth)) >= 1300, {
+        timeout: 5_000,
+        timeoutMsg: "the window did not widen to 1400 px",
+      });
+    }
+    const width = await browser.executeObsidian(({ app }) => {
+      const el = (app.workspace.rightSplit as unknown as { containerEl: HTMLElement }).containerEl;
+      const before = el.style.width;
+      el.style.width = "700px";
+      return before;
+    });
+    restore = { width, ...original };
+    // The editor font of the owner's vault: large, and not the interface font.
+    await browser.execute(() => {
+      document.body.style.setProperty("--font-text-size", "26px");
+      document.body.style.setProperty("--font-text-override", "Georgia, serif");
+    });
+    await browser.executeObsidianCommand("agentic-chat:new-conversation");
+    await $('[data-ac="empty"]').waitForDisplayed();
+  });
+
+  after(async function () {
+    await browser.execute(() => {
+      document.body.style.removeProperty("--font-text-size");
+      document.body.style.removeProperty("--font-text-override");
+    });
+    if (restore) {
+      const { width, windowWidth, windowHeight } = restore;
+      await browser.executeObsidian(({ app }, w) => {
+        (app.workspace.rightSplit as unknown as { containerEl: HTMLElement }).containerEl.style.width = w;
+      }, width);
+      await resizeWindow(windowWidth, windowHeight);
+    }
+    await clearScriptedTurns();
+  });
+
+  it("centers the empty state in a 700 px pane", async function () {
+    const layout = await browser.execute(() => {
+      const messages = document.querySelector<HTMLElement>('[data-ac="messages"]');
+      const empty = document.querySelector<HTMLElement>('[data-ac="empty"]');
+      if (!messages || !empty) return null;
+      const m = messages.getBoundingClientRect();
+      const e = empty.getBoundingClientRect();
+      return {
+        paneWidth: Math.round(m.width),
+        blockWidth: Math.round(e.width),
+        offset: Math.round(e.left + e.width / 2 - (m.left + m.width / 2)),
+        textAlign: getComputedStyle(empty.querySelector(".agentic-chat-empty-text") as Element).textAlign,
+      };
+    });
+    expect(layout).not.toBeNull();
+    // Precondition: the pane is wider than the block, or centering proves nothing.
+    expect(layout!.paneWidth).toBeGreaterThan(layout!.blockWidth + 100);
+    expect(Math.abs(layout!.offset)).toBeLessThanOrEqual(1);
+    expect(["start", "left"]).toContain(layout!.textAlign);
+  });
+
+  it("renders the answer and the user turn in the interface font and size, not the editor's", async function () {
+    await submitComposer("type check");
+    await waitForTranscript("A plain answer for the type check.");
+    await waitForIdle();
+    const type = await browser.execute(() => {
+      const view = document.querySelector<HTMLElement>('[data-ac="view"]');
+      const answer = document.querySelector<HTMLElement>('[data-ac="assistant-text"] p');
+      const user = document.querySelector<HTMLElement>(".agentic-chat-user");
+      if (!view || !answer || !user) return null;
+      const probe = view.createDiv();
+      probe.style.fontFamily = "var(--font-interface)";
+      probe.style.fontSize = "var(--font-ui-medium)";
+      const expected = getComputedStyle(probe);
+      const result = {
+        interfaceFamily: expected.fontFamily,
+        uiMedium: expected.fontSize,
+        answerFamily: getComputedStyle(answer).fontFamily,
+        answerSize: getComputedStyle(answer).fontSize,
+        userFamily: getComputedStyle(user).fontFamily,
+        userSize: getComputedStyle(user).fontSize,
+      };
+      probe.remove();
+      return result;
+    });
+    expect(type).not.toBeNull();
+    expect(type!.answerFamily).toBe(type!.interfaceFamily);
+    expect(type!.userFamily).toBe(type!.interfaceFamily);
+    expect(type!.answerSize).toBe(type!.uiMedium);
+    expect(type!.userSize).toBe(type!.uiMedium);
+    expect(type!.answerSize).not.toBe("26px");
   });
 });

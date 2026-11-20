@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_SETTINGS, mergeSettings } from "../src/settings-schema";
+import { DEFAULT_SETTINGS, MAX_RESPONSE_TOKENS, mergeSettings } from "../src/settings-schema";
 
 type Json = Record<string, unknown>;
 type Leaf = { path: string[]; value: unknown };
@@ -87,5 +87,10 @@ describe("mergeSettings heals every primitive leaf", () => {
     expect(merged.ollamaModel).toBe(DEFAULT_SETTINGS.ollamaModel);
     expect(merged.notifications).toEqual(DEFAULT_SETTINGS.notifications);
     expect(merged.compaction).toEqual(DEFAULT_SETTINGS.compaction);
+  });
+
+  it("keeps max response tokens inside the range the settings field shows", () => {
+    expect(mergeSettings({ maxTokens: MAX_RESPONSE_TOKENS } as never).maxTokens).toBe(MAX_RESPONSE_TOKENS);
+    expect(mergeSettings({ maxTokens: 999_999_999 } as never).maxTokens).toBe(DEFAULT_SETTINGS.maxTokens);
   });
 });

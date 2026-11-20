@@ -36,7 +36,10 @@ body,
   --ac-font-ui: var(--font-ui-small);
   --ac-font-small: var(--font-ui-smaller);
   --ac-font-tiny: var(--font-smallest);
-  --ac-font-body: var(--font-text-size);
+  /* Chat text (answers, user turns, the composer) uses the interface font and
+     size, so one turn has one type system; it follows Obsidian's zoom, not the
+     editor's reading size. The activity line and meta stay one step smaller. */
+  --ac-font-body: var(--font-ui-medium);
   --ac-line-body: var(--line-height-normal);
   --ac-weight-normal: var(--font-normal);
   --ac-weight-medium: var(--font-medium);
@@ -136,6 +139,14 @@ body,
   --ac-safe-bottom: var(--view-bottom-spacing, var(--safe-area-inset-bottom, 0px));
 }
 
+/* Desktop: Obsidian keeps 32 px (or the safe area) under every view so the
+   floating status bar in the bottom-right corner never covers content. The
+   view drops Obsidian's padding below, so the composer keeps that room
+   itself. Only a phone (no status bar) gets the tight 12 px gap. */
+body:not(.is-phone) .agentic-chat-view {
+  --ac-safe-bottom: max(var(--safe-area-inset-bottom, 0px), var(--size-4-8));
+}
+
 /* Obsidian hides the navbar while the user scrolls ("auto full screen"). The
    composer takes the freed space back; the class change alone does it. */
 .is-phone.is-hidden-nav .mod-root .agentic-chat-view {
@@ -150,7 +161,7 @@ body.is-mobile,
   --ac-send: 40px;
   --ac-chip-h: 32px;
   --ac-chip-remove: 28px;
-  --ac-font-body: max(16px, var(--font-text-size));
+  --ac-font-body: max(16px, var(--font-ui-medium));
 }
 
 /* ===== Agentic Chat — sidebar view ===== */
@@ -210,8 +221,9 @@ body.is-mobile,
   margin-top: var(--ac-space-3);
 }
 
+/* Centered in the pane (a wide sidebar too); the text stays left-aligned. */
 .agentic-chat-empty {
-  margin: auto 0;
+  margin: auto;
   display: flex;
   flex-direction: column;
   align-items: flex-start;
@@ -258,6 +270,7 @@ body.is-mobile,
   border-radius: var(--ac-radius-l) var(--ac-radius-l) var(--ac-radius-s) var(--ac-radius-l);
   background-color: var(--ac-surface-raised);
   color: var(--ac-text);
+  font-family: var(--ac-font-family);
   font-size: var(--ac-font-body);
   line-height: 1.5;
 }
@@ -339,6 +352,7 @@ body.is-mobile,
 }
 
 .agentic-chat-text {
+  font-family: var(--ac-font-family);
   font-size: var(--ac-font-body);
   line-height: var(--ac-line-body);
   min-width: 0;
@@ -605,6 +619,15 @@ body.is-mobile,
   border-left: var(--ac-line-accent) solid var(--ac-status-needs-you);
   color: var(--ac-text-muted);
   font-size: var(--ac-font-ui);
+}
+
+/* Why a number field changed its value (out of range, not a number). */
+.agentic-chat-settings-note {
+  color: var(--ac-status-needs-you);
+}
+
+.agentic-chat-settings-note:empty {
+  display: none;
 }
 
 .agentic-chat-settings-warning-icon {

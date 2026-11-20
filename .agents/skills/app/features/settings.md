@@ -55,6 +55,7 @@ await closeAgenticChatSettings();
 | Global network proxy | `src/settings-tab-models.ts#headingRow("Network proxy")` | no committed check | `NONE` |
 | Agent: Permission mode | `src/settings-tab-agent.ts#row("Permission mode"` | no committed check | `NONE` |
 | Agent: sampling, timeout, retries, prompt, compaction | `src/settings-tab-agent.ts#agentDefinitions` | no committed check | `NONE` |
+| Agent: Max response tokens and turn cap clamp in the field and say why | `src/settings-definition-kit.ts#boundedNumberRow` | `test/e2e/specs/settings-ui.e2e.ts#clamps max response tokens in the field and says why (U2, chaos #3)` | `covered` |
 | Agent: tool budget rows removed | `src/settings-tab-agent.ts#agentDefinitions` | `test/e2e/specs/settings-ui.e2e.ts#removes the tool budget rows and keeps the context window section` | `covered` |
 | Approval gates: Per-tool overrides | `src/settings-tab-agent.ts#approvalDefinitions` | `test/e2e/specs/settings-ui.e2e.ts#removes the working-directory section and still saves approval controls` | `covered` |
 | Approval: working directories section removed | `src/settings-tab-agent.ts#approvalDefinitions` | `test/e2e/specs/settings-ui.e2e.ts#removes the working-directory section and still saves approval controls` | `covered` |

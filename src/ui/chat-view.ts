@@ -471,7 +471,11 @@ export class ChatView extends ItemView {
       if (tab !== this.activeTab && this.tabs.includes(tab)) tab.unseenApprovals = [...(tab.unseenApprovals ?? []), card];
       // A settled card gives up focus; when nothing else holds it, hand it on.
       const active = this.containerEl.ownerDocument.activeElement;
-      const lost = !active || active === this.containerEl.ownerDocument.body || !active.isConnected;
+      // Only when this chat is still the active view: a click in another
+      // pane leaves focus on <body> too, and must not pull keys back here.
+      const lost =
+        (!active || active === this.containerEl.ownerDocument.body || !active.isConnected) &&
+        this.app.workspace.getActiveViewOfType(ChatView) === this;
       // Another card in this tab may still wait: keep the needs-you state until the last one settles.
       if (tab.pendingApprovals.length === 0 && tab === this.activeTab && !this.closed) {
         this.transcript.approvalSettled();
