@@ -49,12 +49,16 @@ export interface ChatComposerDeps {
   syncChrome: () => void;
 }
 
+/** How long the "can't read images" notice shows; repeats inside it are dropped. */
+const NO_IMAGES_NOTICE_MS = 5000;
+
 /**
  * Owns composer editing, history recall, autocomplete, attachments, drop
  * handling, and the queued prompt. The view owns the DOM nodes; this class
  * owns the state and rules that drive them.
  */
 export class ChatComposer {
+  private lastNoImagesNoticeAt = Number.NEGATIVE_INFINITY;
   private activeQuery: AcQuery | null = null;
   private mentionCache: MentionCandidate[] | null = null;
   private autocompleteTimer: number | null = null;
@@ -263,7 +267,7 @@ export class ChatComposer {
   addAttachment(entry: ContextAttachment): void {
     // Image attachments only make sense for a vision-capable model.
     if (typeof entry === "string" && isImagePath(entry) && !this.deps.service().supportsImages()) {
-      new Notice("This model can't read images. Switch to a vision model to attach images.");
+      this.noticeNoImages("This model can't read images. Switch to a vision model to attach images.");
       return;
     }
     this.pushAttachment(entry);
@@ -373,12 +377,20 @@ export class ChatComposer {
       this.pushAttachment(path);
     }
     if (skippedImages > 0) {
-      new Notice(
+      this.noticeNoImages(
         skippedImages === 1
           ? "This model can't read images. Switch to a vision model to attach images."
           : `${skippedImages} images skipped — this model can't read images. Switch to a vision model.`,
       );
     }
+  }
+
+  /** One "can't read images" notice at a time: repeated drops must not stack a toast each. */
+  private noticeNoImages(message: string): void {
+    const now = Date.now();
+    if (now - this.lastNoImagesNoticeAt < NO_IMAGES_NOTICE_MS) return;
+    this.lastNoImagesNoticeAt = now;
+    new Notice(message, NO_IMAGES_NOTICE_MS);
   }
 
   /**
