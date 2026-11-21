@@ -72,6 +72,7 @@ function valueMatches(value: unknown, rule: string | null): boolean {
   if (rule === null) return true;
   if (Array.isArray(value)) return value.some((entry) => valueMatches(entry, rule));
   if (value === null) return rule === "null";
+  if (typeof value !== "string" && typeof value !== "number" && typeof value !== "boolean") return false;
   return String(value).trim().toLowerCase() === rule;
 }
 
