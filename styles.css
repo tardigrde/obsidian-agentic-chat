@@ -2132,6 +2132,12 @@ body.is-mobile,
   white-space: pre;
 }
 
+/* A private focused note: shown, never sent (U4 #11). */
+.agentic-chat-chip.is-private {
+  color: var(--ac-text-muted);
+  border-style: dashed;
+}
+
 /* The session total, subagents included (U4 #8). */
 .agentic-chat-session-cost {
   flex: 0 0 auto;

@@ -44,6 +44,9 @@ await allowApproval(); // test/e2e/support/chat.ts
 | entry point | source | proof | status |
 |---|---|---|---|
 | Approval card opens inline before a write (no modal) | `src/ui/approval-card.ts#ApprovalCard` | `test/e2e/specs/activity-line.e2e.ts#renders an approval as an inline card below the activity line, never a modal` | `covered` |
+| A private path is blocked before the approval card (no card, no checkpoint, honest reason) | `src/agent/tool-call-controller.ts#privateTarget` | `test/ui/private-content.test.ts#a write to a private path is blocked before the approval card: no card, no checkpoint, an honest reason` | `partial` |
+| Private rules: path glob or name, #tag, property=value | `src/vault/private-rules.ts#createPrivateMatcher` | `test/private-rules.test.ts#hides by path glob, nested tag, property value, and property key` (unit only) | `partial` |
+| A private active note shows a lock chip and is never sent | `src/ui/context-chip-renderer.ts#renderPrivateNoteChip` | `test/ui/private-content.test.ts#a private active note shows a lock chip and nothing of it is sent` | `partial` |
 | Stop resolves a pending approval as stopped | `src/ui/approval-card.ts#stop` | `test/e2e/specs/approval-deterministic.e2e.ts#resolves the approval card as stopped when the user stops the turn` | `covered` |
 | Allow applies the change | `src/ui/approval-card.ts#render` | `test/e2e/specs/approval-deterministic.e2e.ts#asks before a scripted edit and undo restores the prior text` | `covered` |
 | Deny is two-step and blocks the change | `src/ui/approval-card.ts#armDeny` | `test/e2e/specs/approval-deterministic.e2e.ts#continues after a denied scripted write without creating the note` | `covered` |

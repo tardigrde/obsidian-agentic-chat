@@ -96,7 +96,7 @@ describe("declarative settings definitions", () => {
     );
     expect(names("web")).toEqual(expect.arrayContaining(["Enable web search & fetch"]));
     expect(names("plugins")).toEqual(expect.arrayContaining(["Import", "Plugins folder"]));
-    expect(names("ignored-files")).toEqual(expect.arrayContaining(["Ignore list"]));
+    expect(names("ignored-files")).toEqual(expect.arrayContaining(["Ignored paths"]));
   });
 
   it("does not override the deprecated imperative display()", () => {

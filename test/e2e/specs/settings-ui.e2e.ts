@@ -559,7 +559,7 @@ describe("agentic-chat settings UI", function () {
   it("persists plugin folder and ignored globs through the Advanced tab", async function () {
     await selectSettingsTab("Advanced");
     await setSettingText("Plugins folder", ".agentic-plugins-e2e");
-    await setSettingText("Ignore list", "Private/\n*.secret.md");
+    await setSettingText("Ignored paths", "Private/\n*.secret.md");
 
     const settings = await readAgenticChatSettings<SettingsSnapshot>();
     expect(settings.plugins.folder).toBe(".agentic-plugins-e2e");

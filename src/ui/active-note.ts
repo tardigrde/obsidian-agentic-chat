@@ -55,6 +55,19 @@ export function autoActiveNotePath(
   return file.path;
 }
 
+/**
+ * The focused note when it is private (U4 #11): it is never sent, but the
+ * composer shows a "private, not sent" chip so the user knows why.
+ */
+export function privateActiveNotePath(
+  file: ActiveNoteCandidate | null | undefined,
+  options: { suppressed: boolean; isIgnored: (path: string) => boolean },
+): string | null {
+  if (options.suppressed || !file) return null;
+  if (file.extension.toLowerCase() !== "md") return null;
+  return options.isIgnored(file.path) ? file.path : null;
+}
+
 export interface ActiveNoteContent {
   path: string;
   /** Full note text, or null when it can't be read. */

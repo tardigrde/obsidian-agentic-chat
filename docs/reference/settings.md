@@ -78,4 +78,4 @@ each subagent model call while it runs.
 
 ### Ignored files
 
-- **Ignore list**: one gitignore-style glob per line. Matching notes are invisible to the agent and report as not found.
+- **Ignored paths**: private rules, separated by commas or new lines: a path glob or name, a `#tag`, or a `key=value` property (`key=` for any value). The agent is told a matching note is private and cannot read, list, search, or change it. See [Privacy](../guide/privacy.md#private-notes).
