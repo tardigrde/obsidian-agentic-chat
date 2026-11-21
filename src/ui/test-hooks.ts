@@ -57,6 +57,7 @@ export const AC_HOOKS = [
   "mode-toggle",
   "context",
   "context-breakdown",
+  "session-cost",
 ] as const;
 
 export type AcHook = (typeof AC_HOOKS)[number];

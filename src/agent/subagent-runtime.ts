@@ -23,7 +23,7 @@ export interface SubagentRuntimeOptions {
   getSettings: () => AgenticChatSettings;
   getResources: () => AgentRuntimeResources;
   buildStreamFn: () => StreamFn;
-  recordUsage: (usage: Usage) => void;
+  recordUsage: (usage: Usage, dispatchId: string) => void;
   webFetch: WebFetcher;
   artifactStore?: ToolArtifactStoreLike;
   toolCalls: Pick<AgentToolCallController, "beforeToolCall" | "afterToolCall">;
@@ -39,7 +39,7 @@ export class AgentSubagentRuntime {
   private readonly getSettings: () => AgenticChatSettings;
   private readonly getResources: () => AgentRuntimeResources;
   private readonly buildStreamFn: () => StreamFn;
-  private readonly recordUsage: (usage: Usage) => void;
+  private readonly recordUsage: (usage: Usage, dispatchId: string) => void;
   private readonly webFetch: WebFetcher;
   private readonly artifactStore: ToolArtifactStoreLike | undefined;
   private readonly toolCalls: Pick<AgentToolCallController, "beforeToolCall" | "afterToolCall">;

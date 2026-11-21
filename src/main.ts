@@ -67,17 +67,12 @@ export default class AgenticChatPlugin extends Plugin {
     }
     initPricingCache(this.app, this);
 
-    // Materialize the plugin's own skills and the user's empty skill collection
-    // as editable Agent Plugins packages on first load (only when absent; never
-    // overwrites edits). Sequential: both share the parent plugins folder, and
-    // parallel ensures could race on its creation. Fire-and-forget: failures
-    // must not block plugin startup.
+    // Materialize the user's empty skill collection on first load (only when
+    // absent; never overwrites edits). Built-in skills are served from the
+    // plugin code and never copied to the vault (U4 #12): an upgrade always
+    // ships their current text, and a vault skill of the same name overrides.
+    // Fire-and-forget: failures must not block plugin startup.
     void (async () => {
-      try {
-        await this.pluginService.ensureBuiltinsMaterialized();
-      } catch (error: unknown) {
-        console.warn("Agentic chat: could not materialize built-in agent plugins", error);
-      }
       try {
         await this.pluginService.ensureMySkillsMaterialized();
       } catch (error: unknown) {

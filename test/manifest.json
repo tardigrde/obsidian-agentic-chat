@@ -15,7 +15,7 @@
       "runner": "vitest",
       "globs": [
         "test/{agent-*,parent-agent*,subagent*,turn-*,compaction*,conversation-*,context-builder,context-load*,retry-*,runtime-*,service-*,utils-*}.test.ts",
-        "test/{ask-before-delete,prompt-turn-runtime,stream-runtime,loop-guard,message-content,system-prompt,instructions,error-classifier,cost,models,models-timeout,model-catalog,openai-compatible-request,replay-stream,approval,approval-matrix,approval-memory,observability,sha256,format,privacy-redaction,redaction-names,slash-dispatch,command-dispatcher,commands}.test.ts"
+        "test/{ask-before-delete,prompt-turn-runtime,stream-runtime,loop-guard,message-content,system-prompt,instructions,error-classifier,cost,models,models-timeout,model-catalog,pricing-cache-upgrade,openai-compatible-request,replay-stream,approval,approval-matrix,approval-memory,observability,sha256,format,privacy-redaction,redaction-names,slash-dispatch,command-dispatcher,commands}.test.ts"
       ],
       "triggers": [
         "src/agent/**",

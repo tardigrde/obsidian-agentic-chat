@@ -31,10 +31,41 @@ const CACHE_TTL_MS = 3 * 24 * 60 * 60 * 1000; // 3 days
 const DEFAULT_TIMEOUT_MS = 30_000;
 const OPENROUTER_MODELS_URL = "https://openrouter.ai/api/v1/models";
 
+/** Retry a failed catalog fetch after these delays, then wait for the next on-demand refetch (U4 #6). */
+export const CATALOG_RETRY_DELAYS_MS = [30_000, 2 * 60_000, 10 * 60_000] as const;
+/** An on-demand refetch (a model missing, or no image flag) runs at most this often. */
+const ON_DEMAND_REFETCH_MS = 5 * 60_000;
+
 let vaultAdapter: DataAdapter | null = null;
 let cacheFilePath: string | null = null;
 let inFlightPromise: Promise<PricingCache> | null = null;
 let memoryCache: PricingCache | null = null;
+let lastFetchError: string | null = null;
+let lastFetchAttemptAt = 0;
+let failedAttempts = 0;
+let retryTimer: ReturnType<typeof setTimeout> | null = null;
+
+/** What `/doctor` reports about the model catalog. */
+export interface ModelCatalogStatus {
+  /** When the catalog in memory was fetched; 0 when there is none. */
+  fetchedAt: number;
+  /** Catalog file from an older plugin release (no current `version`). */
+  outdated: boolean;
+  models: number;
+  /** The last fetch error, until a fetch succeeds. */
+  lastError: string | null;
+  failedAttempts: number;
+}
+
+export function modelCatalogStatus(): ModelCatalogStatus {
+  return {
+    fetchedAt: memoryCache?.fetchedAt ?? 0,
+    outdated: !!memoryCache && memoryCache.version !== CACHE_VERSION,
+    models: memoryCache ? Object.keys(memoryCache.models).length : 0,
+    lastError: lastFetchError,
+    failedAttempts,
+  };
+}
 
 export function initPricingCache(app: App, plugin: Plugin): void {
   vaultAdapter = app.vault.adapter;
@@ -53,7 +84,28 @@ export function resolveModelInfoSync(
   if (provider === "ollama") return undefined;
   const cache = memoryCache;
   if (!cache) return undefined;
-  return findInCache(cache, provider, modelId);
+  const info = findInCache(cache, provider, modelId);
+  // A model the catalog does not know, or knows without an image flag (a file
+  // from an older release), refetches the catalog in the background.
+  if (provider === "openrouter" && (!info || info.im === undefined)) requestCatalogRefresh();
+  return info;
+}
+
+/**
+ * Refetch the catalog now unless one is running or one ran in the last few
+ * minutes. Used when a lookup misses; the result lands in memory and on disk.
+ */
+export function requestCatalogRefresh(): void {
+  if (inFlightPromise || !vaultAdapter) return;
+  if (Date.now() - lastFetchAttemptAt < ON_DEMAND_REFETCH_MS) return;
+  void startFetch();
+}
+
+function startFetch(): Promise<PricingCache> {
+  inFlightPromise ??= fetchAndStoreCache().finally(() => {
+    inFlightPromise = null;
+  });
+  return inFlightPromise;
 }
 
 /** Resolve pricing for a model synchronously from the in-memory cache. */
@@ -99,6 +151,25 @@ export function seedPricingCacheForTests(models: Record<string, CompactModelInfo
 /** Test-only: clear the in-memory catalog cache back to the unknown state. */
 export function clearPricingCacheForTests(): void {
   memoryCache = null;
+  lastFetchError = null;
+  lastFetchAttemptAt = 0;
+  failedAttempts = 0;
+  if (retryTimer) clearTimeout(retryTimer);
+  retryTimer = null;
+  inFlightPromise = null;
+}
+
+/** Test-only: load the catalog from a file as a fresh plugin start would. */
+export async function loadPricingCacheFromFileForTests(adapter: DataAdapter, path: string): Promise<void> {
+  clearPricingCacheForTests();
+  vaultAdapter = adapter;
+  cacheFilePath = path;
+  await getCache();
+}
+
+/** Test-only: settle a running fetch. */
+export async function waitForCatalogFetchForTests(): Promise<void> {
+  await inFlightPromise;
 }
 
 function findInCache(cache: PricingCache, provider: string, modelId: string): CompactModelInfo | undefined {
@@ -125,12 +196,8 @@ async function getCache(): Promise<PricingCache> {
     return memoryCache;
   }
 
-  // Stale or missing — refresh in background
-  if (!inFlightPromise) {
-    inFlightPromise = fetchAndStoreCache().finally(() => {
-      inFlightPromise = null;
-    });
-  }
+  // Stale, missing, or from an older release: refresh in the background.
+  if (!retryTimer) void startFetch();
 
   // Return stale data while refreshing, or empty if none exists
   return memoryCache ?? { fetchedAt: 0, models: {} };
@@ -157,6 +224,7 @@ async function loadCacheIntoMemory(): Promise<void> {
 }
 
 async function fetchAndStoreCache(): Promise<PricingCache> {
+  lastFetchAttemptAt = Date.now();
   try {
     const response = await withTimeout(
       requestUrl({ url: OPENROUTER_MODELS_URL, throw: false }),
@@ -169,13 +237,28 @@ async function fetchAndStoreCache(): Promise<PricingCache> {
     const cache: PricingCache = { version: CACHE_VERSION, fetchedAt: Date.now(), models };
     await writeCache(cache);
     memoryCache = cache;
+    lastFetchError = null;
+    failedAttempts = 0;
     return cache;
   } catch (error) {
     console.warn("Agentic Chat: failed to refresh OpenRouter pricing cache.", error);
+    lastFetchError = error instanceof Error ? error.message : String(error);
+    scheduleRetry();
     // On failure, keep stale memory cache if available
     if (memoryCache) return memoryCache;
     return { fetchedAt: 0, models: {} };
   }
+}
+
+/** A failed fetch retries with backoff (30 s, 2 min, 10 min), then waits for an on-demand refetch. */
+function scheduleRetry(): void {
+  const delay = CATALOG_RETRY_DELAYS_MS[failedAttempts];
+  failedAttempts += 1;
+  if (delay === undefined || retryTimer) return;
+  retryTimer = setTimeout(() => {
+    retryTimer = null;
+    void startFetch();
+  }, delay);
 }
 
 function compactifyModels(models: ParsedModel[]): Record<string, CompactModelInfo> {

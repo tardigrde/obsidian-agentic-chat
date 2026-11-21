@@ -7,7 +7,7 @@ import {
   type SettingDefinitionItem,
   type SettingDefinitionRender,
 } from "obsidian";
-import { DEFAULT_PLUGINS_FOLDER, type LoadedPlugin } from "./plugins/loader";
+import type { LoadedPlugin } from "./plugins/loader";
 import { block, headingRow, renderItemsInto, row } from "./settings-definition-kit";
 import type { AgenticChatSettings } from "./settings-schema";
 import { FolderSuggestModal } from "./ui/folder-suggest";
@@ -43,18 +43,6 @@ export function pluginDefinitions(settings: AgenticChatSettings, host: SettingsT
               void host.save().then(() => host.redraw());
             }).open();
           }),
-        )
-        .addButton((button) =>
-          button
-            .setButtonText("Repair built-ins")
-            .setDisabled(!builtinsPackageExists(settings, host))
-            .onClick(async () => {
-              await host.plugin.pluginService.repairBuiltins();
-              new Notice("Built-in skill package recreated.");
-              host.invalidatePluginLoad();
-              await host.save();
-              host.redraw();
-            }),
         );
     }),
     row("Plugins folder", (setting) => {
@@ -252,12 +240,6 @@ export function openInstallModal(host: SettingsTabHost): void {
     host.invalidatePluginLoad();
     void host.save().then(() => host.redraw());
   }).open();
-}
-
-export function builtinsPackageExists(settings: AgenticChatSettings, host: SettingsTabHost): boolean {
-  const folder = settings.plugins.folder.trim() || DEFAULT_PLUGINS_FOLDER;
-  const entry = host.app.vault.getAbstractFileByPath(`${folder}/builtins`);
-  return entry instanceof TFolder;
 }
 
 export function openInVault(host: SettingsTabHost, path: string): void {

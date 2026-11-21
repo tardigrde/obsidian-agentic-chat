@@ -62,6 +62,7 @@ export interface ChatLayoutElements {
   contextEl: HTMLElement;
   contextRingEl: SVGCircleElement;
   contextPercentEl: HTMLElement;
+  sessionCostEl: HTMLElement;
   workingEl: HTMLElement;
 }
 
@@ -262,6 +263,12 @@ export function buildLayout(deps: ChatLayoutDeps): ChatLayoutElements {
 
   toolbar.createSpan({ cls: "agentic-chat-toolbar-spacer" });
 
+  // Session total, subagents included: always visible (U4 #8).
+  const sessionCostEl = acHook(
+    toolbar.createSpan({ cls: "agentic-chat-session-cost", text: "$0.00", attr: { "aria-label": "Session cost" } }),
+    "session-cost",
+  );
+
   // Context ring: % of the model's window the next request uses. Shown once
   // usage is known. The breakdown is the hover tooltip on desktop, and a tap
   // (or Enter) opens it as a panel above the card, for touch.
@@ -345,6 +352,7 @@ export function buildLayout(deps: ChatLayoutDeps): ChatLayoutElements {
     modelPillEl,
     effortKnobEl,
     contextEl,
+    sessionCostEl,
     contextRingEl,
     contextPercentEl,
     workingEl,

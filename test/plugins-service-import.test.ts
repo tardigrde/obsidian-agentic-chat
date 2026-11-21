@@ -367,35 +367,14 @@ describe("PluginService.installFromSource", () => {
   });
 });
 
-describe("PluginService builtins materialization", () => {
-  it("writes the builtins package once and never overwrites edits", async () => {
+describe("built-in skills are served from code (U4 #12)", () => {
+  it("the plugin never writes a builtins package to the vault", async () => {
     const { app, vault } = await seed();
     const service = serviceFor(app, settings());
-    expect(await service.ensureBuiltinsMaterialized()).toBe(true);
-    const path = ".agentic-plugins/builtins/skills/self-knowledge/SKILL.md";
-    const first = vault.contentOf(path);
-    expect(first).toContain("Self-knowledge");
-
-    await app.vault.modify(app.vault.getAbstractFileByPath(path) as never, "---\nname: self-knowledge\n---\nEDITED");
-    expect(await service.ensureBuiltinsMaterialized()).toBe(false);
-    expect(vault.contentOf(path)).toContain("EDITED");
-  });
-
-  it("repair recreates the package from scratch", async () => {
-    const { app, vault } = await seed();
-    const service = serviceFor(app, settings());
-    await service.ensureBuiltinsMaterialized();
-    await service.repairBuiltins();
-    const path = ".agentic-plugins/builtins/skills/install-plugin/SKILL.md";
-    expect(vault.contentOf(path)).toContain("Install plugin");
-  });
-
-  it("materialized builtins load as a normal plugin", async () => {
-    const { app } = await seed();
-    const service = serviceFor(app, settings());
-    await service.ensureBuiltinsMaterialized();
-    const plugins = await service.reload();
-    expect(plugins.map((p) => p.name)).toContain("builtins");
+    await service.ensureMySkillsMaterialized();
+    await service.reload();
+    expect(vault.getAllLoadedFiles().map((entry) => entry.path).filter((path) => path.includes("builtins"))).toEqual([]);
+    expect("ensureBuiltinsMaterialized" in service).toBe(false);
   });
 });
 

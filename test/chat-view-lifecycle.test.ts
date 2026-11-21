@@ -151,6 +151,7 @@ describe("ChatView async lifecycle", () => {
     const service: FakeService = {
       // Sampled right before the context build: another session takes over
       // while the context is being built.
+      queuedUserTexts: vi.fn(() => []),
       getMessages: vi.fn(() => {
         sessionToken = "session-b";
         return [];
@@ -205,6 +206,7 @@ describe("ChatView async lifecycle", () => {
       showServiceError: vi.fn(),
     }) as ChatViewHarness;
     const service: FakeService = {
+      queuedUserTexts: vi.fn(() => []),
       getMessages: vi.fn(() => []),
       isPathIgnored: vi.fn(() => false),
       supportsImages: vi.fn(() => false),
@@ -243,6 +245,7 @@ describe("ChatView async lifecycle", () => {
     const service: FakeService = {
       // Sampled right before the context build: another session takes over
       // while the context is being built.
+      queuedUserTexts: vi.fn(() => []),
       getMessages: vi.fn(() => {
         sessionToken = "session-b";
         return [];
@@ -275,6 +278,7 @@ describe("ChatView async lifecycle", () => {
     }) as ChatViewHarness;
 
     const service: FakeService = {
+      queuedUserTexts: vi.fn(() => []),
       getMessages: vi.fn(() => []),
       isPathIgnored: vi.fn(() => false),
       supportsImages: vi.fn(() => false),
@@ -295,6 +299,7 @@ describe("ChatView async lifecycle", () => {
 
 interface FakeService {
   getMessages: () => unknown[];
+  queuedUserTexts: () => string[];
   isPathIgnored: (path: string) => boolean;
   supportsImages: () => boolean;
   getSessionSwapState?: () => string;
