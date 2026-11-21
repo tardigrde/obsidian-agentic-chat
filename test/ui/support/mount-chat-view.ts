@@ -143,6 +143,8 @@ export async function mountChatView(options: MountOptions = {}): Promise<Mounted
     settings,
     settingsStore,
     manifest: { id: "agentic-chat", version: "test" },
+    // The vault has no agent plugins in these tests (`/doctor` reloads them).
+    pluginService: { reload: async () => [] },
     isAnyViewStreaming: () => views.some((view) => view.isStreaming()),
     createAgentService: (handlers: {
       askUser?: AskUserHandler;

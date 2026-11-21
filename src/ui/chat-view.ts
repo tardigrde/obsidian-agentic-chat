@@ -45,6 +45,7 @@ import {
 import { SessionActivationCoordinator, type SessionUiResetOptions } from "./session-activation-coordinator";
 import {
   renderActionPanel,
+  renderDoctorPanel,
   renderErrorPanel,
   renderInfoPanel,
 } from "./info-panel-renderer";
@@ -896,6 +897,10 @@ export class ChatView extends ItemView {
       get activeNotePath() { return view.activeNotePath; },
       clearEmptyState: () => view.clearEmptyState(),
       renderInfoMessage: (title, entries) => view.renderInfoMessage(title, entries),
+      renderDoctorReport: (report) => {
+        renderDoctorPanel(view.messagesEl, report);
+        view.scrollToBottom({ force: true });
+      },
       renderActionList: (title, subtitle, items) => view.renderActionList(title, subtitle, items),
       renderErrorMessage: (message) => view.renderErrorMessage(message),
       showServiceError: () => view.showServiceError(),

@@ -17,7 +17,7 @@ Slash commands run locally and are not sent to the model.
 | `/status` | Show provider, model, mode, session, MCP servers, and tools. |
 | `/usage` | Show token and cost totals. |
 | `/export` | Save this conversation as a Markdown note in the vault. |
-| `/doctor` | Audit runtime health, agent plugins, and MCP configs. |
+| `/doctor` | Health check: problems first (each with a fix), then model, mode, context, and cost (subagents included), then folded sections for the session, plugins, MCP, tools, and debug events. It also saves a small summary (codes and counts, no names or URLs) to the session for bug reports. |
 | `/help` | List available commands. |
 
 ## Composer paths

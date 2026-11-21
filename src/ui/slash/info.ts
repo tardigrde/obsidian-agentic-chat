@@ -1,19 +1,20 @@
-import { formatPluginAudit, type LoadedPlugin } from "../../plugins/loader";
+import type { LoadedPlugin } from "../../plugins/loader";
+import { buildDoctorReport, doctorDiagnosticsSummary, type DoctorInput } from "../../agent/doctor-report";
+import { modelCatalogStatus } from "../../llm/pricing-cache";
+import { sumSubagentResultUsage } from "../../agent/session-usage";
+import { BUILTIN_SKILL_NAMES } from "../../skills/builtin-skills";
 import { activeModelId } from "../../settings-schema";
 import { MODES } from "../../agent/modes";
-import {
-  formatMcpDiagnosticRows,
-  formatMcpDiagnosticSummary,
-  formatRuntimeDiagnosticsRows,
-} from "../../agent/diagnostics";
+import { formatMcpDiagnosticRows, formatMcpDiagnosticSummary } from "../../agent/diagnostics";
 import { errorMessage } from "../../utils/errors";
 import { formatDetailedUsage } from "../format";
 import { visibleCommands } from "../commands";
 import type { SlashContext } from "./context";
 
 /**
- * `/doctor`: one health panel for everything that matters — an aggregate
- * status line, the agent-plugin audit, then the full runtime diagnostics.
+ * `/doctor` (U4 #17): problems first, each with a fix; then the essentials;
+ * then closed sections. It also appends a redacted `diagnostics` entry
+ * (codes and counts) to the session, so the chaos miner sees what it saw.
  */
 export async function runDoctor(ctx: SlashContext): Promise<void> {
   ctx.clearEmptyState();
@@ -29,26 +30,23 @@ export async function runDoctor(ctx: SlashContext): Promise<void> {
     ctx.renderErrorMessage(`Doctor audit failed: ${errorMessage(error)}`);
     return;
   }
-  const folder = ctx.plugin.settings.plugins.folder || ".agentic-plugins";
-  const pluginAudit =
-    plugins.length === 0
-      ? `No plugin packages found in ${folder}. Generate one from the MCP settings tab.`
-      : formatPluginAudit(plugins);
-  const diagnostics = ctx.service.getRuntimeDiagnostics();
-  const issues: string[] = [];
-  const failedPlugins = plugins.filter((plugin) => plugin.auditStatus === "failed").length;
-  if (failedPlugins > 0) issues.push(`${failedPlugins} of ${plugins.length} agent plugin(s) need attention`);
-  const failedMcp = diagnostics.resources.mcpServers.filter((server) => server.status === "error").length;
-  if (failedMcp > 0) issues.push(`${failedMcp} MCP server(s) failing`);
-  if (diagnostics.state.lastError) issues.push("last run ended in an error");
-  if (diagnostics.observability.enabled && diagnostics.observability.exportHealth.failedExports > 0) {
-    issues.push("observability exports failing");
+  const input: DoctorInput = {
+    diagnostics: ctx.service.getRuntimeDiagnostics(),
+    plugins,
+    pluginsFolder: ctx.plugin.settings.plugins.folder || ".agentic-plugins",
+    catalog: modelCatalogStatus(),
+    sessionCostUsd: ctx.service.getSessionUsage().cost?.total ?? 0,
+    subagentCostUsd: sumSubagentResultUsage(ctx.service.getMessages()).usage.cost.total,
+    hasApiKey: ctx.service.hasProviderKey(),
+    builtinSkillNames: BUILTIN_SKILL_NAMES,
+  };
+  const report = buildDoctorReport(input);
+  ctx.renderDoctorReport(report);
+  try {
+    await ctx.service.recordDiagnostics({ ...doctorDiagnosticsSummary(report, input) });
+  } catch (error) {
+    console.warn("Agentic Chat: could not save the /doctor summary to the session.", error);
   }
-  ctx.renderInfoMessage("Doctor", [
-    ["Status", issues.length === 0 ? "All OK." : `${issues.join("; ")}.`],
-    ["Agent plugins", pluginAudit],
-    ...formatRuntimeDiagnosticsRows(diagnostics),
-  ]);
 }
 
 export function showStatus(ctx: SlashContext): void {

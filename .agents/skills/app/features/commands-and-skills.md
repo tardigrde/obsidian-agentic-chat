@@ -65,7 +65,7 @@ await $(".agentic-chat-info").waitForExist();
 | `/export` | `src/ui/commands.ts#name: "export"` | `test/session-export.test.ts#session export` (renderer only) | `partial` |
 | `import_pdf` tool removed | `src/tools/document-tools.ts#createDocumentTools` | `test/feature-cut-2026-11.test.ts#does not give the model the import_pdf alias` (unit only) | `partial` |
 | `/semantic-index` removed | `src/ui/commands.ts#SLASH_COMMANDS` | `test/feature-cut-2026-11.test.ts#does not register /semantic-index and shows a retired hint` (unit only) | `partial` |
-| `/doctor` | `src/ui/commands.ts#name: "doctor"` | `test/runtime-diagnostics.test.ts#runtime diagnostics` (diagnostics only) | `partial` |
+| `/doctor` | `src/ui/commands.ts#name: "doctor"`; `src/agent/doctor-report.ts#buildDoctorReport` | `test/ui/doctor.test.ts#shows the status first, closed sections with counts, and saves a diagnostics entry for the miner`; `test/doctor-report.test.ts#lists problems first, each with a fix: a failed plugin, a failing MCP server, a stale catalog` | `partial` |
 | `/add-dir` and `/dirs` removed | `src/ui/commands.ts#SLASH_COMMANDS` | `test/commands.test.ts` (unit) plus `/help` absence in `test/e2e/specs/smoke.e2e.ts#routes /help, /init, and /compact locally without a model call` | `covered` |
 | `/agent` | `src/ui/commands.ts#name: "agent"` | `test/command-dispatcher.test.ts#resolves a named subagent with the trimmed task` (unit only) | `partial` |
 | `/skill`, `/skill <name>` | `src/ui/commands.ts#name: "skill"` | `test/e2e/specs/smoke.e2e.ts#renders a scripted turn, answers /plan locally, runs /skill, and Stop clears a running turn` | `covered` |
