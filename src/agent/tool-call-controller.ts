@@ -29,6 +29,8 @@ export interface ToolApprovalRequest {
   args: unknown;
   /** Optional tab/session label for background approvals (shown in modal title). */
   sessionLabel?: string;
+  /** The gated call: the view records the decision on that call's step row. */
+  toolCallId?: string;
 }
 
 export type ToolGateDecision = { block: true; reason: string; terminate?: boolean } | undefined;
@@ -359,7 +361,7 @@ export class AgentToolCallController {
       label: request.label,
       args: request.args,
     });
-    const choice = await this.confirmToolCall(request, signal);
+    const choice = await this.confirmToolCall({ ...request, toolCallId }, signal);
     const stopped = !choice.approved && choice.stopped === true;
     if (stopped) {
       // Latch and abort before the audit: a slow or failing audit must not let a

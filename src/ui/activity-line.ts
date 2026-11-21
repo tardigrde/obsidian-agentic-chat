@@ -1,11 +1,21 @@
 import { setIcon } from "obsidian";
 import { SUBAGENT_TOOL_NAME } from "../tools/subagent-tool";
 import { isAskUserDetails, middleEllipsis, SOURCE_TOOLS, activeNotePathFromText } from "./assistant-markdown";
-import { callPath, formatElapsed, HIDE_RESULT_TOOLS, safeJson, truncateText } from "./format";
+import { callPath, formatElapsed, formatShortElapsed, HIDE_RESULT_TOOLS, safeJson, truncateText } from "./format";
 import { failedCount, runningLabel, stepRowParts, summarizeSteps, type StepStatus } from "./activity-summary";
 import { renderAskUserStep, renderCallSection } from "./step-card";
-import { renderSubagentChildren, subagentChildren, subagentResultForcesError } from "./subagent-tree";
+import { SubagentBlock, subagentChildren, subagentResultForcesError } from "./subagent-tree";
 import { acHook } from "./test-hooks";
+
+/** How the user settled an approval, as recorded on the step row. */
+export type ApprovalRecord = "allowed" | "always" | "denied" | "stopped";
+
+const APPROVAL_RECORD_TEXT: Record<ApprovalRecord, string> = {
+  allowed: "Allowed by you",
+  always: "Allowed by you (always)",
+  denied: "Denied by you",
+  stopped: "Stopped by you",
+};
 
 /** The line's own state, from the status vocabulary. */
 export type ActivityState = "running" | "needs-you" | "done" | "error";
@@ -36,28 +46,31 @@ interface StepEntry {
 
 /**
  * The reasoning of one assistant message: its own row in the activity body,
- * in event order between the tool rows of its model call (U3 #3), folded to
- * one line: `Thought for 3s: …`.
+ * in event order between the tool rows of its model call (U3 #3). Folded, as
+ * in OpenCode desktop (U4 #3): bold `Thought` and its time, no body text; a
+ * chevron shows on hover and focus; a click opens the full trace.
  */
 export class ReasoningEntry {
+  private readonly head: HTMLElement;
   private readonly label: HTMLElement;
+  private readonly timeEl: HTMLElement;
   private readonly body: HTMLElement;
   private readonly startedAt = performance.now();
 
   constructor(readonly el: HTMLElement) {
-    this.label = el.createSpan({ cls: "agentic-chat-thought-label", text: "Thinking…" });
-    this.body = el.createSpan({ cls: "agentic-chat-thought-text" });
+    this.head = el.createDiv({
+      cls: "agentic-chat-thought-head",
+      attr: { role: "button", tabindex: "0", "aria-expanded": "false" },
+    });
+    this.label = this.head.createSpan({ cls: "agentic-chat-thought-label", text: "Thinking" });
+    this.timeEl = this.head.createSpan({ cls: "agentic-chat-thought-time" });
+    const chevron = this.head.createSpan({ cls: "agentic-chat-thought-chevron", attr: { "aria-hidden": "true" } });
+    setIcon(chevron, "chevron-right");
+    this.body = el.createDiv({ cls: "agentic-chat-thought-text" });
     // A folded trace opens by click, Enter, or Space (keyboard users too).
-    el.setAttr("role", "button");
-    el.setAttr("tabindex", "0");
-    el.setAttr("aria-expanded", "false");
-    const toggle = () => {
-      const expanded = !el.hasClass("is-expanded");
-      el.toggleClass("is-expanded", expanded);
-      el.setAttr("aria-expanded", String(expanded));
-    };
-    el.addEventListener("click", toggle);
-    el.addEventListener("keydown", (event) => {
+    const toggle = () => this.setExpanded(!el.hasClass("is-expanded"));
+    this.head.addEventListener("click", toggle);
+    this.head.addEventListener("keydown", (event) => {
       if (event.key !== "Enter" && event.key !== " ") return;
       event.preventDefault();
       toggle();
@@ -69,15 +82,25 @@ export class ReasoningEntry {
     return this.body.textContent ?? "";
   }
 
+  get expanded(): boolean {
+    return this.el.hasClass("is-expanded");
+  }
+
+  setExpanded(expanded: boolean): void {
+    this.el.toggleClass("is-expanded", expanded);
+    this.head.setAttr("aria-expanded", String(expanded));
+  }
+
   append(text: string): void {
     this.body.appendText(text);
     this.sync();
   }
 
-  /** `Thought for 3s:`; a near-instant trace (history replay) shows `Thought:`. */
+  /** `Thought 3s`; a near-instant trace (history replay) shows `Thought` alone. */
   settle(): void {
     const elapsed = performance.now() - this.startedAt;
-    this.label.setText(elapsed < 1000 ? "Thought:" : `Thought for ${formatElapsed(elapsed)}:`);
+    this.label.setText("Thought");
+    this.timeEl.setText(elapsed < 1000 ? "" : formatShortElapsed(elapsed));
     this.el.addClass("is-done");
   }
 
@@ -91,9 +114,12 @@ export class ReasoningEntry {
 }
 
 /**
- * One line per turn: `[status] Read 4 notes, edited 1 · 1 failed  12s ›`.
+ * One line per timeline segment: `[status] Read 4 notes, edited 1 · 1 failed  12s ›`.
+ * A segment is one run of thoughts and tool calls between two texts (U4 #1),
+ * so the transcript reads `[steps] text [steps] text` in event order.
  * Collapsed by default; the body holds the reasoning and one compact row per
- * tool call. Approvals render right below it (approvalSlot).
+ * tool call. A waiting approval renders right below it (approvalSlot); once
+ * settled, it is a line on its step row.
  */
 export class ActivityLine {
   readonly el: HTMLElement;
@@ -119,6 +145,7 @@ export class ActivityLine {
   private readonly startedAt = performance.now();
   private timer: number | null = null;
   private iconState: string | null = null;
+  private subagents: SubagentBlock | null = null;
 
   constructor(
     parent: HTMLElement,
@@ -172,7 +199,7 @@ export class ActivityLine {
   }
 
   addReasoning(): ReasoningEntry {
-    const entry = new ReasoningEntry(this.stepsEl.createDiv({ cls: "agentic-chat-thought" }));
+    const entry = new ReasoningEntry(acHook(this.stepsEl.createDiv({ cls: "agentic-chat-thought" }), "thought"));
     this.reasoning.push(entry);
     this.refresh();
     return entry;
@@ -247,9 +274,8 @@ export class ActivityLine {
     const details = (partial as { details?: unknown } | undefined)?.details;
     const children = subagentChildren(details);
     if (children.length > 0) {
-      renderSubagentChildren(step.detail, children, this.options.onStopSubagentChild);
-      // A subagent row starts collapsed like any tool row (U3 #10); its Stop
-      // sits on the row head. A tick keeps whatever the user opened or closed.
+      // The children live in the segment's own subagent section (U4 #5).
+      this.subagentBlock().update(id, children);
     } else if (isAskUserDetails(details)) {
       // The question card waits at the end of the transcript; the step stays a
       // collapsed row, so the turn's top line never shows it above earlier text (U3 #15).
@@ -265,7 +291,7 @@ export class ActivityLine {
     const failed = isError || (step.name === SUBAGENT_TOOL_NAME && subagentResultForcesError(resultObject));
     if (step.name === SUBAGENT_TOOL_NAME) {
       const children = subagentChildren((resultObject as { details?: unknown } | undefined)?.details);
-      if (children.length > 0) renderSubagentChildren(step.detail, children, this.options.onStopSubagentChild);
+      if (children.length > 0) this.subagentBlock().update(id, children);
     }
     step.status = failed ? "error" : "done";
     step.row.removeClass("is-running");
@@ -321,12 +347,51 @@ export class ActivityLine {
       }
     }
     this.stateValue = options.error ? "error" : "done";
+    this.subagents?.finish();
     this.refresh();
+  }
+
+  /** Whether this segment's activity holds a running step (it cannot settle yet). */
+  get hasRunningStep(): boolean {
+    return this.order.some((step) => step.status === "running");
+  }
+
+  hasStep(id: string): boolean {
+    return this.steps.has(id);
+  }
+
+  /**
+   * The user decided on this call's approval card: the card leaves the
+   * transcript and the step row keeps one line, `Allowed by you` (U4 #4).
+   */
+  recordApproval(id: string, outcome: ApprovalRecord): void {
+    const step = this.steps.get(id);
+    if (!step) return;
+    step.row.setAttribute("data-ac-approval", outcome);
+    let line = step.detail.querySelector<HTMLElement>(".agentic-chat-step-approval");
+    if (!line) {
+      line = acHook(createDiv({ cls: "agentic-chat-step-approval" }), "step-approval");
+      step.detail.prepend(line);
+    }
+    line.setText(APPROVAL_RECORD_TEXT[outcome]);
+    line.toggleClass("is-denied", outcome === "denied" || outcome === "stopped");
+    this.syncExpandable(step);
+    this.options.onChange?.();
   }
 
   dispose(): void {
     if (this.timer !== null) window.clearInterval(this.timer);
     this.timer = null;
+    this.subagents?.dispose();
+  }
+
+  private subagentBlock(): SubagentBlock {
+    this.subagents ??= new SubagentBlock(this.el, {
+      live: this.options.live,
+      onStopSubagentChild: this.options.onStopSubagentChild,
+      onChange: () => this.options.onChange?.(),
+    });
+    return this.subagents;
   }
 
   private toggleStep(step: StepEntry): void {
@@ -338,16 +403,6 @@ export class ActivityLine {
   private setStepOpen(step: StepEntry, open: boolean): void {
     step.row.toggleClass("is-open", open);
     step.head.setAttr("aria-expanded", String(open));
-    this.syncSubagentOpen(step);
-  }
-
-  /** A subagent row is one dispatch: opening the row opens its child's log too. */
-  private syncSubagentOpen(step: StepEntry): void {
-    if (step.name !== SUBAGENT_TOOL_NAME) return;
-    const open = step.row.hasClass("is-open");
-    for (const child of Array.from(step.detail.querySelectorAll<HTMLDetailsElement>("details.agentic-chat-subagent"))) {
-      child.open = open;
-    }
   }
 
   private syncExpandable(step: StepEntry): void {
@@ -403,9 +458,4 @@ export function renderStatusIcon(el: HTMLElement, state: ActivityState | StepSta
   setIcon(el, state === "needs-you" ? "hand" : state === "done" ? "check-circle-2" : "alert-circle");
 }
 
-/** `12s`, `1m 4s`: the activity line's clock. */
-export function formatShortElapsed(ms: number): string {
-  const seconds = Math.max(0, Math.round(ms / 1000));
-  if (seconds < 60) return `${seconds}s`;
-  return `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
-}
+export { formatShortElapsed };

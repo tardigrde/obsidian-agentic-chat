@@ -51,7 +51,7 @@ describe("chat sessions", () => {
     await (ui.view as unknown as { loadSession: (path: string) => Promise<void> }).loadSession(path);
     await settle();
     expect(ui.$(".agentic-chat-user")?.textContent).toContain("hello");
-    expect(ui.$(".agentic-chat-subagent pre")?.textContent).toContain("file summary");
+    expect(ui.$(".agentic-chat-subagent-log")?.textContent).toContain("file summary");
     // A replayed turn's activity line starts collapsed.
     expect(ui.$('[data-ac="activity-head"]')?.getAttribute("aria-expanded")).toBe("false");
     expect(ui.$$(".agentic-chat-subagent-stop")).toHaveLength(0);

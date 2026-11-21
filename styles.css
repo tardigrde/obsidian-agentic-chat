@@ -905,20 +905,15 @@ body.is-mobile,
   animation: agentic-chat-spin 0.8s linear infinite;
 }
 
-/* Reasoning: muted italic, folded to three lines; click shows all. */
-/* A thought is its own row in the step timeline, in event order, one line
-   until opened (U3 #3). The rule above it keeps two thoughts apart. */
+/* A thought is its own row in the step timeline, in event order (U3 #3).
+   Folded it is one head: bold "Thought" and its time, no body text, so no
+   second line can show through (U4 #2, #3). A click opens the full trace. */
 .agentic-chat-thought {
-  padding: var(--ac-space-1) 0;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
   color: var(--ac-text-muted);
   font-size: var(--ac-font-ui);
-  font-style: italic;
-  cursor: pointer;
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 1;
-  overflow: hidden;
-  white-space: pre-wrap;
 }
 
 .agentic-chat-thought + .agentic-chat-thought,
@@ -927,17 +922,77 @@ body.is-mobile,
   border-top: var(--ac-line) solid var(--ac-border);
 }
 
-.agentic-chat-thought.is-expanded {
-  -webkit-line-clamp: unset;
-}
-
 .agentic-chat-thought.is-empty {
   display: none;
 }
 
+.agentic-chat-thought-head {
+  display: flex;
+  align-items: center;
+  gap: var(--ac-space-2);
+  min-height: var(--ac-row-h);
+  min-width: 0;
+  border-radius: var(--ac-radius-s);
+  cursor: pointer;
+}
+
+.agentic-chat-thought-head:hover {
+  background-color: var(--ac-hover);
+}
+
+.agentic-chat-thought-head:focus-visible {
+  outline: var(--ac-line-strong) solid var(--ac-accent);
+  outline-offset: var(--ac-line);
+}
+
 .agentic-chat-thought-label {
-  margin-right: var(--ac-space-1);
-  font-style: normal;
+  color: var(--ac-text);
+  font-weight: var(--ac-weight-semibold);
+}
+
+.agentic-chat-thought-time {
+  color: var(--ac-text-faint);
+  font-size: var(--ac-font-small);
+  font-variant-numeric: tabular-nums;
+}
+
+.agentic-chat-thought-time:empty {
+  display: none;
+}
+
+.agentic-chat-thought-chevron {
+  display: flex;
+  flex: 0 0 auto;
+  color: var(--ac-text-faint);
+  opacity: 0;
+  transition: transform var(--ac-motion), opacity var(--ac-motion);
+}
+
+.agentic-chat-thought-chevron svg {
+  width: var(--ac-icon-s);
+  height: var(--ac-icon-s);
+}
+
+.agentic-chat-thought-head:hover .agentic-chat-thought-chevron,
+.agentic-chat-thought-head:focus-visible .agentic-chat-thought-chevron,
+.agentic-chat-thought.is-expanded .agentic-chat-thought-chevron {
+  opacity: 1;
+}
+
+.agentic-chat-thought.is-expanded .agentic-chat-thought-chevron {
+  transform: rotate(90deg);
+}
+
+.agentic-chat-thought-text {
+  display: none;
+  padding: var(--ac-space-1) 0 var(--ac-space-1h);
+  font-style: italic;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.agentic-chat-thought.is-expanded .agentic-chat-thought-text {
+  display: block;
 }
 
 /* One compact row per tool call: icon, verb, argument, time. */
@@ -1060,6 +1115,16 @@ body.is-mobile,
 }
 
 .agentic-chat-step.is-error .agentic-chat-step-section-label {
+  color: var(--ac-status-error);
+}
+
+/* A settled approval: one line on its step row (U4 #4). */
+.agentic-chat-step-approval {
+  color: var(--ac-status-done);
+  font-size: var(--ac-font-small);
+}
+
+.agentic-chat-step-approval.is-denied {
   color: var(--ac-status-error);
 }
 
@@ -1245,36 +1310,6 @@ body.is-mobile,
 
 /* --- Subagent tree and tool-call extras (inside a step row's detail) --- */
 
-/* Aggregated subagent status pill: one label + state per card, so "Stop" and
-   "Done" never appear together on the same unit. */
-.agentic-chat-step-status {
-  margin-left: var(--ac-space-1);
-  padding: var(--ac-line) var(--ac-space-2);
-  border-radius: var(--ac-radius-pill);
-  font-size: var(--ac-font-tiny);
-  font-weight: var(--ac-weight-medium);
-  white-space: nowrap;
-  flex-shrink: 0;
-  color: var(--ac-text-muted);
-  background-color: var(--ac-hover);
-}
-
-.agentic-chat-step-status.is-running {
-  color: var(--ac-link);
-}
-
-.agentic-chat-step-status.is-done {
-  color: var(--ac-status-done);
-}
-
-.agentic-chat-step-status.is-error {
-  color: var(--ac-status-error);
-}
-
-.agentic-chat-step-status.is-queued {
-  color: var(--ac-text-muted);
-}
-
 /* Compact oldText(−)/newText(+) diff for an edit step (the change itself, no file context). */
 .agentic-chat-step-diff {
   margin: var(--ac-space-1) 0 0;
@@ -1310,27 +1345,162 @@ body.is-mobile,
   color: var(--ac-text-faint);
 }
 
-.agentic-chat-subagents {
-  margin-top: var(--ac-space-1);
+/* The subagents of one segment, in a section of their own (U4 #5). */
+.agentic-chat-subagent-block {
   display: flex;
   flex-direction: column;
+  min-width: 0;
+}
+
+.agentic-chat-subagent-block button.agentic-chat-subagent-block-head {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ac-space-2);
+  max-width: 100%;
+  min-height: var(--ac-hit);
+  margin-left: calc(var(--ac-space-1h) * -1);
+  padding: 0 var(--ac-space-2h) 0 var(--ac-space-1h);
+  border: none;
+  border-radius: var(--ac-radius-pill);
+  background: none;
+  box-shadow: none;
+  color: var(--ac-text-muted);
+  font-size: var(--ac-font-ui);
+  cursor: pointer;
+}
+
+.agentic-chat-subagent-block button.agentic-chat-subagent-block-head:hover {
+  background-color: var(--ac-hover);
+  color: var(--ac-text);
+}
+
+.agentic-chat-subagent-block button.agentic-chat-subagent-block-head:focus-visible {
+  outline: var(--ac-line-strong) solid var(--ac-accent);
+  outline-offset: var(--ac-line);
+}
+
+.agentic-chat-subagent-block[data-ac-state="running"] .agentic-chat-subagent-block-summary {
+  color: var(--ac-link);
+}
+
+.agentic-chat-subagent-block-summary {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agentic-chat-subagent-block-time {
+  flex: 0 0 auto;
+  color: var(--ac-text-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.agentic-chat-subagent-block-time:empty {
+  display: none;
+}
+
+.agentic-chat-subagent-block.is-open .agentic-chat-activity-chevron {
+  transform: rotate(90deg);
+}
+
+.agentic-chat-subagents {
+  display: none;
+  flex-direction: column;
   gap: var(--ac-space-0);
+  margin: var(--ac-space-1) 0 0 var(--ac-space-1h);
+  padding-left: var(--ac-space-3h);
+  border-left: var(--ac-line-strong) solid var(--ac-border);
+}
+
+.agentic-chat-subagent-block.is-open .agentic-chat-subagents {
+  display: flex;
 }
 
 .agentic-chat-subagent > summary {
   cursor: pointer;
   display: flex;
-  gap: var(--ac-space-1);
+  gap: var(--ac-space-2);
   align-items: center;
+  min-height: var(--ac-row-h);
+  min-width: 0;
+  color: var(--ac-text-muted);
+  font-size: var(--ac-font-ui);
+  list-style: none;
+}
+
+.agentic-chat-subagent > summary::-webkit-details-marker {
+  display: none;
 }
 
 .agentic-chat-subagent-name {
+  flex: 0 0 auto;
   color: var(--ac-text);
+}
+
+.agentic-chat-subagent-task {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agentic-chat-subagent-time {
+  flex: 0 0 auto;
+  color: var(--ac-text-faint);
+  font-size: var(--ac-font-small);
+  font-variant-numeric: tabular-nums;
+}
+
+.agentic-chat-subagent-time:empty {
+  display: none;
+}
+
+.agentic-chat-subagent-log {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ac-space-0);
+  margin: 0 0 var(--ac-space-1h) var(--ac-space-6);
+  color: var(--ac-text-muted);
+  font-size: var(--ac-font-small);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.agentic-chat-subagent-text {
+  white-space: pre-wrap;
+}
+
+.agentic-chat-subagent-tool {
+  display: flex;
+  align-items: center;
+  gap: var(--ac-space-1h);
+  min-width: 0;
+}
+
+.agentic-chat-subagent-tool-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agentic-chat-subagent-report pre {
+  margin: var(--ac-space-1) 0 0;
+  padding: var(--ac-space-1h);
+  background-color: var(--ac-surface-raised);
+  border-radius: var(--ac-radius-s);
+  white-space: pre-wrap;
+  max-height: var(--ac-scroll-m);
+  overflow-y: auto;
+  font-size: var(--ac-font-tiny);
 }
 
 /* Status rendered as a small pill; text labels stay stable for e2e contracts. */
 .agentic-chat-subagent-status {
   margin-left: auto;
+  flex: 0 0 auto;
   font-size: var(--ac-font-tiny);
   color: var(--ac-text-muted);
   padding: var(--ac-line) var(--ac-space-1);
@@ -1389,17 +1559,6 @@ body.is-mobile,
 .agentic-chat-step-ask-user-question,
 .agentic-chat-step-ask-user-answer {
   margin-top: var(--ac-space-0);
-}
-
-.agentic-chat-subagent > pre {
-  margin: var(--ac-space-1) 0 0;
-  padding: var(--ac-space-1h);
-  background-color: var(--ac-surface-raised);
-  border-radius: var(--ac-radius-s);
-  white-space: pre-wrap;
-  max-height: var(--ac-scroll-m);
-  overflow-y: auto;
-  font-size: var(--ac-font-tiny);
 }
 
 /* An answered ask_user, kept where it happened in the transcript (U3 #15). */

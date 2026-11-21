@@ -49,12 +49,14 @@ describe("AssistantBubble reasoning pill phases", () => {
     const { bubble: b, parent } = bubble();
     b.appendReasoning("a long trace");
     const pill = parent.querySelector<HTMLElement>(".agentic-chat-thought");
-    expect(pill?.getAttribute("role")).toBe("button");
-    expect(pill?.getAttribute("tabindex")).toBe("0");
-    pill?.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+    // The head is the control (U4 #3): the trace below it is not part of the button.
+    const head = pill?.querySelector<HTMLElement>(".agentic-chat-thought-head");
+    expect(head?.getAttribute("role")).toBe("button");
+    expect(head?.getAttribute("tabindex")).toBe("0");
+    head?.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
     expect(pill?.classList.contains("is-expanded")).toBe(true);
-    expect(pill?.getAttribute("aria-expanded")).toBe("true");
-    pill?.dispatchEvent(new KeyboardEvent("keydown", { key: " ", bubbles: true }));
+    expect(head?.getAttribute("aria-expanded")).toBe("true");
+    head?.dispatchEvent(new KeyboardEvent("keydown", { key: " ", bubbles: true }));
     expect(pill?.classList.contains("is-expanded")).toBe(false);
     b.dispose();
   });

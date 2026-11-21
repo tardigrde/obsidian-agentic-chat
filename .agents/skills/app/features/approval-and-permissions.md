@@ -44,6 +44,7 @@ await allowApproval(); // test/e2e/support/chat.ts
 | entry point | source | proof | status |
 |---|---|---|---|
 | Approval card opens inline before a write (no modal) | `src/ui/approval-card.ts#ApprovalCard` | `test/e2e/specs/activity-line.e2e.ts#renders an approval as an inline card below the activity line, never a modal` | `covered` |
+| A settled approval leaves; its step row says `Allowed by you` / `Denied by you` | `src/ui/transcript-view.ts#recordApproval`; `src/ui/activity-line.ts#recordApproval` | `test/e2e/specs/timeline-u4.e2e.ts#U4 #4: an approval waits below the block, then becomes a line on its row` | `covered` |
 | Stop resolves a pending approval as stopped | `src/ui/approval-card.ts#stop` | `test/e2e/specs/approval-deterministic.e2e.ts#resolves the approval card as stopped when the user stops the turn` | `covered` |
 | Allow applies the change | `src/ui/approval-card.ts#render` | `test/e2e/specs/approval-deterministic.e2e.ts#asks before a scripted edit and undo restores the prior text` | `covered` |
 | Deny is two-step and blocks the change | `src/ui/approval-card.ts#armDeny` | `test/e2e/specs/approval-deterministic.e2e.ts#continues after a denied scripted write without creating the note` | `covered` |

@@ -183,13 +183,13 @@ describe("agentic-chat composer paths", function () {
     await waitForCall("stop held");
 
     // Arm the Queue action first, then stop. The held draft must not auto-send.
+    // With text in the composer the round button is Queue (U4), so Escape stops.
     await sendWithButton("replacement after stop");
-    const stopButton = await $('[data-ac="stop"]');
-    await stopButton.waitForDisplayed({ timeout: 5_000 });
-    await stopButton.click();
+    await (await $('[data-ac="composer-input"]')).click();
+    await browser.keys(["Escape"]);
 
     await browser.waitUntil(
-      async () => !(await $('[data-ac="stop"]').isDisplayed()),
+      async () => !(await browser.execute(() => document.querySelector('[data-ac="tab"]')?.getAttribute("data-ac-state") === "running")),
       { timeout: 5_000, timeoutMsg: "the stopped turn never settled" },
     );
     const input = await $('[data-ac="composer-input"]');

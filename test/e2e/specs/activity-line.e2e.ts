@@ -231,15 +231,17 @@ describe("activity line and inline approval", function () {
     await allowApproval();
     await waitForTranscript("Wrote the plan.");
     await waitForIdle();
+    // U4 #4: the settled card leaves; its step row keeps the decision.
     const resolved = await browser.execute(() => {
-      const card = Array.from(document.querySelectorAll('[data-ac="approval"]')).at(-1);
+      const row = Array.from(document.querySelectorAll('[data-ac="step"]')).at(-1);
       return {
-        outcome: card?.getAttribute("data-ac-state"),
-        text: card?.querySelector(".agentic-chat-approval-outcome")?.textContent,
+        cards: document.querySelectorAll('[data-ac="approval"]').length,
+        outcome: row?.getAttribute("data-ac-approval"),
+        text: row?.querySelector('[data-ac="step-approval"]')?.textContent,
         status: document.querySelector('[data-ac="status"]')?.textContent ?? "",
       };
     });
-    expect(resolved).toEqual({ outcome: "allowed", text: "Allowed once", status: "" });
+    expect(resolved).toEqual({ cards: 0, outcome: "allowed", text: "Allowed by you", status: "" });
     const written = await browser.executeObsidian(async ({ app }, path) => !!app.vault.getAbstractFileByPath(path), WRITE_PATH);
     expect(written).toBe(true);
   });
