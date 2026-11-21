@@ -130,6 +130,7 @@ export class AgentService {
   private readonly toolCalls: AgentToolCallController;
   private readonly subagents: AgentSubagentRuntime;
   private readonly sessionEvents: AgentSessionEventRecorder;
+  private readonly sessionManager: ObsidianSessionManager;
   private readonly actionAudit: AgentActionAuditRecorder;
   private readonly observability: AgentObservabilityRuntime;
   private readonly fileCheckpoints: AgentFileCheckpointRecorder;
@@ -163,6 +164,7 @@ export class AgentService {
     this.app = options.app;
     this.getSettings = options.getSettings;
     const sessionManager = options.sessionManager;
+    this.sessionManager = sessionManager;
     this.artifactStore = options.artifactStore;
     this.webFetch = options.webFetch ?? createDynamicProxiedFetcher(() => this.getSettings().network, createObsidianFetcher());
     this.observability = new AgentObservabilityRuntime({
@@ -472,6 +474,17 @@ export class AgentService {
    */
   async reloadRuntimeResources(): Promise<AgentRuntimeResources> {
     return this.runtimeResources.reload();
+  }
+
+  /** Append a `/doctor` summary (codes and counts) to the active session (U4 #17). */
+  async recordDiagnostics(summary: Record<string, unknown>): Promise<void> {
+    if (!this.sessionManager.hasActiveSession()) return;
+    await this.sessionManager.appendDiagnostics(summary);
+  }
+
+  /** Whether the provider the next turn uses has a key (Ollama needs none). */
+  hasProviderKey(): boolean {
+    return this.hasApiKey();
   }
 
   getRuntimeDiagnostics(): AgentRuntimeDiagnostics {

@@ -78,6 +78,18 @@ export interface FileCheckpointSessionEntry {
 }
 
 /**
+ * What `/doctor` saw (U4 #17): codes and counts only, redacted by
+ * construction. The chaos miner reads it; the transcript ignores it.
+ */
+export interface DiagnosticsSessionEntry {
+  type: "diagnostics";
+  id: string;
+  parentId: string | null;
+  timestamp: string;
+  summary: Record<string, unknown>;
+}
+
+/**
  * Legacy entry written by the removed plan tracker. Kept in the union so old
  * session files still parse and typecheck; the state is ignored on load.
  */
@@ -98,6 +110,7 @@ export type SessionEntry =
   | TabLabelSessionEntry
   | ActionAuditSessionEntry
   | FileCheckpointSessionEntry
+  | DiagnosticsSessionEntry
   | LegacyPlanTrackerSessionEntry;
 
 export interface SessionContext {

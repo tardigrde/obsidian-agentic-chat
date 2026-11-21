@@ -10,6 +10,7 @@ import { normalizeFolderPath } from "../vault/path";
 import { ensureAdapterFolder, removeIfExists, renameOver } from "../vault/storage";
 import {
   type ActionAuditSessionEntry,
+  type DiagnosticsSessionEntry,
   type FileCheckpointSessionEntry,
   buildSessionContext,
   createEntryId,
@@ -327,6 +328,17 @@ export class ObsidianSessionManager {
       parentId: this.leafId,
       timestamp: event.timestamp,
       event,
+    });
+  }
+
+  /** A `/doctor` summary (codes and counts) for the miner (U4 #17). */
+  async appendDiagnostics(summary: Record<string, unknown>): Promise<string> {
+    return this.appendEntry<DiagnosticsSessionEntry>({
+      type: "diagnostics",
+      id: createEntryId(this.entries),
+      parentId: this.leafId,
+      timestamp: new Date().toISOString(),
+      summary,
     });
   }
 
