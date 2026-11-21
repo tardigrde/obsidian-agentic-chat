@@ -24,7 +24,7 @@ describe("SubagentBlock rows", () => {
     expect(parent.querySelectorAll('[data-ac="subagent-row"]')).toHaveLength(4);
 
     block.update("call-a", [child("one")]);
-    const tasks = [...parent.querySelectorAll(".agentic-chat-subagent-task")].map((el) => el.textContent);
+    const tasks = Array.from(parent.querySelectorAll(".agentic-chat-subagent-task"), (el) => el.textContent);
     expect(tasks).toEqual(["one", "other"]);
   });
 });
