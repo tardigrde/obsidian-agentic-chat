@@ -1,3 +1,4 @@
+import type { DoctorReport } from "../../agent/doctor-report";
 import type { App } from "obsidian";
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import type { ImageContent } from "@earendil-works/pi-ai";
@@ -19,6 +20,7 @@ export interface SlashContext {
   app: App;
   clearEmptyState(): void;
   renderInfoMessage(title: string, entries: Array<[string, string]>): void;
+  renderDoctorReport(report: DoctorReport): void;
   renderActionList(title: string, subtitle: string, items: ActionRow[]): void;
   renderErrorMessage(message: string): void;
   showServiceError(): void;

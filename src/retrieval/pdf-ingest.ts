@@ -12,9 +12,31 @@ import {
 
 export const PDF_IMPORT_CONTENT_TYPE = "text/markdown; charset=utf-8";
 export const PDF_IMPORT_SOURCE_TOOL = "agentic-chat.pdf-import";
-export const PDF_TEXT_EXTRACTOR = "pdf-text-lite";
+export const PDF_TEXT_EXTRACTOR = "pdfjs";
 
-export type PdfInput = string | ArrayBuffer | Uint8Array;
+/** Refuse PDFs larger than this; a 100 MB scan is not a note source (U4 #10). */
+export const MAX_PDF_BYTES = 50 * 1024 * 1024;
+/** Keep at most this much extracted text; the rest is dropped with a warning. */
+export const MAX_PDF_TEXT_CHARS = 1_500_000;
+/** Pages read at most: empty pages add no text, so the text cap alone never stops them. */
+export const MAX_PDF_PAGES = 2_000;
+/** Refuse text where fewer than this share of characters are readable (broken font encodings). */
+export const MIN_READABLE_RATIO = 0.85;
+
+export type PdfInput = ArrayBuffer | Uint8Array;
+
+/** The part of pdf.js this importer uses: Obsidian's `loadPdfJs()` or `pdfjs-dist` in tests. */
+export interface PdfJsLike {
+  getDocument(source: { data: Uint8Array; isEvalSupported?: boolean; disableFontFace?: boolean }): {
+    promise: Promise<{
+      numPages: number;
+      getPage(pageNumber: number): Promise<{ getTextContent(): Promise<{ items: Array<{ str?: string; hasEOL?: boolean }> }> }>;
+      destroy?: () => Promise<void> | void;
+    }>;
+  };
+}
+
+export type PdfJsLoader = () => Promise<PdfJsLike>;
 export type PdfTextExtractor = typeof PDF_TEXT_EXTRACTOR;
 
 export interface PdfExtractionResult {
@@ -56,31 +78,74 @@ export interface PdfImportWriteResult {
   extraction: PdfExtractionResult;
 }
 
-const PDF_HEADER_SEARCH_CHARS = 1024;
-
-export function extractPdfText(input: PdfInput): PdfExtractionResult {
-  const raw = pdfInputToBinaryString(input);
-  if (!raw.slice(0, PDF_HEADER_SEARCH_CHARS).includes("%PDF-")) {
+/**
+ * Extract the text of a PDF with pdf.js (the copy Obsidian ships). The old
+ * scraper read every string in the raw bytes and could not inflate
+ * FlateDecode streams: a 105-page PDF became 56 million characters of noise
+ * (U4 #10). A file too large is refused; text that is mostly unreadable (a
+ * broken font encoding) is refused rather than stored.
+ */
+export async function extractPdfText(input: PdfInput, loadPdfJs: PdfJsLoader): Promise<PdfExtractionResult> {
+  const bytes = input instanceof Uint8Array ? input : new Uint8Array(input);
+  if (bytes.byteLength > MAX_PDF_BYTES) {
+    throw new Error(`PDF is too large to import (${Math.round(bytes.byteLength / 1024 / 1024)} MB, max ${MAX_PDF_BYTES / 1024 / 1024} MB).`);
+  }
+  if (!new TextDecoder("latin1").decode(bytes.slice(0, 1024)).includes("%PDF-")) {
     throw new Error("Unsupported file: expected a PDF header.");
   }
-
+  const pdfjs = await loadPdfJs();
+  // pdf.js may detach the buffer it gets: hand it a copy.
+  let document: Awaited<ReturnType<PdfJsLike["getDocument"]>["promise"]>;
+  try {
+    document = await pdfjs.getDocument({ data: bytes.slice(), isEvalSupported: false, disableFontFace: true }).promise;
+  } catch (error) {
+    if ((error as { name?: string } | null)?.name === "PasswordException") {
+      throw new Error("PDF is password-protected. Export a copy without a password, then import that.", { cause: error });
+    }
+    throw error;
+  }
   const warnings: string[] = [];
-  const literalStrings = extractLiteralStrings(raw).map(decodePdfLiteralString);
-  const hexStrings = extractHexStrings(raw).map(decodePdfHexString);
-  const text = normalizeSourceText([...literalStrings, ...hexStrings].filter(isUsefulPdfText).join("\n"));
-  const pageCount = countPdfPages(raw);
-
+  const pages: string[] = [];
+  let total = 0;
+  try {
+    const lastPage = Math.min(document.numPages, MAX_PDF_PAGES);
+    if (document.numPages > MAX_PDF_PAGES) {
+      warnings.push(`Read the first ${MAX_PDF_PAGES.toLocaleString("en-US")} of ${document.numPages.toLocaleString("en-US")} pages.`);
+    }
+    for (let pageNumber = 1; pageNumber <= lastPage; pageNumber += 1) {
+      const page = await document.getPage(pageNumber);
+      const content = await page.getTextContent();
+      const text = content.items.map((item) => `${item.str ?? ""}${item.hasEOL ? "\n" : ""}`).join("");
+      pages.push(text);
+      total += text.length;
+      if (total > MAX_PDF_TEXT_CHARS) {
+        warnings.push(`Text cut after page ${pageNumber} of ${document.numPages} (over ${MAX_PDF_TEXT_CHARS.toLocaleString("en-US")} characters).`);
+        break;
+      }
+    }
+  } finally {
+    await document.destroy?.();
+  }
+  let text = normalizeSourceText(pages.join("\n\n"));
+  if (text.length > MAX_PDF_TEXT_CHARS) text = text.slice(0, MAX_PDF_TEXT_CHARS);
   if (!text) {
     throw new Error("PDF contains no extractable text. Scanned/image-only PDFs need OCR before import.");
   }
-  if (pageCount === null) warnings.push("Could not determine PDF page count.");
+  const readable = readableRatio(text);
+  if (readable < MIN_READABLE_RATIO) {
+    throw new Error(
+      `PDF text looks unreadable (${Math.round(readable * 100)}% readable characters; the fonts may use a custom encoding). Not imported; it needs OCR.`,
+    );
+  }
+  return { text, extractor: PDF_TEXT_EXTRACTOR, pageCount: document.numPages, warnings };
+}
 
-  return {
-    text,
-    extractor: PDF_TEXT_EXTRACTOR,
-    pageCount,
-    warnings,
-  };
+/** Share of letters (with combining marks), digits, punctuation, symbols, and spaces (not control or replacement characters). */
+export function readableRatio(text: string): number {
+  if (!text) return 0;
+  const readable = text.match(/[\p{L}\p{M}\p{N}\p{P}\p{S}\p{Zs}\n\t]/gu)?.length ?? 0;
+  const replacement = text.match(/\uFFFD/gu)?.length ?? 0;
+  return Math.max(0, readable - replacement) / text.length;
 }
 
 export function chunkPdfText(text: string, options: { maxChars?: number } = {}): PdfTextChunk[] {
@@ -156,8 +221,11 @@ export function parsePdfImportProvenance(text: string): PdfImportProvenance | nu
 export class PdfArtifactDeduper {
   private readonly artifacts = new SourceArtifactCache<PdfImportProvenance, PdfExtractionResult>();
 
+  /** `loadPdfJs`: Obsidian's `loadPdfJs` in the app; pdfjs-dist in tests. */
+  constructor(private readonly loadPdfJs: PdfJsLoader) {}
+
   async write(store: ToolArtifactStoreLike, input: PdfImportWriteInput): Promise<PdfImportWriteResult> {
-    const extraction = extractPdfText(input.data);
+    const extraction = await extractPdfText(input.data, this.loadPdfJs);
     const chunks = chunkPdfText(extraction.text, { maxChars: input.maxChunkChars });
     const keys = await sourceDedupKeys(`pdf:${normalizeSourcePath(input.sourcePath)}`, extraction.text);
     const provenance: PdfImportProvenance = {
@@ -185,142 +253,6 @@ export class PdfArtifactDeduper {
       parseProvenance: parsePdfImportProvenance,
     });
   }
-}
-
-function extractLiteralStrings(input: string): string[] {
-  const values: string[] = [];
-  let index = 0;
-  while (index < input.length) {
-    if (input[index] !== "(") {
-      index += 1;
-      continue;
-    }
-    const literal = readPdfLiteralString(input, index);
-    if (literal.value) values.push(literal.value);
-    index = literal.nextIndex;
-  }
-  return values;
-}
-
-interface PdfLiteralScan {
-  value: string;
-  nextIndex: number;
-}
-
-function readPdfLiteralString(input: string, openIndex: number): PdfLiteralScan {
-  let depth = 1;
-  let value = "";
-  let index = openIndex + 1;
-  for (; index < input.length; index += 1) {
-    const char = input[index];
-    if (char === "\\") {
-      value += char;
-      index += 1;
-      if (index < input.length) value += input[index];
-      continue;
-    }
-    if (char === "(") {
-      depth += 1;
-      value += char;
-      continue;
-    }
-    if (char === ")" && --depth === 0) break;
-    value += char;
-  }
-  return { value, nextIndex: index + 1 };
-}
-
-function extractHexStrings(input: string): string[] {
-  const values: string[] = [];
-  const pattern = /<([0-9a-fA-F\s]{4,})>/g;
-  for (const match of input.matchAll(pattern)) {
-    values.push(match[1]);
-  }
-  return values;
-}
-
-const PDF_LITERAL_ESCAPES: Record<string, string> = {
-  n: "\n",
-  r: "\r",
-  t: "\t",
-  b: "\b",
-  f: "\f",
-  "(": "(",
-  ")": ")",
-  "\\": "\\",
-};
-
-interface DecodedPdfEscape {
-  text: string;
-  consumed: number;
-}
-
-function decodePdfLiteralString(input: string): string {
-  let output = "";
-  for (let index = 0; index < input.length; index += 1) {
-    const char = input[index];
-    if (char !== "\\") {
-      output += char;
-      continue;
-    }
-    const decoded = decodePdfEscape(input, index);
-    if (!decoded) break;
-    output += decoded.text;
-    index += decoded.consumed;
-  }
-  return output;
-}
-
-function decodePdfEscape(input: string, backslashIndex: number): DecodedPdfEscape | null {
-  const next = input[backslashIndex + 1];
-  if (next === undefined) return null;
-  if (next === "\r" || next === "\n") {
-    return { text: "", consumed: next === "\r" && input[backslashIndex + 2] === "\n" ? 2 : 1 };
-  }
-  if (/[0-7]/.test(next)) return decodePdfOctalEscape(input, backslashIndex, next);
-  return { text: PDF_LITERAL_ESCAPES[next] ?? next, consumed: 1 };
-}
-
-function decodePdfOctalEscape(input: string, backslashIndex: number, firstDigit: string): DecodedPdfEscape {
-  let octal = firstDigit;
-  let consumed = 1;
-  while (consumed < 3 && /[0-7]/.test(input[backslashIndex + 1 + consumed] ?? "")) {
-    octal += input[backslashIndex + 1 + consumed];
-    consumed += 1;
-  }
-  return { text: String.fromCodePoint(Number.parseInt(octal, 8)), consumed };
-}
-
-function decodePdfHexString(input: string): string {
-  const hex = input.replace(/\s+/g, "");
-  let output = "";
-  for (let index = 0; index < hex.length; index += 2) {
-    const pair = hex.slice(index, index + 2).padEnd(2, "0");
-    const value = Number.parseInt(pair, 16);
-    if (Number.isFinite(value)) output += String.fromCodePoint(value);
-  }
-  return output;
-}
-
-function countPdfPages(input: string): number | null {
-  const matches = input.match(/\/Type\s*\/Page\b/g);
-  return matches ? matches.length : null;
-}
-
-function isUsefulPdfText(value: string): boolean {
-  const normalized = normalizeSourceText(value);
-  return normalized.length >= 2 && /[A-Za-z0-9]/.test(normalized);
-}
-
-function pdfInputToBinaryString(input: PdfInput): string {
-  if (typeof input === "string") return input;
-  const bytes = input instanceof Uint8Array ? input : new Uint8Array(input);
-  let output = "";
-  for (let index = 0; index < bytes.length; index += 8192) {
-    const chunk = bytes.slice(index, index + 8192);
-    output += String.fromCodePoint(...chunk);
-  }
-  return output;
 }
 
 function pdfArtifactLabel(title: string | undefined, sourcePath: string): string {

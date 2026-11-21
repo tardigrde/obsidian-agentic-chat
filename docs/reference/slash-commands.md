@@ -17,7 +17,7 @@ Slash commands run locally and are not sent to the model.
 | `/status` | Show provider, model, mode, session, MCP servers, and tools. |
 | `/usage` | Show token and cost totals. |
 | `/export` | Save this conversation as a Markdown note in the vault. |
-| `/doctor` | Audit runtime health, agent plugins, and MCP configs. |
+| `/doctor` | Health check: problems first (each with a fix), then model, mode, context, and cost (subagents included), then folded sections for the session, plugins, MCP, tools, and debug events. It also saves a small summary (codes and counts, no names or URLs) to the session for bug reports. |
 | `/help` | List available commands. |
 
 ## Composer paths
@@ -27,7 +27,7 @@ These controls are not slash commands:
 | Control | What it does |
 | --- | --- |
 | Enter while idle | Send the text as a new turn. |
-| Enter while the agent responds | Steer the active turn. The text arrives after the current model turn finishes. If the run ends first (Stop, turn cap, loop guard), the text comes back to the composer. |
+| Enter while the agent responds | Steer the active turn. The text arrives after the current model turn finishes. If the run ends first (Stop, the spend cap, the loop guard), the text comes back to the composer. |
 | Shift+Enter | Insert a newline in the draft. |
 | **Queue** | Hold the draft until the active turn ends. The draft stays editable. |
 | **Stop**, then send | Replace the turn with the draft. |

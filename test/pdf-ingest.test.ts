@@ -1,30 +1,91 @@
+import { deflateSync } from "node:zlib";
 import { describe, expect, it } from "vitest";
 import type { App } from "obsidian";
 import type { ToolArtifactMetadata, ToolArtifactStoreLike, ToolArtifactWriteInput } from "../src/artifacts/tool-artifact-store";
 import { createDocumentTools } from "../src/tools/document-tools";
 import { legacyStableTextHash } from "../src/retrieval/source-hash";
 import {
+  MAX_PDF_BYTES,
+  MAX_PDF_PAGES,
   PDF_IMPORT_CONTENT_TYPE,
   PDF_IMPORT_SOURCE_TOOL,
   PdfArtifactDeduper,
   chunkPdfText,
   extractPdfText,
   formatPdfImportArtifact,
+  readableRatio,
+  type PdfJsLike,
 } from "../src/retrieval/pdf-ingest";
 import { FakeAdapter as MemoryAdapter } from "./support/fake-adapter";
 
 const FIXED_IMPORTED_AT = "2026-06-26T08:00:00.000Z";
 
-const PDF_FIXTURE = `%PDF-1.4
-1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj
-2 0 obj << /Type /Pages /Kids [3 0 R] /Count 1 >> endobj
-3 0 obj << /Type /Page /Parent 2 0 R /Contents 4 0 R >> endobj
-4 0 obj << /Length 180 >> stream
-BT /F1 12 Tf 72 720 Td (Q/A and RAG can use lexical retrieval before embeddings.) Tj
-0 -16 Td (Multilingual notes need language-aware token normalization.) Tj
-0 -16 Td <456d62656464696e677320617265206f7074696f6e616c20696e6672617374727563747572652e> Tj ET
-endstream endobj
-%%EOF`;
+/** The real pdf.js (the same library Obsidian ships), from pdfjs-dist. */
+const loadPdf = async (): Promise<PdfJsLike> => (await import("pdfjs-dist/legacy/build/pdf.mjs")) as unknown as PdfJsLike;
+
+function escapePdfText(line: string): string {
+  return line.replace(/[\\()]/g, (char) => `\\${char}`);
+}
+
+/**
+ * A valid PDF with one page per entry, each line drawn with Helvetica. With
+ * `compress`, every content stream is FlateDecode, as nearly every real PDF
+ * is: the old byte scraper could not read those (U4 #10).
+ */
+function buildPdf(pages: string[][], options: { compress?: boolean } = {}): Uint8Array {
+  const chunks: Buffer[] = [];
+  const offsets: number[] = [];
+  let length = 0;
+  const push = (data: string | Buffer): void => {
+    const buffer = typeof data === "string" ? Buffer.from(data, "latin1") : data;
+    chunks.push(buffer);
+    length += buffer.length;
+  };
+  const object = (id: number, body: string | Buffer[]): void => {
+    offsets[id] = length;
+    push(`${id} 0 obj\n`);
+    if (typeof body === "string") push(body);
+    else for (const part of body) push(part);
+    push("\nendobj\n");
+  };
+  push("%PDF-1.7\n%\xe2\xe3\xcf\xd3\n");
+  const pageIds = pages.map((_, index) => 4 + index * 2);
+  object(1, "<< /Type /Catalog /Pages 2 0 R >>");
+  object(2, `<< /Type /Pages /Kids [${pageIds.map((id) => `${id} 0 R`).join(" ")}] /Count ${pages.length} >>`);
+  object(3, "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>");
+  pages.forEach((lines, index) => {
+    const pageId = pageIds[index];
+    const contentId = pageId + 1;
+    object(pageId, `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 3 0 R >> >> /Contents ${contentId} 0 R >>`);
+    const text = `BT /F1 12 Tf 72 720 Td 16 TL ${lines.map((line) => `(${escapePdfText(line)}) Tj T*`).join(" ")} ET`;
+    const raw = Buffer.from(text, "latin1");
+    const stream = options.compress ? deflateSync(raw) : raw;
+    object(contentId, [
+      Buffer.from(`<< /Length ${stream.length}${options.compress ? " /Filter /FlateDecode" : ""} >>\nstream\n`, "latin1"),
+      stream,
+      Buffer.from("\nendstream", "latin1"),
+    ]);
+  });
+  const size = pageIds.at(-1)! + 2;
+  const xref = length;
+  push(`xref\n0 ${size}\n0000000000 65535 f \n`);
+  for (let id = 1; id < size; id += 1) push(`${String(offsets[id] ?? 0).padStart(10, "0")} 00000 n \n`);
+  push(`trailer\n<< /Size ${size} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`);
+  return new Uint8Array(Buffer.concat(chunks));
+}
+
+const LINES = [
+  "Q/A and RAG can use lexical retrieval before embeddings.",
+  "Multilingual notes need language-aware token normalization.",
+  "Embeddings are optional infrastructure.",
+];
+const PDF_FIXTURE = buildPdf([LINES]);
+const PDF_FLATE = buildPdf([["Compressed streams are the common case."], ["Page two of the compressed file."]], { compress: true });
+
+/** Latin-1 string of the bytes, for the text-only memory adapter. */
+function latin1(bytes: Uint8Array): string {
+  return Array.from(bytes, (byte) => String.fromCharCode(byte)).join("");
+}
 
 function memoryArtifactStore(): { store: ToolArtifactStoreLike; writes: ToolArtifactWriteInput[] } {
   const writes: ToolArtifactWriteInput[] = [];
@@ -64,19 +125,52 @@ function memoryArtifactStore(): { store: ToolArtifactStoreLike; writes: ToolArti
   };
 }
 
-describe("PDF source ingestion", () => {
-  it("extracts text from literal and hex PDF strings with page provenance", () => {
-    const extracted = extractPdfText(PDF_FIXTURE);
-
-    expect(extracted.extractor).toBe("pdf-text-lite");
-    expect(extracted.pageCount).toBe(1);
-    expect(extracted.text).toContain("Q/A and RAG can use lexical retrieval before embeddings.");
-    expect(extracted.text).toContain("Multilingual notes need language-aware token normalization.");
-    expect(extracted.text).toContain("Embeddings are optional infrastructure.");
+describe("PDF source ingestion (pdf.js, U4 #10)", () => {
+  it("extracts the text of a FlateDecode PDF, page by page", async () => {
+    const extracted = await extractPdfText(PDF_FLATE, loadPdf);
+    expect(extracted.extractor).toBe("pdfjs");
+    expect(extracted.pageCount).toBe(2);
+    expect(extracted.text).toContain("Compressed streams are the common case.");
+    expect(extracted.text).toContain("Page two of the compressed file.");
+    // Nothing but the drawn text: no raw stream bytes.
+    expect(extracted.text.length).toBeLessThan(120);
   });
 
-  it("chunks extracted PDF text into durable citation anchors", () => {
-    const chunks = chunkPdfText(extractPdfText(PDF_FIXTURE).text, { maxChars: 48 });
+  it("extracts text from an uncompressed PDF", async () => {
+    const extracted = await extractPdfText(PDF_FIXTURE, loadPdf);
+    expect(extracted.pageCount).toBe(1);
+    for (const line of LINES) expect(extracted.text).toContain(line);
+  });
+
+  it("refuses unreadable text (a broken font encoding) instead of storing garbage", async () => {
+    const garbage = "\u0001\u0002\u0003\uFFFD\uFFFD\u0004\u0005\u0006\u0007\u0008abc";
+    expect(readableRatio(garbage)).toBeLessThan(0.85);
+    const fake: PdfJsLike = {
+      getDocument: () => ({
+        promise: Promise.resolve({
+          numPages: 1,
+          getPage: async () => ({ getTextContent: async () => ({ items: [{ str: garbage.repeat(20) }] }) }),
+        }),
+      }),
+    };
+    await expect(extractPdfText(PDF_FIXTURE, async () => fake)).rejects.toThrow(/looks unreadable/);
+  });
+
+  it("refuses a PDF over the size cap before parsing it", async () => {
+    let loaded = false;
+    const big = new Uint8Array(MAX_PDF_BYTES + 1);
+    big.set(Buffer.from("%PDF-1.7", "latin1"));
+    await expect(
+      extractPdfText(big, async () => {
+        loaded = true;
+        return {} as PdfJsLike;
+      }),
+    ).rejects.toThrow(/too large to import/);
+    expect(loaded).toBe(false);
+  });
+
+  it("chunks extracted PDF text into durable citation anchors", async () => {
+    const chunks = chunkPdfText((await extractPdfText(PDF_FIXTURE, loadPdf)).text, { maxChars: 48 });
 
     expect(chunks.length).toBeGreaterThan(1);
     expect(chunks.map((chunk) => chunk.anchor)).toEqual(chunks.map((_, index) => `pdf-chunk-${index + 1}`));
@@ -85,7 +179,7 @@ describe("PDF source ingestion", () => {
 
   it("deduplicates repeated PDF imports by source path and extracted text", async () => {
     const { store, writes } = memoryArtifactStore();
-    const deduper = new PdfArtifactDeduper();
+    const deduper = new PdfArtifactDeduper(loadPdf);
 
     const first = await deduper.write(store, {
       sourcePath: "Research/Embeddings.pdf",
@@ -110,14 +204,14 @@ describe("PDF source ingestion", () => {
   it("reuses PDF artifacts written with the legacy FNV text hash", async () => {
     const { store, writes } = memoryArtifactStore();
     const sourcePath = "research/legacy.pdf";
-    const extracted = extractPdfText(PDF_FIXTURE);
+    const extracted = await extractPdfText(PDF_FIXTURE, loadPdf);
     const sourceText = extracted.text.trim();
     const textHash = legacyStableTextHash(sourceText);
     const chunks = chunkPdfText(sourceText, { maxChars: 64 });
     const provenance = {
       sourcePath,
       title: "Legacy PDF",
-      extractor: "pdf-text-lite" as const,
+      extractor: "pdfjs" as const,
       importedAt: FIXED_IMPORTED_AT,
       dedupKey: `pdf:${sourcePath}:${textHash}`,
       textHash,
@@ -135,7 +229,7 @@ describe("PDF source ingestion", () => {
       text: formatPdfImportArtifact(provenance, chunks),
     });
 
-    const duplicate = await new PdfArtifactDeduper().write(store, {
+    const duplicate = await new PdfArtifactDeduper(loadPdf).write(store, {
       sourcePath,
       title: "Legacy PDF",
       data: PDF_FIXTURE,
@@ -147,54 +241,77 @@ describe("PDF source ingestion", () => {
     expect(duplicate.metadata.id).toBe("artifact-1");
   });
 
-  it("rejects unsupported files and image-only PDFs without hidden fallback text", () => {
-    expect(() => extractPdfText("not a pdf")).toThrow(/expected a PDF header/i);
-    expect(() => extractPdfText("%PDF-1.4\n1 0 obj << /Type /Catalog >> endobj\n%%EOF")).toThrow(/no extractable text/i);
+  it("rejects unsupported files and image-only PDFs without hidden fallback text", async () => {
+    await expect(extractPdfText(Buffer.from("not a pdf"), loadPdf)).rejects.toThrow(/expected a PDF header/i);
+    await expect(extractPdfText(buildPdf([[]]), loadPdf)).rejects.toThrow(/no extractable text/i);
   });
 
   it("imports a vault PDF through the agent document tool without stuffing full text into the response", async () => {
     const adapter = new MemoryAdapter();
-    await adapter.write("Research/embeddings.pdf", PDF_FIXTURE);
+    await adapter.write("Research/embeddings.pdf", latin1(PDF_FLATE));
     const { store, writes } = memoryArtifactStore();
-    const [tool] = createDocumentTools(
-      { vault: { adapter: adapter.asDataAdapter() } } as unknown as App,
-      store,
-    );
+    const [tool] = createDocumentTools({ vault: { adapter: adapter.asDataAdapter() } } as unknown as App, store, loadPdf);
 
     const result = await tool.execute("call-1", {
       path: "Research/embeddings.pdf",
-      title: "Embedding tradeoffs",
+      title: "Compressed",
       maxChunkChars: 64,
     });
     const firstContent = result.content[0];
 
     expect(firstContent.type).toBe("text");
     if (firstContent.type !== "text") throw new Error("Expected text tool content.");
-    expect(firstContent.text).toContain("PDF source artifact: [Embedding tradeoffs](artifact:artifact-1)");
-    expect(firstContent.text).not.toContain("Q/A and RAG can use lexical retrieval");
+    expect(firstContent.text).toContain("PDF source artifact: [Compressed](artifact:artifact-1)");
+    expect(firstContent.text).not.toContain("Compressed streams are the common case");
     expect(writes).toHaveLength(1);
     expect(result.details).toMatchObject({
       path: "Research/embeddings.pdf",
       sourceArtifactId: "artifact-1",
       sourceArtifactDuplicate: false,
-      extractor: "pdf-text-lite",
-      pageCount: 1,
-      chunkCount: 3,
-      totalChars: extractPdfText(PDF_FIXTURE).text.length,
+      extractor: "pdfjs",
+      pageCount: 2,
     });
-    expect((result.details as { citationAnchors: Array<{ anchor: string }> }).citationAnchors.map((anchor) => anchor.anchor)).toEqual([
-      "pdf-chunk-1",
-      "pdf-chunk-2",
-      "pdf-chunk-3",
-    ]);
   });
 
   it("rejects unsupported vault paths before reading the file", async () => {
     const adapter = new MemoryAdapter();
     await adapter.write("Research/source.txt", "not a pdf");
     const { store } = memoryArtifactStore();
-    const [tool] = createDocumentTools({ vault: { adapter: adapter.asDataAdapter() } } as unknown as App, store);
+    const [tool] = createDocumentTools({ vault: { adapter: adapter.asDataAdapter() } } as unknown as App, store, loadPdf);
 
     await expect(tool.execute("call-1", { path: "Research/source.txt" })).rejects.toThrow(/Unsupported document format/);
+  });
+});
+
+describe("PDF hardening (U4-B review)", () => {
+  const pdfHeader = new TextEncoder().encode("%PDF-1.7\n");
+  const fakePdfJs = (document: () => Promise<unknown>): (() => Promise<PdfJsLike>) =>
+    async () => ({ getDocument: () => ({ promise: document() }) }) as unknown as PdfJsLike;
+
+  it("names a password-protected PDF instead of an opaque pdf.js error", async () => {
+    const locked = fakePdfJs(async () => {
+      throw Object.assign(new Error("No password given"), { name: "PasswordException" });
+    });
+    await expect(extractPdfText(pdfHeader, locked)).rejects.toThrow(/password-protected/);
+  });
+
+  it("stops at the page cap even when the pages hold little text", async () => {
+    let pagesRead = 0;
+    const many = fakePdfJs(async () => ({
+      numPages: 50_000,
+      getPage: async () => {
+        pagesRead += 1;
+        return { getTextContent: async () => ({ items: [{ str: "Page text.", hasEOL: true }] }) };
+      },
+      destroy: async () => {},
+    }));
+    const result = await extractPdfText(pdfHeader, many);
+    expect(pagesRead).toBe(MAX_PDF_PAGES);
+    expect(result.warnings.join(" ")).toMatch(/first 2,000 of 50,000 pages/);
+  });
+
+  it("counts combining marks as readable (decomposed diacritics)", () => {
+    const decomposed = "Tie\u0302\u0301ng Vie\u0323\u0302t ".repeat(20).normalize("NFD");
+    expect(readableRatio(decomposed)).toBeGreaterThan(0.95);
   });
 });

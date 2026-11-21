@@ -13,7 +13,7 @@ import {
 import type { AutocompleteMenu } from "./autocomplete-menu";
 import {
   type ActiveNoteState,
-  autoActiveNotePath,
+  autoActiveNotePath, privateActiveNotePath,
   effectiveActiveNote as computeEffectiveActiveNote,
 } from "./active-note";
 import { attachmentBasePath } from "./attachment-ref";
@@ -295,12 +295,18 @@ export class ChatComposer {
    */
   syncActiveNote(): void {
     const state = this.deps.state();
-    this.deps.setActiveNotePath(autoActiveNotePath(this.deps.app.workspace.getActiveFile(), {
+    const options = {
       suppressed: state.activeNoteSuppressed,
-      isIgnored: (path) => this.deps.service().isPathIgnored(path),
-    }));
+      isIgnored: (path: string) => this.deps.service().isPathIgnored(path),
+    };
+    const file = this.deps.app.workspace.getActiveFile();
+    this.privateNotePath = privateActiveNotePath(file, options);
+    this.deps.setActiveNotePath(autoActiveNotePath(file, options));
     this.deps.renderChips();
   }
+
+  /** The focused note when it is private: shown as a chip, never sent (U4 #11). */
+  private privateNotePath: string | null = null;
 
   /** The active note auto-attached this turn, or null (suppressed / none / already explicit). */
   effectiveActiveNote(): string | null {
@@ -329,6 +335,7 @@ export class ChatComposer {
       this.deps.chipsEl(),
       {
         activeNotePath: this.effectiveActiveNote(),
+        privateNotePath: this.privateNotePath,
         attachments: state.attachments,
       },
       {

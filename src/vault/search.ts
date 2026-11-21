@@ -14,10 +14,15 @@ export interface GrepOptions {
 
 const REGEX_SPECIAL_CHARS = /[.*+?^${}()|[\]\\]/g;
 
-/** Match a vault path by case-insensitive substring or simple `*`/`?` glob. */
-export function matchesFindPattern(path: string, pattern: string): boolean {
+/**
+ * Match a vault path by case-insensitive substring or simple `*`/`?` glob, or
+ * as a regular expression with `options.regex` (U4 #13: `\.pdf$` found 0
+ * files because the flag was ignored for file names).
+ */
+export function matchesFindPattern(path: string, pattern: string, options: Pick<GrepOptions, "regex" | "caseSensitive"> = {}): boolean {
   const normalizedPattern = pattern.trim();
   if (!normalizedPattern) return true;
+  if (options.regex) return createLineMatcher(normalizedPattern, options)(path);
   if (hasGlobCharacters(normalizedPattern)) {
     return globToRegExp(normalizedPattern).test(path);
   }

@@ -21,6 +21,20 @@ import {
 import type { AgentRole } from "./subagents";
 import { findAgentRole } from "./subagents";
 import { UNDOABLE_TOOLS, captureUndo } from "./undo";
+import { normalizeVaultPath } from "../vault/path";
+import { privatePathMessage } from "../vault/private-rules";
+
+/** Tools whose `path` / `newPath` arguments name a vault entry. */
+const VAULT_PATH_TOOLS: ReadonlySet<string> = new Set([
+  "read",
+  "write",
+  "edit",
+  "rename",
+  "delete",
+  "set_properties",
+  "vault_inspect",
+  "import_document",
+]);
 
 /** A pending tool call the user must approve. */
 export interface ToolApprovalRequest {
@@ -83,6 +97,8 @@ interface ToolCallControllerOptions {
   recordFileCheckpoint?: (checkpoint: FileCheckpoint) => Promise<void> | void;
   /** Same per-service registry the subagent runtime writes to. */
   subagentRegistry: SubagentRegistry;
+  /** Private-content rules (U4 #11): checked before any approval card. */
+  isPathIgnored?: (path: string) => boolean;
 }
 
 /**
@@ -101,6 +117,7 @@ export class AgentToolCallController {
   private readonly recordCheckpoint?: (input: CheckpointAuditInput) => Promise<void> | void;
   private readonly recordFileCheckpoint?: (checkpoint: FileCheckpoint) => Promise<void> | void;
   private readonly subagentRegistry: SubagentRegistry;
+  private readonly isPathIgnored?: (path: string) => boolean;
 
   /** Reversible records of mutating tool calls, newest last (for undo-last-change). */
   private undoStack: FileCheckpoint[] = [];
@@ -123,6 +140,7 @@ export class AgentToolCallController {
     this.recordCheckpoint = options.recordCheckpoint;
     this.recordFileCheckpoint = options.recordFileCheckpoint;
     this.subagentRegistry = options.subagentRegistry;
+    this.isPathIgnored = options.isPathIgnored;
   }
 
   canUndo(): boolean {
@@ -169,6 +187,14 @@ export class AgentToolCallController {
     // remaining call before approval or execution.
     if (this.stopTurn === this.currentTurn) {
       return { block: true, reason: STOPPED_APPROVAL_REASON, terminate: true };
+    }
+    // A private path is blocked before the approval card and the undo
+    // checkpoint: the user is never asked to approve a call that must fail (U4 #11).
+    const privatePath = this.privateTarget(context.toolCall.name, context.args);
+    if (privatePath) {
+      const reason = privatePathMessage(privatePath);
+      await this.auditApproval({ decision: "denied", toolCallId: context.toolCall.id, toolName: context.toolCall.name, args: context.args, reason });
+      return { block: true, reason };
     }
     const decision = await this.gateToolCall(context.toolCall.id, context.toolCall.name, context.args, signal);
     // Capture the inverse only for allowed mutating calls; a blocked call never
@@ -230,6 +256,24 @@ export class AgentToolCallController {
       }
     }
     return undefined;
+  }
+
+  /** The first private vault path a call names, or null. */
+  private privateTarget(toolName: string, args: unknown): string | null {
+    if (!this.isPathIgnored || !VAULT_PATH_TOOLS.has(toolName)) return null;
+    const record = (args ?? {}) as Record<string, unknown>;
+    for (const key of ["path", "newPath"]) {
+      const raw = record[key];
+      if (typeof raw !== "string" || !raw.trim()) continue;
+      let path: string;
+      try {
+        path = normalizeVaultPath(raw);
+      } catch {
+        continue;
+      }
+      if (path && this.isPathIgnored(path)) return path;
+    }
+    return null;
   }
 
   private async gateToolCall(
@@ -324,7 +368,7 @@ export class AgentToolCallController {
   ): Promise<ToolGateDecision> {
     // Unknown agents fail closed with a distinct audit: the dispatch never ran,
     // so it must not be logged as auto-approved (execute would throw unknown-agent).
-    const unknown = normalizeTasks((args ?? {})).find((task) => !findAgentRole(this.getProfiles(), task.agent));
+    const unknown = normalizeTasks((args ?? {}) as Parameters<typeof normalizeTasks>[0], (id) => this.subagentRegistry.retainedAgent(id)).find((task) => !findAgentRole(this.getProfiles(), task.agent));
     const available = this.getProfiles().map((candidate) => candidate.name).join(", ") || "(none)";
     const unknownAgentReason = unknown
       ? `subagent: unknown agent "${unknown.agent.trim()}". Available: ${available}.`
@@ -401,7 +445,7 @@ export class AgentToolCallController {
 
   /** True when any dispatched role's allowlist includes a mutating tool that is not per-tool denied. */
   private dispatchCanMutate(settings: AgenticChatSettings, args: unknown): boolean {
-    const tasks = normalizeTasks((args ?? {}));
+    const tasks = normalizeTasks(args ?? {}, (id) => this.subagentRegistry.retainedAgent(id));
     return tasks.some((task) => {
       const profile = findAgentRole(this.getProfiles(), task.agent);
       if (!profile) return false;

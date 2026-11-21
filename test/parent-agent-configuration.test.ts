@@ -53,7 +53,6 @@ describe("AgentParentConfigurationRuntime", () => {
         consumeStopRequested: () => false,
       },
       loopGuard: { finishTurn: () => undefined },
-      turnCap: { shouldStopAfterTurn: () => false },
       sessions: { info: session },
       onEvent: () => undefined,
     });
@@ -102,7 +101,6 @@ describe("AgentParentConfigurationRuntime", () => {
           return undefined;
         },
       },
-      turnCap: { shouldStopAfterTurn: () => false },
       sessions: { info: session },
       onEvent: () => undefined,
     });

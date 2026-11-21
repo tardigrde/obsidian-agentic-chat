@@ -131,7 +131,8 @@ describe("UI v2 design tokens and restyle", function () {
       const statusAboveCard = !!status && !!card && !!(status.compareDocumentPosition(card) & Node.DOCUMENT_POSITION_FOLLOWING);
       return { order, statusAboveCard };
     });
-    expect(layout.order).toEqual(["attach", "model", "spacer", "context", "mode-toggle", "stop", "send"]);
+    // U4 #8: the session total sits after the spacer, before the context ring.
+    expect(layout.order).toEqual(["attach", "model", "spacer", "session-cost", "context", "mode-toggle", "stop", "send"]);
     expect(layout.statusAboveCard).toBe(true);
   });
 

@@ -1,4 +1,3 @@
-import { BUILTIN_SKILL_DOCS } from "../skills/builtin-skills";
 import { ensureVaultFolder } from "../vault/storage";
 import type { ConvertedPackage } from "./import/convert";
 import { scaffoldManifest } from "./import/install";
@@ -7,48 +6,13 @@ import { AGENT_PLUGINS_MCP_SCHEMA_ID, AGENT_PLUGINS_SCHEMA_ID, USER_SKILLS_PACKA
 import type { PluginVault } from "./plugin-vault";
 
 /**
- * Packages the plugin writes itself: the shipped built-in skills, the user's
- * empty `my-skills` collection, the one-time legacy-skills migration, a
+ * Packages the plugin writes itself: the user's empty `my-skills` collection, the one-time legacy-skills migration, a
  * single-server MCP package, and a scaffolded skill. Each returns what it
  * wrote; the catalog owner invalidates.
  */
 
 /** Body cap for scaffolded skills (agent path has no modal textarea limit). */
 const MAX_SKILL_BODY_CHARS = 64 * 1024;
-
-/**
- * Materialize the `builtins` package (the plugin's own skills as a real,
- * inspectable Agent Plugins package). Only when absent: never overwrites
- * user edits.
- */
-export async function materializeBuiltins(vault: PluginVault): Promise<boolean> {
-  const writer = vault.writer();
-  const target = `${vault.folder()}/builtins`;
-  if (await writer.folderExists(target)) return false;
-  await writer.ensureFolder(`${target}/skills`);
-  for (const skill of BUILTIN_SKILL_DOCS) {
-    await writer.writeFile(`${target}/skills/${skill.name}/SKILL.md`, new TextEncoder().encode(skill.doc));
-  }
-  await writer.writeFile(
-    `${target}/plugin.json`,
-    scaffoldManifest(
-      "builtins",
-      "Built-in skills of the Agentic Chat plugin, materialized as an editable Agent Plugins package.",
-    ),
-  );
-  await writer.writeFile(
-    `${target}/README.md`,
-    "This package holds the plugin's built-in skills as a real Agent Plugins package. " +
-      "Edit the SKILL.md files here to customize them; the package is only (re)created when it is missing. " +
-      "Use **Repair built-ins** in the Resources tab to restore the originals.\n",
-  );
-  return true;
-}
-
-/** Delete the `builtins` package so the next materialization rewrites it. */
-export async function removeBuiltins(vault: PluginVault): Promise<void> {
-  await vault.writer().removeFolder(`${vault.folder()}/builtins`);
-}
 
 /**
  * Materialize the user's own `my-skills` collection package. Ships empty

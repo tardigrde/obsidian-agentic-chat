@@ -403,6 +403,17 @@ describe("AgentService", () => {
     expect(service.getMessages()).toEqual([]);
   });
 
+  it("a new session drops retained subagents, so continue cannot reach the old conversation", async () => {
+    const { service } = makeService(controlledStreamFn([]).streamFn);
+    await service.initialize();
+    const registry = (service as unknown as { subagents: { registry: { retain(e: unknown): void; retainedCount: number } } })
+      .subagents.registry;
+    registry.retain({ id: "sa-1", agent: "explorer", child: {} });
+    expect(registry.retainedCount).toBe(1);
+    await service.newSession();
+    expect(registry.retainedCount).toBe(0);
+  });
+
   it("refreshes resources and tool registration before each prompt", async () => {
     const seenTools: string[][] = [];
     const base = cannedStreamFn("ok");
@@ -1492,11 +1503,11 @@ describe("AgentService", () => {
     await next;
   });
 
-  it("returns steering stranded by a turn-cap end and keeps it out of the next prompt", async () => {
-    const controlled = controlledStreamFn(["capped answer", "fresh answer"]);
+  it("returns steering stranded by a guard end and keeps it out of the next prompt", async () => {
+    const controlled = controlledStreamFn(["guarded answer", "fresh answer"]);
     const { service } = makeService(controlled.streamFn);
-    const turnCap = (service as unknown as { turnCap: { shouldStopAfterTurn: () => boolean } }).turnCap;
-    const capSpy = vi.spyOn(turnCap, "shouldStopAfterTurn").mockReturnValue(true);
+    const loopGuard = (service as unknown as { loopGuard: { finishTurn: () => unknown } }).loopGuard;
+    const capSpy = vi.spyOn(loopGuard, "finishTurn").mockReturnValue({ action: "end" });
 
     const run = service.sendPrompt("initial request");
     await waitFor(() => controlled.runs.length === 1 && service.isStreaming(), "first active stream");

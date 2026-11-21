@@ -122,9 +122,13 @@ function buildOpenRouterModel(config: ModelConfig): Model<"openai-completions"> 
   return model;
 }
 
-/** Image input only when the catalog says so; an unknown model stays text-only. */
+/**
+ * Text-only only when the catalog says so (`im: 0`). A model the catalog does
+ * not know, or a catalog file from before the image flag, is unknown: allow
+ * images and let the provider answer (U4 #6), never "can't read images".
+ */
 function modelInput(info: { im?: 0 | 1 } | undefined): Array<"text" | "image"> {
-  return info?.im === 1 ? ["text", "image"] : ["text"];
+  return info?.im === 0 ? ["text"] : ["text", "image"];
 }
 
 function buildOllamaModel(config: ModelConfig): Model<"openai-completions"> {
@@ -136,7 +140,8 @@ function buildOllamaModel(config: ModelConfig): Model<"openai-completions"> {
     provider: "ollama",
     baseUrl,
     reasoning: false,
-    input: ["text"],
+    // Always allow images (U4 #6): a model that cannot read them answers with a provider error.
+    input: ["text", "image"],
     // Local inference is free; pi-ai computes cost from these per-million rates.
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
     contextWindow: DEFAULT_CONTEXT_WINDOW,
@@ -160,9 +165,9 @@ function buildOpenAICompatibleModel(config: ModelConfig): Model<"openai-completi
     provider: "openai-compatible",
     baseUrl: normalizeOpenAICompatibleApiBaseUrl(config.openaiCompatibleBaseUrl),
     reasoning: false,
-    // A gateway id that suffix-matches an OpenRouter vision model may still be
-    // text-only behind the gateway; a per-model setting or probe is S5.
-    input: ["text"],
+    // Always allow images (U4 #6): the gateway answers with an error when its
+    // model cannot read them, which is more honest than a guess from the slug.
+    input: ["text", "image"],
     cost: { input: pricing.input, output: pricing.output, cacheRead: pricing.cacheRead, cacheWrite: pricing.cacheWrite },
     contextWindow,
     maxTokens: DEFAULT_MAX_TOKENS,

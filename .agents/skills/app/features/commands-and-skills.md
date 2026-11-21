@@ -10,7 +10,7 @@
 - Skill tools: `skill` (actions `read` and `read_file`, always loaded) and
   `create_skill` (deferred; the model loads it with `search_tools`).
 - The New skill wizard on the Advanced settings tab (Agent plugins).
-- The Repair built-ins action.
+- Built-in skills served from code (no vault copy); a vault skill of the same name overrides.
 
 ## How to get to it (user view)
 
@@ -18,7 +18,7 @@
 - Type a full command and press Enter or click **Send**.
 - Type `/skill <name> [args]`, or a bare `/<skill-name> [args]`.
 - Open Settings and select Agentic Chat, then open **Advanced** and find **Agent plugins**, then click
-  **New skill…** or **Repair built-ins**.
+  **New skill…**.
 - The model calls skill tools on its own. They appear as tool steps.
 
 ## Driving it with the probe harness
@@ -65,7 +65,7 @@ await $(".agentic-chat-info").waitForExist();
 | `/export` | `src/ui/commands.ts#name: "export"` | `test/session-export.test.ts#session export` (renderer only) | `partial` |
 | `import_pdf` tool removed | `src/tools/document-tools.ts#createDocumentTools` | `test/feature-cut-2026-11.test.ts#does not give the model the import_pdf alias` (unit only) | `partial` |
 | `/semantic-index` removed | `src/ui/commands.ts#SLASH_COMMANDS` | `test/feature-cut-2026-11.test.ts#does not register /semantic-index and shows a retired hint` (unit only) | `partial` |
-| `/doctor` | `src/ui/commands.ts#name: "doctor"` | `test/runtime-diagnostics.test.ts#runtime diagnostics` (diagnostics only) | `partial` |
+| `/doctor` | `src/ui/commands.ts#name: "doctor"`; `src/agent/doctor-report.ts#buildDoctorReport` | `test/ui/doctor.test.ts#shows the status first, closed sections with counts, and saves a diagnostics entry for the miner`; `test/doctor-report.test.ts#lists problems first, each with a fix: a failed plugin, a failing MCP server, a stale catalog` | `partial` |
 | `/add-dir` and `/dirs` removed | `src/ui/commands.ts#SLASH_COMMANDS` | `test/commands.test.ts` (unit) plus `/help` absence in `test/e2e/specs/smoke.e2e.ts#routes /help, /init, and /compact locally without a model call` | `covered` |
 | `/agent` | `src/ui/commands.ts#name: "agent"` | `test/command-dispatcher.test.ts#resolves a named subagent with the trimmed task` (unit only) | `partial` |
 | `/skill`, `/skill <name>` | `src/ui/commands.ts#name: "skill"` | `test/e2e/specs/smoke.e2e.ts#renders a scripted turn, answers /plan locally, runs /skill, and Stop clears a running turn` | `covered` |
@@ -81,7 +81,7 @@ await $(".agentic-chat-info").waitForExist();
 | Retired `read_skill`, `read_skill_file`, `load_skill`, `unload_skill` tools | `src/agent/runtime-resources.ts#buildAgentParentTools` | `test/feature-cut-2026-11.test.ts#feature cut 2026-11: tool consolidation` (unit only) | `partial` |
 | `create_skill` (deferred; loaded by `search_tools`) | `src/tools/skill-tools.ts#createCreateSkillTool` | `test/skill-create-tool.test.ts#create_skill tool` (unit only) | `partial` |
 | New skill modal | `src/ui/new-skill-modal.ts#onOpen` | no committed check | `NONE` |
-| Repair built-ins | `src/settings-tab-plugins.ts#pluginDefinitions` | no committed check | `NONE` |
+| Built-in skills served from code, never copied to the vault | `src/skills/builtin-skills.ts#builtinSkills` | `test/plugins-service-import.test.ts#the plugin never writes a builtins package to the vault` (unit only) | `partial` |
 | Retired standalone inspect tools (`ls`, `search`, `find`, `grep`, `get_active_note`, `get_backlinks`, `get_links`, `local_graph`, `get_properties`) | `src/tools/tool-contracts.ts#BUILTIN_TOOL_NAMES` | `test/tool-contracts.test.ts#drives tool registration order; the old standalone inspect tools are gone` (unit only) | `partial` |
 
 ## Gotchas

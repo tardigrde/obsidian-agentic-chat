@@ -12,7 +12,7 @@ export interface StopNoticeModel {
 /** Assistant message written by the harness, not by the model. */
 export type StopNoticeMessage = AssistantMessage & { harnessNotice?: true };
 
-/** Text prefixes of guard notices, so sessions saved before the marker still match. */
+/** Text prefixes of guard notices, so sessions saved before the marker still match. "Turn cap" is from before U4 removed the cap. */
 const STOP_NOTICE_PREFIXES = ["Turn cap: stopped", "Loop guard: stopped"];
 
 /**

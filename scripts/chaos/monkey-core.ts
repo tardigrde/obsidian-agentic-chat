@@ -29,7 +29,6 @@ export const CHAOS_TARGETS = [
   "steer",
   "queue",
   "stop-send",
-  "max-turns",
   "settings-persistence",
   "approval-paths",
   "session-reload",

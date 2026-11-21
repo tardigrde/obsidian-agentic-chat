@@ -1,4 +1,3 @@
-import { PARENT_TURN_CAP } from "../../src/agent/turn-cap";
 import { retiredCommandHint } from "../../src/ui/commands";
 import type { ChaosCaps, ChaosTarget } from "./monkey-core";
 
@@ -45,7 +44,6 @@ export type ChaosActionKind =
   | "steer"
   | "queue"
   | "stop-send"
-  | "max-turns"
   | "settings-persistence"
   | "approval-paths"
   | "session-reload"
@@ -154,14 +152,6 @@ export function chaosActionCatalog(): ChaosAction[] {
       kind: "stop-send",
       description: "stop a running turn and send the held draft as a replacement",
       prompt: "Read Welcome.md, Notes/Seed.md, and Chaos Scratch.md one after another with separate read calls, then write a long summary.",
-    },
-    {
-      id: "max-turns",
-      surface: "max-turns",
-      kind: "max-turns",
-      description: "force more tool iterations than the assistant-turn cap allows",
-      prompt:
-        "Do not summarize and do not stop. Call the read tool on Welcome.md, then Notes/Seed.md, then Chaos Scratch.md, then repeat that cycle forever. Each call must be its own assistant turn. Make at least 40 read calls. The host will stop you when the turn budget ends.",
     },
     {
       id: "settings-persistence",
@@ -313,21 +303,6 @@ export function scriptedTurnsForAction(action: ChaosAction): ChaosScriptedTurn[]
         textTurn(`${action.id} held`, "The stopped answer must not settle.", { delayMs: 30_000 }),
         textTurn(`${action.id} replacement`, "Replacement answer after stop."),
       ];
-    case "max-turns": {
-      const turns: ChaosScriptedTurn[] = [];
-      for (let index = 0; index < PARENT_TURN_CAP; index += 1) {
-        turns.push(
-          writeTurn(
-            `${action.id} turn ${index}`,
-            `Chaos/Turn cap ${index}.md`,
-            `turn ${index}`,
-          ),
-        );
-      }
-      // The turn cap must fire before this turn is requested.
-      turns.push(textTurn(`${action.id} beyond cap`, "The turn cap did not stop the run."));
-      return turns;
-    }
     case "approval-paths":
       return [
         writeTurn(`${action.id} denied`, DENIED_NOTE, "denied write"),
@@ -368,8 +343,6 @@ export function modelCallsFor(action: ChaosAction): number {
       return 2;
     case "approval-paths":
       return 4;
-    case "max-turns":
-      return PARENT_TURN_CAP;
     case "prompt":
       return 1;
     default:

@@ -26,7 +26,7 @@ You have these tool categories. Core tools are always in your tool list. Deferre
 
 - **Vault**: read, vault_inspect, write, edit, rename, delete, set_properties. vault_inspect covers listing folders, searching names/content, the active note, local graph, and frontmatter.
 - **Web** (optional): web_search, fetch_url.
-- **Subagent** (optional): subagent — delegate focused subtasks to specialist child agents. One call = one subagent ({agent, task}); make several parallel calls to delegate multiple tasks (up to 10 run at once). Do not spawn subagents after being told not to.
+- **Subagent** (optional): subagent — delegate focused subtasks to specialist child agents. One call = one subagent ({agent, task}); make several parallel calls to delegate multiple tasks (the tool description gives how many run at once). Do not spawn subagents after being told not to.
 - **Artifacts** (optional): artifact — list, search, read, or export stored artifacts (large web pages, MCP results, imported documents) by id.
 - **Ask-user**: ask_user — ask the user a question with optional choices.
 - **Skills**: skill — action read loads the full body of any skill by name, including this one; action read_file reads a file inside a skill folder.
@@ -196,8 +196,9 @@ export const INSTALL_PLUGIN_SKILL: Skill = parseSkillMarkdown(INSTALL_PLUGIN_DOC
 /**
  * Skills that ship with the plugin (no vault folder needed).
  * Self-knowledge and install-plugin are always present; deep-research is
- * gated on web access. The same documents are materialized to the vault as
- * the `builtins` agent plugin package when that package is absent.
+ * gated on web access. They are served from the plugin code and never
+ * copied to the vault (U4 #12), so an upgrade always ships the current text.
+ * A vault plugin skill with the same name overrides one (runtime-resources).
  */
 export function builtinSkills(webEnabled: boolean): Skill[] {
   return webEnabled
@@ -205,9 +206,5 @@ export function builtinSkills(webEnabled: boolean): Skill[] {
     : [SELF_KNOWLEDGE_SKILL, INSTALL_PLUGIN_SKILL];
 }
 
-/** Source documents for the materialized `builtins` package. */
-export const BUILTIN_SKILL_DOCS: ReadonlyArray<{ name: string; doc: string }> = [
-  { name: "self-knowledge", doc: SELF_KNOWLEDGE_DOC },
-  { name: "deep-research", doc: DEEP_RESEARCH_DOC },
-  { name: "install-plugin", doc: INSTALL_PLUGIN_DOC },
-];
+/** Names of the built-in skills, for the /doctor override note. */
+export const BUILTIN_SKILL_NAMES: readonly string[] = [SELF_KNOWLEDGE_SKILL.name, DEEP_RESEARCH_SKILL.name, INSTALL_PLUGIN_SKILL.name];

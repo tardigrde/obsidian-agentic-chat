@@ -524,6 +524,26 @@ body.is-mobile,
   margin-top: var(--ac-space-1h);
 }
 
+/* /doctor (U4 #17): problems with a fix, then folded sections. */
+.agentic-chat-doctor-problems li.is-error {
+  color: var(--ac-status-error);
+}
+
+.agentic-chat-doctor-problems li.is-warn {
+  color: var(--ac-status-needs-you);
+}
+
+.agentic-chat-doctor-fix,
+.agentic-chat-doctor-note {
+  color: var(--ac-text-muted);
+  font-size: var(--ac-font-small);
+}
+
+.agentic-chat-doctor-section > summary {
+  cursor: pointer;
+  color: var(--ac-text-muted);
+}
+
 .agentic-chat-info-list {
   margin: 0;
   padding-left: var(--ac-space-4);
@@ -2289,6 +2309,22 @@ body.is-mobile,
   font-family: var(--ac-font-mono);
   font-size: var(--ac-font-small);
   white-space: pre;
+}
+
+/* A private focused note: shown, never sent (U4 #11). */
+.agentic-chat-chip.is-private {
+  color: var(--ac-text-muted);
+  border-style: dashed;
+}
+
+/* The session total, subagents included (U4 #8). */
+.agentic-chat-session-cost {
+  flex: 0 0 auto;
+  padding: 0 var(--ac-space-1);
+  color: var(--ac-text-muted);
+  font-size: var(--ac-font-small);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 .agentic-chat-ctx {

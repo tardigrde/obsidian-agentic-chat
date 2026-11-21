@@ -130,7 +130,7 @@ async function resetSettingsForUiSpec(): Promise<void> {
         mcpState: Record<string, unknown>;
       };
       ignoredGlobs: string;
-      maxTurnsPerPrompt: number;
+      maxParallelSubagents: number;
     };
     settings.provider = "openrouter";
     settings.openrouterApiKey = "";
@@ -172,7 +172,7 @@ async function resetSettingsForUiSpec(): Promise<void> {
     };
     settings.plugins = { folder: ".agentic-plugins", enabled: {}, sources: {}, mcpState: {} };
     settings.ignoredGlobs = "";
-    settings.maxTurnsPerPrompt = 25;
+    settings.maxParallelSubagents = 10;
     app.secretStorage?.setSecret?.(secretId, "");
     app.secretStorage?.setSecret?.("agentic-chat-langfuse-public-key", "");
     app.secretStorage?.setSecret?.("agentic-chat-langfuse-secret-key", "");
@@ -291,20 +291,23 @@ describe("agentic-chat settings UI", function () {
     expect("toolBudget" in stored).toBe(false);
   });
 
-  it("persists and clamps the turn cap through the Agent tab (#283)", async function () {
+  it("has no turn cap or subagent timeout; persists and clamps Parallel subagents (U4)", async function () {
     await selectSettingsTab("Agent");
-    await setSettingText("Max turns per prompt", "60");
+    expect(await readSettingsBodyText()).not.toContain("Max turns per prompt");
+    await selectSettingsTab("Advanced");
+    expect(await readSettingsBodyText()).not.toContain("Subagent timeout");
+    await setSettingText("Parallel subagents", "4");
     await waitForAgenticChatSetting(
-      (settings) => (settings as unknown as { maxTurnsPerPrompt: number }).maxTurnsPerPrompt === 60,
-      "Max turns per prompt was not persisted from the settings UI",
+      (settings) => (settings as unknown as { maxParallelSubagents: number }).maxParallelSubagents === 4,
+      "Parallel subagents was not persisted from the settings UI",
     );
     // Out of range: clamped to the ceiling, and the field shows what was saved.
-    await setSettingText("Max turns per prompt", "5000");
+    await setSettingText("Parallel subagents", "99");
     await waitForAgenticChatSetting(
-      (settings) => (settings as unknown as { maxTurnsPerPrompt: number }).maxTurnsPerPrompt === 200,
-      "Max turns per prompt was not clamped to 200",
+      (settings) => (settings as unknown as { maxParallelSubagents: number }).maxParallelSubagents === 20,
+      "Parallel subagents was not clamped to 20",
     );
-    expect(await readSettingText("Max turns per prompt")).toBe("200");
+    expect(await readSettingText("Parallel subagents")).toBe("20");
   });
 
   it("clamps max response tokens in the field and says why (U2, chaos #3)", async function () {
@@ -556,7 +559,7 @@ describe("agentic-chat settings UI", function () {
   it("persists plugin folder and ignored globs through the Advanced tab", async function () {
     await selectSettingsTab("Advanced");
     await setSettingText("Plugins folder", ".agentic-plugins-e2e");
-    await setSettingText("Ignore list", "Private/\n*.secret.md");
+    await setSettingText("Ignored paths", "Private/\n*.secret.md");
 
     const settings = await readAgenticChatSettings<SettingsSnapshot>();
     expect(settings.plugins.folder).toBe(".agentic-plugins-e2e");

@@ -91,8 +91,8 @@ type DriverResult = {
   plugin?: ExplorerOutcome["plugin"];
 };
 
-/** Scenarios the explorer may call as macros. max-turns spends 25 calls, so it stays out. */
-const EXPLORER_SCENARIOS = CHAOS_TARGETS.filter((target) => target !== "max-turns");
+/** Scenarios the explorer may call as macros. */
+const EXPLORER_SCENARIOS = [...CHAOS_TARGETS];
 
 /** Generic answers for a dry replay: the plugin side stays scripted and free. */
 function dryReplayTurns(count: number): ScriptedTurn[] {
@@ -601,61 +601,6 @@ async function runStopSend(action: ChaosAction): Promise<void> {
   await assertSessionsValid();
 }
 
-async function runMaxTurns(action: ChaosAction): Promise<void> {
-  await configureApproval("allow", { write: "deny" });
-  try {
-    result.calls += modelCallsFor(action);
-    result.tokens += estimateTokens(action.prompt ?? "");
-    await sendPrompt(action.prompt ?? "");
-    const notice = /Turn cap: stopped after \d+ assistant turns/;
-    let capSeen = true;
-    try {
-      await browser.waitUntil(async () => notice.test(await transcriptText()), {
-        timeout: plan.live ? 180_000 : 120_000,
-        interval: 1_000,
-        timeoutMsg: "the assistant-turn cap produced no visible stop message",
-      });
-    } catch (error) {
-      capSeen = false;
-      if (!plan.live) throw error;
-    }
-    await browser.waitUntil(async () => !(await isRunning()), {
-      timeout: 30_000,
-      interval: 500,
-      timeoutMsg: "the UI is still running after the turn cap check",
-    });
-    if (!capSeen) {
-      // A live model can refuse to loop. That is a precondition miss, not a
-      // product failure: the dry run executes the full 25-turn budget and
-      // observes the notice deterministically.
-      result.runnerNotes.push(
-        "max-turns: the live model stopped before the assistant-turn cap; the deterministic dry run proves the cap and notice",
-      );
-      await assertSessionsValid();
-      return;
-    }
-    const responsive = await browser.execute(() => {
-      const input = document.querySelector<HTMLTextAreaElement>('[data-ac="composer-input"]');
-      if (!input) return false;
-      input.focus();
-      input.value = "responsiveness probe";
-      input.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: "responsiveness probe" }));
-      return input.value === "responsiveness probe";
-    });
-    if (!responsive) throw new Error("the composer is not responsive after the turn cap fired");
-    await browser.execute(() => {
-      const input = document.querySelector<HTMLTextAreaElement>('[data-ac="composer-input"]');
-      if (input) {
-        input.value = "";
-        input.dispatchEvent(new Event("input", { bubbles: true }));
-      }
-    });
-    await assertSessionsValid();
-  } finally {
-    await configureApproval("ask");
-  }
-}
-
 const PERSISTED = {
   noProxy: "localhost,127.0.0.1,chaos.local",
   requestTimeoutMs: 120_000,
@@ -1029,9 +974,6 @@ async function runAction(action: ChaosAction): Promise<void> {
         break;
       case "stop-send":
         await runStopSend(action);
-        break;
-      case "max-turns":
-        await runMaxTurns(action);
         break;
       case "settings-persistence":
         await runSettingsPersistence(action);

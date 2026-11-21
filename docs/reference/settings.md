@@ -18,7 +18,6 @@ Provider, API key, model id, and request behavior.
 | Max response tokens | `0` | `0` lets the provider decide. |
 | Request timeout | `90s` | How long to wait for the provider to start responding. |
 | Network retries | `2` | Retries on rate limits and transient errors. |
-| Max turns per prompt | `25` | Model turns before the agent stops (3-200). Sending or steering a message starts a new count. |
 | HTTP proxy (desktop) | empty | `http://host:port` with no trailing slash. Only the http scheme is accepted. On mobile, leave this empty and use the device or VPN proxy. |
 
 Keys live in Obsidian secret storage. `data.json` stores secret ids, not values.
@@ -67,12 +66,16 @@ The master switch controls background toasts. Errors always show. **Cost alert (
 
 ### Agent plugins
 
-Plugin management and diagnostics. Buttons: **Install plugin…**, **New skill…**, and **Repair built-ins**. The installed plugin list shows enable toggles, spec status, component counts, and open-folder shortcuts. See [Install](../guide/install.md#installing-agent-plugins).
+Plugin management and diagnostics. Buttons: **Install plugin…** and **New skill…**. The installed plugin list shows enable toggles, spec status, component counts, and open-folder shortcuts. See [Install](../guide/install.md#installing-agent-plugins).
 
 ### Subagents
 
-- **Subagent timeout**: `0` (disabled). Auto-abort a child after N seconds, up to 86400.
+- **Parallel subagents**: `10`. How many subagents run at once in one turn (1-20); the rest queue.
+
+There is no turn cap and no subagent timeout (removed in U4). Stop, the loop
+guard, and the spend cap (`Spend cap`) end a run; the spend cap also counts
+each subagent model call while it runs.
 
 ### Ignored files
 
-- **Ignore list**: one gitignore-style glob per line. Matching notes are invisible to the agent and report as not found.
+- **Ignored paths**: private rules, separated by commas or new lines: a path glob or name, a `#tag`, or a `key=value` property (`key=` for any value). The agent is told a matching note is private and cannot read, list, search, or change it. See [Privacy](../guide/privacy.md#private-notes).

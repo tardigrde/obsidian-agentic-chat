@@ -8,19 +8,33 @@ export class AgentSessionLocalState {
   readonly readMemo = new ReadMemo();
 
   private errorMessage: string | undefined;
-  /** Child usage lives outside the parent transcript and is reset on session swaps/rewinds. */
-  private childUsage: Usage = emptyUsage();
+  /**
+   * Usage of dispatches still running, by dispatch (tool call) id. A finished
+   * dispatch's usage is read from its tool result in the transcript instead,
+   * so it survives a reload; reset on session swaps/rewinds.
+   */
+  private readonly childUsage = new Map<string, Usage>();
 
   get error(): string | undefined {
     return this.errorMessage;
   }
 
+  /** Usage of the dispatches still running (their tool result is not in the transcript yet). */
   get subagentUsage(): Usage {
-    return this.childUsage;
+    const total = emptyUsage();
+    for (const usage of this.childUsage.values()) addUsage(total, usage);
+    return total;
   }
 
-  recordSubagentUsage(usage: Usage): void {
-    addUsage(this.childUsage, usage);
+  /** A dispatch's tool result landed in the transcript, which now carries its usage. */
+  settleSubagentUsage(dispatchId: string): void {
+    this.childUsage.delete(dispatchId);
+  }
+
+  recordSubagentUsage(usage: Usage, dispatchId = "unknown"): void {
+    const current = this.childUsage.get(dispatchId) ?? emptyUsage();
+    addUsage(current, usage);
+    this.childUsage.set(dispatchId, current);
   }
 
   setError(error: unknown): void {
@@ -40,7 +54,7 @@ export class AgentSessionLocalState {
   }
 
   reset(): void {
-    this.childUsage = emptyUsage();
+    this.childUsage.clear();
     this.readMemo.clear();
     this.errorMessage = undefined;
   }

@@ -1,6 +1,7 @@
 import { acHook } from "./test-hooks";
 import { setIcon } from "obsidian";
 import type { ActionRow } from "./workflow-renderer";
+import { doctorProblemLine, doctorStatusLine, type DoctorReport } from "../agent/doctor-report";
 
 export function renderInfoPanel(parent: HTMLElement, title: string, entries: Array<[string, string]>): HTMLElement {
   const el = acHook(parent.createDiv({ cls: ["agentic-chat-message", "agentic-chat-info"] }), "info");
@@ -12,6 +13,46 @@ export function renderInfoPanel(parent: HTMLElement, title: string, entries: Arr
     const item = list.createEl("li");
     item.createEl("code", { text: label });
     item.appendText(` — ${value}`);
+  }
+  return el;
+}
+
+/**
+ * `/doctor` (U4 #17): the status, then problems with their fix, the
+ * essentials, notes, and closed sections (counts on top, names inside).
+ */
+export function renderDoctorPanel(parent: HTMLElement, report: DoctorReport): HTMLElement {
+  const el = acHook(parent.createDiv({ cls: ["agentic-chat-message", "agentic-chat-info", "agentic-chat-doctor"] }), "info");
+  el.setAttribute("data-ac-state", report.status);
+  const details = el.createEl("details", { cls: "agentic-chat-info-details" });
+  details.open = true;
+  details.createEl("summary", { text: `Doctor · ${doctorStatusLine(report)}` });
+  const body = details.createDiv({ cls: "agentic-chat-info-body" });
+  if (report.problems.length > 0) {
+    const problems = body.createEl("ul", { cls: ["agentic-chat-info-list", "agentic-chat-doctor-problems"] });
+    for (const problem of report.problems) {
+      const item = problems.createEl("li", { cls: `is-${problem.severity}` });
+      item.setAttribute("data-code", problem.code);
+      item.createDiv({ text: doctorProblemLine(problem) });
+      item.createDiv({ cls: "agentic-chat-doctor-fix", text: `Fix: ${problem.fix}` });
+    }
+  }
+  const essentials = body.createEl("ul", { cls: ["agentic-chat-info-list", "agentic-chat-doctor-essentials"] });
+  for (const [label, value] of report.essentials) {
+    const item = essentials.createEl("li");
+    item.createEl("code", { text: label });
+    item.appendText(` — ${value}`);
+  }
+  for (const note of report.notes) body.createDiv({ cls: "agentic-chat-doctor-note", text: note });
+  for (const section of report.sections) {
+    const fold = body.createEl("details", { cls: "agentic-chat-doctor-section" });
+    fold.createEl("summary", { text: `${section.title} · ${section.summary}` });
+    const list = fold.createEl("ul", { cls: "agentic-chat-info-list" });
+    for (const [label, value] of section.rows) {
+      const item = list.createEl("li");
+      item.createEl("code", { text: label });
+      item.appendText(` — ${value}`);
+    }
   }
   return el;
 }

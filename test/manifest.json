@@ -15,7 +15,7 @@
       "runner": "vitest",
       "globs": [
         "test/{agent-*,parent-agent*,subagent*,turn-*,compaction*,conversation-*,context-builder,context-load*,retry-*,runtime-*,service-*,utils-*}.test.ts",
-        "test/{ask-before-delete,prompt-turn-runtime,stream-runtime,loop-guard,message-content,system-prompt,instructions,error-classifier,cost,models,models-timeout,model-catalog,openai-compatible-request,replay-stream,approval,approval-matrix,approval-memory,observability,sha256,format,privacy-redaction,redaction-names,slash-dispatch,command-dispatcher,commands}.test.ts"
+        "test/{ask-before-delete,prompt-turn-runtime,stream-runtime,loop-guard,message-content,system-prompt,instructions,error-classifier,cost,models,models-timeout,model-catalog,pricing-cache-upgrade,doctor-report,openai-compatible-request,replay-stream,approval,approval-matrix,approval-memory,observability,sha256,format,privacy-redaction,redaction-names,slash-dispatch,command-dispatcher,commands}.test.ts"
       ],
       "triggers": [
         "src/agent/**",
@@ -123,7 +123,7 @@
       "runner": "vitest",
       "globs": [
         "test/{vault-*,web-*,tool-artifact-*}.test.ts",
-        "test/{tool-call-controller,tool-consolidation-witness,tool-contracts,tool-loading,tool-output-wrapper,tool-schema-tokens,ask-user-tool,ignore,path-normalizers,read-memo,truncate,document-ingest,pdf-ingest,attachments,image-attachments,retrieval-citations,source-artifacts,system-browser,diff,file-system-sandbox,active-note}.test.ts"
+        "test/{tool-call-controller,tool-consolidation-witness,tool-contracts,tool-loading,tool-output-wrapper,tool-schema-tokens,ask-user-tool,ignore,path-normalizers,read-memo,truncate,document-ingest,pdf-ingest,attachments,image-attachments,retrieval-citations,source-artifacts,system-browser,diff,file-system-sandbox,active-note,private-rules}.test.ts"
       ],
       "triggers": [
         "src/vault/**",

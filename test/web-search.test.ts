@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import type { WebFetcher, WebHttpRequest, WebHttpResponse } from "../src/tools/web-fetch";
 import { createWebSearchTool, type WebSearchConfig } from "../src/tools/web-search";
+import { plainTextFromHtml } from "../src/utils/html-entities";
 
 function stubFetcher(
   response: Partial<WebHttpResponse>,
@@ -20,6 +21,7 @@ function baseConfig(overrides: Partial<WebSearchConfig> = {}): WebSearchConfig {
     searxngUrl: "",
     maxResults: 5,
     fetcher: stubFetcher({ text: "{}" }),
+    retryDelaysMs: [0, 0, 0],
     ...overrides,
   };
 }
@@ -124,5 +126,57 @@ describe("web_search tool", () => {
   it("errors on a non-2xx response", async () => {
     const tool = createWebSearchTool(baseConfig({ fetcher: stubFetcher({ status: 500, text: "boom" }) }));
     await expect(run(tool, { query: "x" })).rejects.toThrow(/HTTP 500/);
+  });
+
+  it("U4 #14: parallel searches run one at a time per provider, so Brave never sees three at once", async () => {
+    let inFlight = 0;
+    let peak = 0;
+    const fetcher: WebFetcher = async () => {
+      inFlight += 1;
+      peak = Math.max(peak, inFlight);
+      // A provider rate limit: a second concurrent call is refused.
+      const status = inFlight > 1 ? 429 : 200;
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      inFlight -= 1;
+      return { status, headers: {}, text: JSON.stringify({ web: { results: [{ title: "R", url: "https://r.example", description: "d" }] } }) };
+    };
+    const tool = createWebSearchTool(baseConfig({ provider: "brave", apiKey: "k", fetcher, retryDelaysMs: [] }));
+    const results = await Promise.all(["a", "b", "c"].map((query) => run(tool, { query })));
+    expect(results.map((result) => result.details.count)).toEqual([1, 1, 1]);
+    expect(peak).toBe(1);
+  });
+
+  it("U4 #14: retries a 429 with backoff and returns the result", async () => {
+    const statuses = [429, 503, 200];
+    let calls = 0;
+    const fetcher: WebFetcher = async () => {
+      const status = statuses[calls] ?? 200;
+      calls += 1;
+      const headers: Record<string, string> = status === 429 ? { "retry-after": "0" } : {};
+      return { status, headers, text: JSON.stringify({ results: [{ title: "T", url: "https://t.example", content: "c" }] }) };
+    };
+    const tool = createWebSearchTool(baseConfig({ fetcher, retryDelaysMs: [1, 1, 1] }));
+    const { details } = await run(tool, { query: "retry me" });
+    expect(calls).toBe(3);
+    expect(details.count).toBe(1);
+  });
+
+  it("U4 #14: snippets and titles are plain text (no <strong>, entities decoded)", async () => {
+    const fetcher = stubFetcher({
+      text: JSON.stringify({ web: { results: [{ title: "Tom &amp; <strong>Jerry</strong>", url: "https://x.example", description: "The <strong>best</strong> &sect; 3 &mdash; cats" }] } }),
+    });
+    const tool = createWebSearchTool(baseConfig({ provider: "brave", apiKey: "k", fetcher }));
+    const { text } = await run(tool, { query: "cats" });
+    expect(text).toContain("Tom & Jerry");
+    expect(text).toContain("The best § 3 — cats");
+    expect(text).not.toContain("<strong>");
+  });
+});
+
+describe("plainTextFromHtml leaves no markup", () => {
+  it("drops encoded and nested tags, keeps entities as text", () => {
+    expect(plainTextFromHtml("&lt;img src=x onerror=alert(1)&gt;hi")).toBe("hi");
+    expect(plainTextFromHtml("<scr<b>ipt>alert(1)</script> ok")).not.toMatch(/<\s*script/i);
+    expect(plainTextFromHtml("<strong>Tom &amp; Jerry</strong> &sect;2, a &lt; b")).toBe("Tom & Jerry §2, a < b");
   });
 });

@@ -1,4 +1,4 @@
-import type { App, DataAdapter } from "obsidian";
+import { loadPdfJs, type App, type DataAdapter } from "obsidian";
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { Type } from "typebox";
 import type { ToolArtifactStoreLike } from "../artifacts/tool-artifact-store";
@@ -7,7 +7,7 @@ import {
   documentKindFromPath,
   type DocumentImportWriteResult,
 } from "../retrieval/document-ingest";
-import { PdfArtifactDeduper } from "../retrieval/pdf-ingest";
+import { PdfArtifactDeduper, type PdfJsLike, type PdfJsLoader } from "../retrieval/pdf-ingest";
 import { normalizeVaultPath } from "../vault/path";
 import { toolResult } from "./result";
 
@@ -17,9 +17,14 @@ const ImportDocumentParameters = Type.Object({
   maxChunkChars: Type.Optional(Type.Number({ description: "chunk size (default 8000)" })),
 });
 
-export function createDocumentTools(app: App, artifactStore: ToolArtifactStoreLike | undefined): AgentTool[] {
+export function createDocumentTools(
+  app: App,
+  artifactStore: ToolArtifactStoreLike | undefined,
+  // Obsidian's own pdf.js (U4 #10); tests pass pdfjs-dist.
+  loadPdf: PdfJsLoader = () => loadPdfJs() as Promise<PdfJsLike>,
+): AgentTool[] {
   if (!artifactStore) return [];
-  const pdfArtifacts = new PdfArtifactDeduper();
+  const pdfArtifacts = new PdfArtifactDeduper(loadPdf);
   const documentArtifacts = new DocumentArtifactDeduper();
   return [
     createImportDocumentTool(app.vault.adapter, artifactStore, pdfArtifacts, documentArtifacts),
@@ -76,8 +81,14 @@ async function importPdf(
     sourcePath: path,
     title: normalizeOptionalString(params.title),
     maxChunkChars: normalizeMaxChunkChars(params.maxChunkChars),
-    data: await readSourceData(adapter, path),
+    data: await readPdfData(adapter, path),
   });
+}
+
+async function readPdfData(adapter: DataAdapter, path: string): Promise<ArrayBuffer | Uint8Array> {
+  const data = await readSourceData(adapter, path);
+  // A text-only adapter (tests) returns a string: keep its bytes as Latin-1.
+  return typeof data === "string" ? Uint8Array.from(data, (char) => char.charCodeAt(0) & 0xff) : data;
 }
 
 function normalizeDocumentPath(value: string): string {

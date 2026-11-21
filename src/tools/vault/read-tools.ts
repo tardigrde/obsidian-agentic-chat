@@ -1,3 +1,4 @@
+import { privatePathMessage } from "../../vault/private-rules";
 import { type App, TFolder, MarkdownView } from "obsidian";
 import { binaryKindByExtension, binaryReadError, looksBinary } from "../../vault/binary-file";
 import type { AgentTool, AgentToolResult } from "@earendil-works/pi-agent-core";
@@ -228,21 +229,29 @@ function finishRead(
   }, "read");
 }
 
+/**
+ * A folder listing that says how many private children it hides (U4 #11): a
+ * folder whose children are all private must not read "(empty folder)", or
+ * the model reports "confirmed empty".
+ */
+function listingResult(rows: string[], hidden: number, path: string): ToolResult {
+  const note = hidden > 0 ? `${hidden} private ${hidden === 1 ? "item" : "items"} hidden (excluded in settings).` : "";
+  const body = rows.length === 0 ? (note ? note : "(empty folder)") : truncateToolOutput(note ? `${rows.join("\n")}\n${note}` : rows.join("\n"));
+  return textResult(body, { path, count: rows.length, ...(hidden > 0 ? { hidden } : {}) });
+}
+
 /** List a vault folder (`vault_inspect` action `list`). Ignored children stay hidden. */
 export async function listFolder(app: App, isIgnored: IgnoreMatcher, folder: string | undefined): Promise<ToolResult> {
   const path = normalizeFolderPath(folder ?? "");
-  if (path && isIgnored(path)) throw new Error(`Folder not found: ${path}`);
+  if (path && isIgnored(path)) throw new Error(privatePathMessage(path));
   const entry = path ? findVaultEntry(app, path) : app.vault.getRoot();
   if (entry instanceof TFolder) {
-    const rows = entry.children
+    const visible = entry.children.filter((child) => !isIgnored(child.path));
+    const rows = visible
       .slice()
-      .filter((child) => !isIgnored(child.path))
       .sort((left, right) => left.path.localeCompare(right.path))
       .map((child) => `${child instanceof TFolder ? "folder" : "file"}\t${child.path}`);
-    return textResult(rows.length === 0 ? "(empty folder)" : truncateToolOutput(rows.join("\n")), {
-      path,
-      count: rows.length,
-    });
+    return listingResult(rows, entry.children.length - visible.length, path);
   }
   // Stale tree: dot-folders (e.g. .agentic-plugins) created outside the
   // session are on disk but missing from the vault index — fall back to
@@ -252,17 +261,15 @@ export async function listFolder(app: App, isIgnored: IgnoreMatcher, folder: str
     const listing = await app.vault.adapter.list(path);
     // Sort by path like the tree branch (which sorts child.path), not by
     // rendered row — "file\t" sorts before "folder\t" and would regroup.
-    const entries = [
+    const all = [
       ...(listing?.folders ?? []).map((entry) => ({ kind: "folder", path: trimSlashes(entry) })),
       ...(listing?.files ?? []).map((entry) => ({ kind: "file", path: trimSlashes(entry) })),
-    ]
-      .filter((entry) => entry.path && !isIgnored(entry.path))
+    ].filter((entry) => entry.path);
+    const entries = all
+      .filter((entry) => !isIgnored(entry.path))
       .sort((left, right) => left.path.localeCompare(right.path));
     const rows = entries.map((entry) => `${entry.kind}\t${entry.path}`);
-    return textResult(rows.length === 0 ? "(empty folder)" : truncateToolOutput(rows.join("\n")), {
-      path,
-      count: rows.length,
-    });
+    return listingResult(rows, all.length - entries.length, path);
   } catch {
     throw new Error(folderNotFoundMessage(app, path, isIgnored));
   }
