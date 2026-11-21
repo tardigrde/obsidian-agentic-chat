@@ -178,7 +178,7 @@ export interface SubagentToolDeps {
    * Report a child's token usage for session cost accounting, once per child
    * model call, so the spend cap sees a running fan-out (U4 #9).
    */
-  recordUsage?: (usage: Usage) => void;
+  recordUsage?: (usage: Usage, dispatchId: string) => void;
   /** How many children run at once (setting `maxParallelSubagents`); default 10. */
   maxParallel?: () => number;
   /** Per-service registry. Omit only for standalone tools that need no external stop. */
@@ -457,7 +457,7 @@ async function runSingleChild(
     // Each child model call is billed at once, so the spend cap sees it.
     if (event.type === "message_end" && event.message.role === "assistant") {
       const callUsage = sumAssistantUsage([event.message]);
-      if (callUsage) deps.recordUsage?.(callUsage);
+      if (callUsage) deps.recordUsage?.(callUsage, parentToolCallId);
     }
     if (!status.transcript) return;
     if (event.type === "message_update") {

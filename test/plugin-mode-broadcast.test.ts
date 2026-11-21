@@ -33,7 +33,6 @@ async function loadedPlugin(): Promise<{ plugin: AgenticChatPlugin; refresh: Ret
     target[method] = () => undefined;
   }
   const service = new PluginService(app as unknown as App, () => plugin.settings, () => plugin.saveSettings());
-  service.ensureBuiltinsMaterialized = async () => false;
   service.ensureMySkillsMaterialized = async () => false;
   target.pluginService = service;
   await plugin.onload();

@@ -145,6 +145,7 @@ export class AgentService {
   private readonly listeners = new AgentServiceListeners();
   private readonly loopGuard = new AgentLoopGuard();
   private readonly recentEvents: string[] = [];
+  private readonly queuedTexts: string[] = [];
   private readonly promptTurns: AgentPromptTurnRuntime;
   private disposal: Promise<void> | null = null;
 
@@ -225,8 +226,8 @@ export class AgentService {
       buildStreamFn: () => this.streams.buildStreamFn(),
       // Each child model call counts at once, so the spend cap stops a fan-out
       // while it runs, not only after the dispatch returns (U4 #9).
-      recordUsage: (usage) => {
-        this.sessionState.recordSubagentUsage(usage);
+      recordUsage: (usage, dispatchId) => {
+        this.sessionState.recordSubagentUsage(usage, dispatchId);
         this.enforceSpendCap();
       },
       webFetch: this.webFetch,
@@ -589,11 +590,21 @@ export class AgentService {
     }
 
     const message = createUserMessage(text, attached);
+    // The model will hold this text: a note in it counts as sent at once (U4).
+    this.queuedTexts.push(text);
     this.sessionState.clearError();
     // Steering is user input too: user-provided info ends any running streak.
     this.resetTurnGuards();
     agent.steer(message);
     this.notifyChange();
+  }
+
+  /**
+   * User text queued into the running turn (steers), not yet in the messages.
+   * The context dedupe counts it as sent; cleared when the run ends.
+   */
+  queuedUserTexts(): string[] {
+    return this.agent?.state.isStreaming ? [...this.queuedTexts] : [];
   }
 
   /** Whether the model the next turn will use accepts image input (vision). */
@@ -759,6 +770,11 @@ export class AgentService {
 
   private async handleAgentEvent(event: AgentEvent): Promise<void> {
     this.recordRecentEvent(event);
+    if (event.type === "agent_start" || event.type === "agent_end") this.queuedTexts.length = 0;
+    // A dispatch's tool result now carries its children's usage (U4 #8).
+    if (event.type === "message_end" && event.message.role === "toolResult") {
+      this.sessionState.settleSubagentUsage((event.message as { toolCallId: string }).toolCallId);
+    }
     this.observability.handleAgentEvent(event);
     await handleAgentRuntimeEvent(event, {
       recordMessageEnd: (message) => this.sessionEvents.recordMessageEnd(message),

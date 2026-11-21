@@ -2132,6 +2132,16 @@ body.is-mobile,
   white-space: pre;
 }
 
+/* The session total, subagents included (U4 #8). */
+.agentic-chat-session-cost {
+  flex: 0 0 auto;
+  padding: 0 var(--ac-space-1);
+  color: var(--ac-text-muted);
+  font-size: var(--ac-font-small);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
 .agentic-chat-ctx {
   display: inline-flex;
   align-items: center;

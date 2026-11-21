@@ -210,7 +210,7 @@ export class ChatTurn {
       attachments: staged.attachments,
       activeNotePath: staged.autoPath,
       isPathIgnored: (path) => service.isPathIgnored(path),
-      sentText: sentUserText(service.getMessages()),
+      sentText: sentUserText(service.getMessages(), service.queuedUserTexts()),
     });
     if (!stillBound()) return null;
     const prompt = assemblePrompt(context, text);
@@ -363,6 +363,7 @@ export class ChatTurn {
           event.isError,
           event.result,
         );
+        transcript.addToolResultUsage((event.result as { details?: unknown } | undefined)?.details);
         break;
       case "agent_end":
         transcript.endRun();

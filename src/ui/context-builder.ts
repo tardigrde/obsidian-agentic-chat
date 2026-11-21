@@ -10,6 +10,7 @@ import { isTextContextAttachment, textContextSection, type ContextAttachment } f
 import { arrayBufferToBase64, imageMimeType, isImagePath } from "./image-attachments";
 import { extractNoteSlice } from "./note-slices";
 import { stripPromptPreamble } from "../session/session-title";
+import { isSummaryMessage } from "../agent/compaction";
 
 export interface PromptContextOptions {
   app: App;
@@ -33,13 +34,16 @@ export interface ImageAttachmentOptions {
 /**
  * All user-message text in the model's current context, joined. The dedupe
  * reads the conversation itself, not a cache, so a reload, a history load, or a
- * dropped turn cannot make it forget what was sent; after compaction the old
- * text is gone and the section is sent in full once more.
+ * dropped turn cannot make it forget what was sent. After compaction the old
+ * text is gone and the section is sent in full once more: a compaction summary
+ * never counts as holding a note, even when it quotes it (U4 dedupe edge).
+ * `pending` is user text already queued into the running turn (a steer), so
+ * the next message does not send the same note again before it lands.
  */
-export function sentUserText(messages: readonly AgentMessage[]): string {
-  const parts: string[] = [];
+export function sentUserText(messages: readonly AgentMessage[], pending: readonly string[] = []): string {
+  const parts: string[] = [...pending];
   for (const message of messages) {
-    if (message.role !== "user") continue;
+    if (message.role !== "user" || isSummaryMessage(message)) continue;
     const content = message.content;
     if (typeof content === "string") parts.push(content);
     else for (const part of content) if (part.type === "text") parts.push(part.text);
