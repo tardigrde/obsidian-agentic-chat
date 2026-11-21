@@ -24,7 +24,7 @@ A plugin with only `mcp.json` (no skills) is valid. The spec allows MCP-only plu
 
 A plugin with only `plugin.json` is also valid. Per section 6.2, a missing component location is not an error, so the loader reports `ok` with 0 skills and 0 servers. The `my-skills` package is your personal collection (`skills/<name>/SKILL.md`). The plugin creates it when absent, never overwrites it, and restores it on restart if deleted.
 
-> Built-ins can go stale. The `builtins` package is a materialized copy. The plugin creates it when missing and never updates it automatically. After a plugin update, click **Repair built-ins** on the Advanced tab (Agent plugins) to refresh it. Edits in the vault always win over the bundled text.
+> Built-in skills are served from the plugin code, so an update always ships their current text. A vault skill with the same name overrides a built-in one; `/doctor` notes when that happens. A `builtins` folder left by an older version still overrides them: delete it to get the current text.
 
 ## Creating plugins
 
@@ -46,7 +46,7 @@ One limitation remains. Generic file tools (`read`, `ls`) fall back to disk when
 
 ## Built-in skill package
 
-On first load, Agentic Chat creates a `builtins` package in the plugins folder. It holds the self-knowledge, deep-research (web mode), and install-plugin skills, so built-ins behave like plugin skills and a plugin skill with the same name can shadow them. The plugin only creates the package when missing and never overwrites edits. If you delete it, use **Advanced > Agent plugins > Repair built-ins**.
+The self-knowledge, deep-research (web mode), and install-plugin skills ship inside the plugin and are not copied to the vault. A plugin skill with the same name shadows a built-in one.
 
 ## Managing plugins
 

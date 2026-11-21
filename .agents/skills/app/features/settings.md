@@ -69,7 +69,6 @@ await closeAgenticChatSettings();
 | Agent plugins: Import | `src/settings-tab-plugins.ts#row("Import"` | `test/e2e/specs/settings-ui.e2e.ts#installs a plugin package from an archive URL through the Install plugin modal` | `covered` |
 
 | Recover an interrupted plugin install | `src/plugins/service.ts#sweepImportStages` | `test/plugins-service.test.ts#restores a backup when the target is missing before sweeping` | `partial` |
-| Agent plugins: Repair built-ins | `src/settings-tab-plugins.ts#pluginDefinitions` | no committed check | `NONE` |
 | Agent plugins: Plugins folder | `src/settings-tab-plugins.ts#row("Plugins folder"` | `test/e2e/specs/settings-ui.e2e.ts#persists plugin folder and ignored globs through the Advanced tab` | `covered` |
 | Agent plugins: plugin row toggle/open/remove | `src/settings-tab-plugins.ts#pluginRowDefinition` | `test/e2e/specs/mobile-viewport.e2e.ts#keeps the settings tab UI usable at phone width` (row renders only) | `partial` |
 | Semantic retrieval section removed | `src/settings-tabs.ts#SETTINGS_SECTION_IDS` | `test/feature-cut-2026-11.test.ts#has no semantic retrieval settings section` (unit only) | `partial` |

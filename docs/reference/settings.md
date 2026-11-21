@@ -66,7 +66,7 @@ The master switch controls background toasts. Errors always show. **Cost alert (
 
 ### Agent plugins
 
-Plugin management and diagnostics. Buttons: **Install plugin…**, **New skill…**, and **Repair built-ins**. The installed plugin list shows enable toggles, spec status, component counts, and open-folder shortcuts. See [Install](../guide/install.md#installing-agent-plugins).
+Plugin management and diagnostics. Buttons: **Install plugin…** and **New skill…**. The installed plugin list shows enable toggles, spec status, component counts, and open-folder shortcuts. See [Install](../guide/install.md#installing-agent-plugins).
 
 ### Subagents
 
