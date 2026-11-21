@@ -119,6 +119,14 @@ export class SubagentBlock {
   update(stepId: string, children: SubagentChildStatus[]): void {
     this.dispatches.set(stepId, children);
     children.forEach((child, index) => this.renderRow(`${stepId}:${index}`, child));
+    // A shorter list than the last report: drop the rows it no longer has.
+    for (const [key, row] of this.rows) {
+      const [owner, index] = [key.slice(0, key.lastIndexOf(":")), Number(key.slice(key.lastIndexOf(":") + 1))];
+      if (owner === stepId && index >= children.length) {
+        row.el.remove();
+        this.rows.delete(key);
+      }
+    }
     this.refresh();
   }
 

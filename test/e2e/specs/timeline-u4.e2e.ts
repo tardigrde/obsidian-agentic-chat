@@ -156,9 +156,11 @@ describe("chat timeline U4-A", function () {
     expect(await readLastTurnOrder()).toEqual(["step:Write", "text:WRITE-END written."]);
     const record = await browser.execute(() => {
       const row = Array.from(document.querySelectorAll('[data-ac="step"]')).at(-1);
-      return { outcome: row?.getAttribute("data-ac-approval"), line: row?.querySelector('[data-ac="step-approval"]')?.textContent };
+      const line = row?.querySelector<HTMLElement>('[data-ac="step-approval"]');
+      // Visible on the folded row, not only present in a display:none detail.
+      return { outcome: row?.getAttribute("data-ac-approval"), line: line?.textContent, visible: (line?.getClientRects().length ?? 0) > 0 };
     });
-    expect(record).toEqual({ outcome: "allowed", line: "Allowed by you" });
+    expect(record).toEqual({ outcome: "allowed", line: "Allowed by you", visible: true });
     await configureScriptedPlugin("allow");
   });
 

@@ -368,14 +368,15 @@ export class ActivityLine {
     const step = this.steps.get(id);
     if (!step) return;
     step.row.setAttribute("data-ac-approval", outcome);
-    let line = step.detail.querySelector<HTMLElement>(".agentic-chat-step-approval");
+    // Under the head, not in the detail: the detail is hidden until the row
+    // opens, and an allowed call that succeeds never opens its row.
+    let line = step.row.querySelector<HTMLElement>(":scope > .agentic-chat-step-approval");
     if (!line) {
       line = acHook(createDiv({ cls: "agentic-chat-step-approval" }), "step-approval");
-      step.detail.prepend(line);
+      step.head.after(line);
     }
     line.setText(APPROVAL_RECORD_TEXT[outcome]);
     line.toggleClass("is-denied", outcome === "denied" || outcome === "stopped");
-    this.syncExpandable(step);
     this.options.onChange?.();
   }
 

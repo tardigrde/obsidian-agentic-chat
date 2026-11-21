@@ -108,6 +108,9 @@ describe("U4 #4: a settled approval becomes a line on its step row", () => {
     const row = ui.$('[data-ac="step"]');
     expect(row?.getAttribute("data-ac-approval")).toBe("allowed");
     expect(row?.querySelector('[data-ac="step-approval"]')?.textContent).toBe("Allowed by you");
+    // The record must be readable on a folded row: the step detail is display:none until opened.
+    expect(row?.classList.contains("is-open")).toBe(false);
+    expect(row?.querySelector('[data-ac="step-approval"]')?.closest(".agentic-chat-step-detail")).toBeNull();
   });
 
   it("a deny records Denied by you on the row", async () => {
