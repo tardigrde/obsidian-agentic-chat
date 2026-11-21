@@ -55,7 +55,7 @@ await closeAgenticChatSettings();
 | Global network proxy | `src/settings-tab-models.ts#headingRow("Network proxy")` | no committed check | `NONE` |
 | Agent: Permission mode | `src/settings-tab-agent.ts#row("Permission mode"` | no committed check | `NONE` |
 | Agent: sampling, timeout, retries, prompt, compaction | `src/settings-tab-agent.ts#agentDefinitions` | no committed check | `NONE` |
-| Agent: Max response tokens and turn cap clamp in the field and say why | `src/settings-definition-kit.ts#boundedNumberRow` | `test/e2e/specs/settings-ui.e2e.ts#clamps max response tokens in the field and says why (U2, chaos #3)` | `covered` |
+| Agent: Max response tokens clamps in the field and says why | `src/settings-definition-kit.ts#boundedNumberRow` | `test/e2e/specs/settings-ui.e2e.ts#clamps max response tokens in the field and says why (U2, chaos #3)` | `covered` |
 | Agent: tool budget rows removed | `src/settings-tab-agent.ts#agentDefinitions` | `test/e2e/specs/settings-ui.e2e.ts#removes the tool budget rows and keeps the context window section` | `covered` |
 | Approval gates: Per-tool overrides | `src/settings-tab-agent.ts#approvalDefinitions` | `test/e2e/specs/settings-ui.e2e.ts#removes the working-directory section and still saves approval controls` | `covered` |
 | Approval: working directories section removed | `src/settings-tab-agent.ts#approvalDefinitions` | `test/e2e/specs/settings-ui.e2e.ts#removes the working-directory section and still saves approval controls` | `covered` |
@@ -69,7 +69,6 @@ await closeAgenticChatSettings();
 | Agent plugins: Import | `src/settings-tab-plugins.ts#row("Import"` | `test/e2e/specs/settings-ui.e2e.ts#installs a plugin package from an archive URL through the Install plugin modal` | `covered` |
 
 | Recover an interrupted plugin install | `src/plugins/service.ts#sweepImportStages` | `test/plugins-service.test.ts#restores a backup when the target is missing before sweeping` | `partial` |
-| Agent plugins: Repair built-ins | `src/settings-tab-plugins.ts#pluginDefinitions` | no committed check | `NONE` |
 | Agent plugins: Plugins folder | `src/settings-tab-plugins.ts#row("Plugins folder"` | `test/e2e/specs/settings-ui.e2e.ts#persists plugin folder and ignored globs through the Advanced tab` | `covered` |
 | Agent plugins: plugin row toggle/open/remove | `src/settings-tab-plugins.ts#pluginRowDefinition` | `test/e2e/specs/mobile-viewport.e2e.ts#keeps the settings tab UI usable at phone width` (row renders only) | `partial` |
 | Semantic retrieval section removed | `src/settings-tabs.ts#SETTINGS_SECTION_IDS` | `test/feature-cut-2026-11.test.ts#has no semantic retrieval settings section` (unit only) | `partial` |
@@ -79,7 +78,7 @@ await closeAgenticChatSettings();
 | Settings: System prompt | `src/settings-tab-agent.ts#row("System prompt"` | `test/settings-definitions.test.ts#puts the expected surrounding rows in each section group` (definition only) | `partial` |
 | Models: Gateway preset | `src/settings-tab-models.ts#row("Gateway preset"` | no committed check | `NONE` |
 | Models: Context window (tokens) | `src/settings-tab-models.ts#row("Context window (tokens)"` | no committed check | `NONE` |
-| Ignored files: Ignore list | `src/settings-tab-ignored-files.ts#row("Ignore list"` | `test/e2e/specs/settings-ui.e2e.ts#persists plugin folder and ignored globs through the Advanced tab` | `covered` |
+| Ignored files: Ignored paths | `src/settings-tab-ignored-files.ts#row("Ignored paths"` | `test/e2e/specs/settings-ui.e2e.ts#persists plugin folder and ignored globs through the Advanced tab` | `covered` |
 | Web: Fetched page character limit | `src/settings-tab-web.ts#row("Fetched page character limit"` | `test/e2e/specs/settings-ui.e2e.ts#persists web access settings through the Advanced tab` | `covered` |
 
 ## Gotchas

@@ -1492,11 +1492,11 @@ describe("AgentService", () => {
     await next;
   });
 
-  it("returns steering stranded by a turn-cap end and keeps it out of the next prompt", async () => {
-    const controlled = controlledStreamFn(["capped answer", "fresh answer"]);
+  it("returns steering stranded by a guard end and keeps it out of the next prompt", async () => {
+    const controlled = controlledStreamFn(["guarded answer", "fresh answer"]);
     const { service } = makeService(controlled.streamFn);
-    const turnCap = (service as unknown as { turnCap: { shouldStopAfterTurn: () => boolean } }).turnCap;
-    const capSpy = vi.spyOn(turnCap, "shouldStopAfterTurn").mockReturnValue(true);
+    const loopGuard = (service as unknown as { loopGuard: { finishTurn: () => unknown } }).loopGuard;
+    const capSpy = vi.spyOn(loopGuard, "finishTurn").mockReturnValue({ action: "end" });
 
     const run = service.sendPrompt("initial request");
     await waitFor(() => controlled.runs.length === 1 && service.isStreaming(), "first active stream");

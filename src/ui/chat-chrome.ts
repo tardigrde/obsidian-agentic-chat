@@ -6,6 +6,7 @@ import { activeModelId } from "../settings-schema";
 import type { ChatTabWorkingState } from "./chat-tab-state";
 import { setIcon } from "obsidian";
 import { buildModelPillState } from "./chrome-state";
+import { formatCost, formatTokensCompact } from "./format";
 import { CONTEXT_RING_LENGTH } from "./chat-layout";
 import { contextLevel, contextPercent, formatContextBreakdown, lastPromptTokens } from "./context-bar";
 import { highestUnnotifiedThreshold, type Notifier } from "./notifications";
@@ -61,6 +62,7 @@ export interface ChatChromeElements {
   contextEl: () => HTMLElement;
   contextRingEl: () => SVGCircleElement;
   contextPercentEl: () => HTMLElement;
+  sessionCostEl: () => HTMLElement;
   sendButton: () => HTMLButtonElement;
   /** The composer textarea; an empty draft has nothing to queue. */
   composerInput: () => HTMLTextAreaElement | undefined;
@@ -112,6 +114,7 @@ export class ChatChrome {
 
     const readout = this.deps.service().getContextReadout();
     this.syncContextRing(readout);
+    this.syncSessionCost();
 
     this.renderRunning();
     this.checkUsageNotifications();
@@ -140,6 +143,16 @@ export class ChatChrome {
     const error = service.getError();
     this.setRunning(service.isStreaming());
     if (error && !service.isStreaming()) this.deps.elements.statusEl().setText("");
+  }
+
+  /** The session total in the composer bar, subagents included (U4 #8). */
+  private syncSessionCost(): void {
+    const usage = this.deps.service().getSessionUsage();
+    const cost = usage.cost?.total ?? 0;
+    const text = formatCost(cost);
+    const el = this.deps.elements.sessionCostEl();
+    if (el.textContent !== text) el.setText(text);
+    el.setAttr("title", `Session cost ${text} · ${formatTokensCompact(usage.totalTokens ?? 0)} tokens (subagents included)`);
   }
 
   /** Context ring + percent in the toolbar; hidden until usage is known. */

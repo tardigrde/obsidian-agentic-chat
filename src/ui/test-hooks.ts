@@ -44,6 +44,7 @@ export const AC_HOOKS = [
   "composer-card",
   "composer-input",
   "chips",
+  "private-chip",
   "send",
   "stop",
   "status",
@@ -52,6 +53,7 @@ export const AC_HOOKS = [
   "mode-toggle",
   "context",
   "context-breakdown",
+  "session-cost",
 ] as const;
 
 export type AcHook = (typeof AC_HOOKS)[number];

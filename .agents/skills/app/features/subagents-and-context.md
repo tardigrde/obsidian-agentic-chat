@@ -5,11 +5,12 @@
 - The `subagent` tool starts one child agent per call, keeps its context
   isolated, and returns a summary.
 - The built-in Explorer role does read-only vault inspection.
-- The subagent pool caps parallel dispatches at ten in flight. The rest queue.
+- The subagent pool runs `maxParallelSubagents` (default 10) in flight. The rest queue.
+- `action: "continue"` sends a follow-up to a kept child (the last 10 per tab).
 - Live child status tree, per-child Stop, and a settled summary with time, tokens,
   and cost.
 - `/agent` picker and `/agent <name> <task>`.
-- The subagent timeout setting.
+- No turn cap and no timeout; the spend cap counts each child model call.
 - Replay of done, stopped, and failed dispatches from persisted details.
 - Context handling: serialization, attachment budgets, ignore-list withholding,
   context chips, context-window bar, and source chips. See
@@ -19,7 +20,7 @@
 
 - Type `/agent` to see the role picker, or `/agent explorer <task>`.
 - Let the model call the `subagent` tool.
-- Open Settings, select **Advanced**, then find **Subagent timeout** under **Subagents**.
+- Open Settings, select **Advanced**, then find **Parallel subagents** under **Subagents**.
 - For active-note, `@` mention, context-menu, drag-and-drop, folder, and image
   attachments, see [Open and compose](./open-and-compose.md).
 
@@ -47,16 +48,18 @@ await $(".agentic-chat-action-list").waitForExist();
 | `/agent <name> <task>` | `src/ui/slash/agents.ts#showSkillList` | `test/command-dispatcher.test.ts#resolves a named subagent with the trimmed task` (unit only) | `partial` |
 | Model calls the `subagent` tool | `src/tools/subagent-tool.ts#toPersistedChild` | `test/subagents.test.ts#aborts in-flight children when the dispatch signal aborts` (unit only) | `partial` |
 | Built-in Explorer role | `src/agent/subagents.ts#BUILTIN_AGENT_ROLES` | `test/subagent-runtime.test.ts#makeRuntime` (unit only) | `partial` |
-| Parallel cap of ten and queueing | `src/tools/subagent-tool.ts#MAX_CONCURRENCY` | `test/subagents.test.ts#caps concurrent dispatches at 10 and queues the rest, promoting on stop` (unit only) | `partial` |
+| Parallel cap (setting, default ten) and queueing | `src/tools/subagent-tool.ts#DEFAULT_CONCURRENCY` | `test/subagents.test.ts#caps concurrent dispatches at 10 and queues the rest, promoting on stop` (unit only) | `partial` |
 | Live child status tree | `src/ui/assistant-bubble.ts#updateStep` | `test/ui/chat-render.test.ts#labels a stopped child as stopped, not failed, and never shows a green check` | `partial` |
 | A subagent row starts collapsed, names the task once, opens its log on a row click | `src/ui/subagent-tree.ts#renderHeadStop`; `src/ui/activity-line.ts#syncSubagentOpen` | `test/e2e/specs/chat-ui-u3.e2e.ts#U3 #10: a subagent row starts collapsed, names the task once, and opens its log on a row click` | `covered` |
 | Per-child Stop button | `src/ui/subagent-tree.ts#renderSubagentHeader` | `test/subagents.test.ts#lets a caller abort one dispatch without stopping its siblings` (abort path only, no button click) | `partial` |
 | Replay a done dispatch | `src/ui/assistant-bubble.ts#endStep` | `test/ui/chat-render.test.ts#rehydrates a done dispatch from tool_execution_end alone, collapsed with its summary` | `covered` |
 | Replay a stopped dispatch | `src/ui/assistant-bubble.ts#endStep` | `test/ui/chat-render.test.ts#rehydrates an aborted dispatch as stopped (red) and an error dispatch as failed` | `covered` |
 | Replay a failed dispatch | `src/ui/assistant-bubble.ts#endStep` | `test/ui/chat-render.test.ts#rehydrates an aborted dispatch as stopped (red) and an error dispatch as failed` | `covered` |
-| Subagent timeout behavior | `src/agent/subagent-runtime.ts#AgentSubagentRuntime` | `test/subagents.test.ts#settles a timed-out child as aborted without rejecting the dispatch` (unit only) | `partial` |
+| No child turn cap: a child works past 10 turns and returns its report | `src/agent/subagent-runtime.ts#AgentSubagentRuntime` | `test/ui/no-turn-cap.test.ts#a subagent runs past the old 10-turn child cap and returns its report` | `partial` |
+| The spend cap stops a running subagent | `src/agent/agent-service.ts#enforceSpendCap` | `test/ui/no-turn-cap.test.ts#the spend cap stops a running subagent mid-run, not only after the dispatch returns (U4 #9)` | `partial` |
+| Continue a kept child (`action: "continue"`) | `src/tools/subagent-tool.ts#SubagentRegistry` | `test/subagents.test.ts#continues a finished child by id with its context intact ({action: "continue"})` (unit only) | `partial` |
 | A long subagent report is kept in full as an artifact | `src/tools/subagent-tool.ts#keepFullReport` | `test/subagents.test.ts#U3 #11: keeps the full oversized report as an artifact and tells the parent how to read it` (unit only) | `partial` |
-| Subagent timeout | `src/settings-tab-agent.ts#row("Subagent timeout"` | no committed check | `NONE` |
+| Parallel subagents setting | `src/settings-tab-agent.ts#subagentDefinitions` | `test/e2e/specs/settings-ui.e2e.ts#has no turn cap or subagent timeout; persists and clamps Parallel subagents (U4)` | `covered` |
 | Attachment budget: inline or path reference | `src/ui/attachments.ts#buildAttachmentSection` | `test/attachments.test.ts#switches to a path-only reference when over the budget (no body inlined)` (unit only) | `partial` |
 | Ignore-list withholding | `src/ui/attachments.ts#buildAttachmentSection` | `test/attachments.test.ts#never inlines content for a restricted (ignore-listed) path` (unit only) | `partial` |
 | Text context (active note, note attachments, selected text, folder listings) sent once per session; images are not deduped | `src/ui/context-builder.ts#dedupeSection` | `test/ui/chat-sessions.test.ts#U3 #14: sends the active note body to the model once per session, across another note and a history reload` (happy-dom) | `partial` |

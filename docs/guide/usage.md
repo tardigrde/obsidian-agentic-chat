@@ -44,8 +44,8 @@ The composer has one delivery path:
 
 - Enter while the agent is idle sends the text as a new turn.
 - Enter while the agent responds steers the active turn. The text arrives after
-  the current model turn finishes. If the run ends first (Stop, turn cap, loop
-  guard), the text comes back to the composer so you can send it again.
+  the current model turn finishes. If the run ends first (Stop, loop guard,
+  spend cap), the text comes back to the composer so you can send it again.
 - Shift+Enter inserts a newline in the draft.
 - **Queue** holds the draft until the active turn ends. You can keep editing the
   draft while it waits.

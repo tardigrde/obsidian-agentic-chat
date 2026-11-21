@@ -50,7 +50,7 @@ describe("buildModel — OpenRouter", () => {
     expect(model.cost.input).toBe(0);
   });
 
-  it("U3 #8: a catalog model with image input is built with image input; others stay text-only", () => {
+  it("U3 #8 / U4 #6: image input unless the catalog says text-only; unknown models allow images", () => {
     const base = { n: "m", c: 1000, m: 100, pi: 0, po: 0, pr: 0, pw: 0, t: 1 as const, re: 0 as const, tlm: null };
     seedPricingCacheForTests({
       "deepseek/deepseek-v4.1-flash-1017": { id: "deepseek/deepseek-v4.1-flash-1017", ...base, im: 1 },
@@ -59,11 +59,11 @@ describe("buildModel — OpenRouter", () => {
     try {
       expect(buildModel(config({ modelId: "deepseek/deepseek-v4.1-flash-1017" })).input).toEqual(["text", "image"]);
       expect(buildModel(config({ modelId: "deepseek/deepseek-v4-pro" })).input).toEqual(["text"]);
-      expect(buildModel(config({ modelId: "made-up/model" })).input).toEqual(["text"]);
-      // A gateway may serve the same id text-only: no image input from a suffix match (S5).
+      // Unknown is not "text only": the provider answers if it cannot read images.
+      expect(buildModel(config({ modelId: "made-up/model" })).input).toEqual(["text", "image"]);
       expect(
         buildModel(config({ provider: "openai-compatible", modelId: "deepseek-v4.1-flash-1017" })).input,
-      ).toEqual(["text"]);
+      ).toEqual(["text", "image"]);
     } finally {
       clearPricingCacheForTests();
     }

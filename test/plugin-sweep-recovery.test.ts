@@ -68,7 +68,6 @@ function startupPlugin(app: FakeApp): { plugin: AgenticChatPlugin; service: Plug
     () => plugin.settings,
     () => plugin.saveSettings(),
   );
-  service.ensureBuiltinsMaterialized = async () => false;
   service.ensureMySkillsMaterialized = async () => false;
   target.pluginService = service;
   return { plugin, service };

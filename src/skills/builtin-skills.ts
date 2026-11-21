@@ -196,8 +196,9 @@ export const INSTALL_PLUGIN_SKILL: Skill = parseSkillMarkdown(INSTALL_PLUGIN_DOC
 /**
  * Skills that ship with the plugin (no vault folder needed).
  * Self-knowledge and install-plugin are always present; deep-research is
- * gated on web access. The same documents are materialized to the vault as
- * the `builtins` agent plugin package when that package is absent.
+ * gated on web access. They are served from the plugin code and never
+ * copied to the vault (U4 #12), so an upgrade always ships the current text.
+ * A vault plugin skill with the same name overrides one (runtime-resources).
  */
 export function builtinSkills(webEnabled: boolean): Skill[] {
   return webEnabled
@@ -205,9 +206,5 @@ export function builtinSkills(webEnabled: boolean): Skill[] {
     : [SELF_KNOWLEDGE_SKILL, INSTALL_PLUGIN_SKILL];
 }
 
-/** Source documents for the materialized `builtins` package. */
-export const BUILTIN_SKILL_DOCS: ReadonlyArray<{ name: string; doc: string }> = [
-  { name: "self-knowledge", doc: SELF_KNOWLEDGE_DOC },
-  { name: "deep-research", doc: DEEP_RESEARCH_DOC },
-  { name: "install-plugin", doc: INSTALL_PLUGIN_DOC },
-];
+/** Names of the built-in skills, for the /doctor override note. */
+export const BUILTIN_SKILL_NAMES: readonly string[] = [SELF_KNOWLEDGE_SKILL.name, DEEP_RESEARCH_SKILL.name, INSTALL_PLUGIN_SKILL.name];

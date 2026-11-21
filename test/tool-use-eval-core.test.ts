@@ -22,7 +22,7 @@ import {
   type ToolUseCheck,
   type ToolUseSuite,
 } from "../scripts/eval/tool-use-core";
-import { extractPdfText } from "../src/retrieval/pdf-ingest";
+import { extractPdfText, type PdfJsLike } from "../src/retrieval/pdf-ingest";
 import { THINKING_LEVELS } from "../src/settings-schema";
 import { MUTATING_TOOLS } from "../src/tools/tool-contracts";
 
@@ -358,14 +358,17 @@ describe("tool-use eval core", () => {
     });
   });
 
-  it("reads the seeded invoice PDF from base64", () => {
+  it("reads the seeded invoice PDF from base64 with pdf.js", async () => {
     const pdfCase = loadSuite().cases.find((entry) => entry.id === "import.pdf-answer");
     if (!pdfCase) throw new Error("missing import.pdf-answer");
     const base64 = pdfCase.seed.binaryFiles["Docs/invoice.pdf"];
     expect(base64).toBeTruthy();
 
     const bytes = Buffer.from(base64.replace(/\s+/g, ""), "base64");
-    const extracted = extractPdfText(new Uint8Array(bytes));
+    const extracted = await extractPdfText(
+      new Uint8Array(bytes),
+      async () => (await import("pdfjs-dist/legacy/build/pdf.mjs")) as unknown as PdfJsLike,
+    );
 
     expect(extracted.text).toContain("Invoice total: 4,210 EUR");
     expect(extracted.pageCount).toBe(1);

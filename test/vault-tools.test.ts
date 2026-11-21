@@ -393,6 +393,20 @@ describe("search", () => {
     });
   });
 
+  it("U4 #13: kind files with regex:true matches file names by regular expression", async () => {
+    const app = makeApp({
+      files: {
+        "Papers/attention.pdf": { content: "" },
+        "Papers/notes.pdf.md": { content: "" },
+        "Papers/summary.md": { content: "" },
+      },
+    });
+    const { details, text } = await run(getTool(app, "search"), { query: "\\.pdf$", kind: "files", regex: true });
+    expect(details.fileCount).toBe(1);
+    expect(text).toContain("Papers/attention.pdf");
+    expect(text).not.toContain("Papers/notes.pdf.md");
+  });
+
 });
 
 
@@ -422,10 +436,10 @@ describe("local_graph", () => {
     expect(details.outbound).toEqual([]);
   });
 
-  it("reports an ignored note as not found", async () => {
+  it("reports an ignored note as private (U4 #11)", async () => {
     const app = makeApp(spec);
     await expect(run(getTool(app, "local_graph", ignore("Hub.md")), { path: "Hub.md" })).rejects.toThrow(
-      /not found/,
+      /is private \(excluded in settings\)/,
     );
   });
 
@@ -465,10 +479,10 @@ describe("get_properties", () => {
     expect(details.keys).toEqual([]);
   });
 
-  it("reports an ignored note as not found", async () => {
+  it("reports an ignored note as private (U4 #11)", async () => {
     const app = makeApp({ files: { "Note.md": { frontmatter: { a: 1 } } } });
     await expect(run(getTool(app, "get_properties", ignore("Note.md")), { path: "Note.md" })).rejects.toThrow(
-      /not found/,
+      /is private \(excluded in settings\)/,
     );
   });
 
@@ -510,11 +524,11 @@ describe("set_properties", () => {
     expect(JSON.parse(unwrapToolOutput(after.text))).toEqual({ tag: "new" });
   });
 
-  it("reports an ignored note as not found and does not mutate it", async () => {
+  it("reports an ignored note as private (U4 #11) and does not mutate it", async () => {
     const app = makeApp({ files: { "Note.md": { frontmatter: { a: 1 } } } });
     await expect(
       run(getTool(app, "set_properties", ignore("Note.md")), { path: "Note.md", properties: { a: 2 } }),
-    ).rejects.toThrow(/not found/);
+    ).rejects.toThrow(/is private \(excluded in settings\)/);
     const after = await run(getTool(app, "get_properties"), { path: "Note.md" });
     expect(JSON.parse(unwrapToolOutput(after.text))).toEqual({ a: 1 });
   });

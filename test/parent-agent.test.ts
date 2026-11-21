@@ -124,9 +124,10 @@ describe("createParentAgent", () => {
 });
 
 describe("guard stop notices (#283)", () => {
-  it("keeps turn-cap and loop-guard notices out of the model context", async () => {
+  it("keeps legacy turn-cap and loop-guard notices out of the model context", async () => {
     const { buildStopNoticeMessage } = await import("../src/agent/stop-notice");
-    const { buildTurnCapNotice } = await import("../src/agent/turn-cap");
+    // The notice the removed turn cap (pre-U4) saved: old sessions still hold it.
+    const buildTurnCapNotice = (turns: number) => `Turn cap: stopped after ${turns} assistant turns. Send another message to continue.`;
     const { harnessNotice: _marker, ...replyShape } = buildStopNoticeMessage("Here is the summary you asked for.");
     const realReply: AgentMessage = {
       ...replyShape,

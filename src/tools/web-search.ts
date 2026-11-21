@@ -3,6 +3,7 @@ import { Type } from "typebox";
 import { throwIfAborted, type WebFetcher, type WebHttpRequest } from "./web-fetch";
 import { untrustedToolResult } from "./result";
 import { asRecord } from "../utils/records";
+import { plainTextFromHtml } from "../utils/html-entities";
 
 /** Supported search backends. Tavily/Brave need an API key; SearXNG needs a URL. */
 export type WebSearchProvider = "tavily" | "brave" | "searxng";
@@ -24,6 +25,59 @@ export interface WebSearchConfig {
   /** Default number of results to return. */
   maxResults: number;
   fetcher: WebFetcher;
+  /** Waits before each retry of a 429/5xx answer (U4 #14); tests pass short ones. */
+  retryDelaysMs?: readonly number[];
+}
+
+/** Retry a rate-limited or failing search after these waits; `Retry-After` wins when shorter than 30 s. */
+export const SEARCH_RETRY_DELAYS_MS: readonly number[] = [1_000, 3_000, 8_000];
+const MAX_RETRY_AFTER_MS = 30_000;
+
+/**
+ * One search at a time per provider (U4 #14): three parallel Brave calls in
+ * 41 ms drew an HTTP 429. Calls queue behind each other instead.
+ */
+const providerQueues = new Map<WebSearchProvider, Promise<unknown>>();
+
+function serialized<T>(provider: WebSearchProvider, run: () => Promise<T>): Promise<T> {
+  const previous = providerQueues.get(provider) ?? Promise.resolve();
+  const next = previous.catch(() => undefined).then(run);
+  providerQueues.set(provider, next);
+  void next.finally(() => {
+    if (providerQueues.get(provider) === next) providerQueues.delete(provider);
+  }).catch(() => undefined);
+  return next;
+}
+
+function retryable(status: number): boolean {
+  return status === 429 || status >= 500;
+}
+
+function retryAfterMs(headers: Record<string, string> | undefined): number | null {
+  const value = headers?.["retry-after"];
+  if (!value) return null;
+  const seconds = Number(value);
+  if (Number.isFinite(seconds) && seconds >= 0) return Math.min(seconds * 1000, MAX_RETRY_AFTER_MS);
+  const date = Date.parse(value);
+  return Number.isFinite(date) ? Math.min(Math.max(0, date - Date.now()), MAX_RETRY_AFTER_MS) : null;
+}
+
+function wait(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(new Error("Request was aborted."));
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    const onAbort = (): void => {
+      window.clearTimeout(timer);
+      reject(new Error("Request was aborted."));
+    };
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
 }
 
 export interface WebSearchResult {
@@ -140,14 +194,29 @@ export function createWebSearchTool(config: WebSearchConfig): AgentTool<typeof S
       if (!query) throw new Error("web_search: provide a non-empty query.");
       const maxResults = clampResults(params.maxResults ?? config.maxResults);
       throwIfAborted(signal);
-      const response = await config.fetcher(adapter.buildRequest(query, maxResults, config), signal);
+      const request = adapter.buildRequest(query, maxResults, config);
+      const delays = config.retryDelaysMs ?? SEARCH_RETRY_DELAYS_MS;
+      const response = await serialized(config.provider, async () => {
+        let answer = await config.fetcher(request, signal);
+        for (const delay of delays) {
+          if (!retryable(answer.status)) break;
+          await wait(retryAfterMs(answer.headers) ?? delay, signal);
+          answer = await config.fetcher(request, signal);
+        }
+        return answer;
+      });
       if (response.status === 0) {
         throw new Error(`web_search failed via ${config.provider}: ${response.text || "network error"}.`);
       }
       if (response.status < 200 || response.status >= 300) {
         throw new Error(`web_search failed via ${config.provider} (HTTP ${response.status}).`);
       }
-      const results = adapter.parse(safeJsonParse(response.text)).filter((result) => result.url).slice(0, maxResults);
+      const results = adapter
+        .parse(safeJsonParse(response.text))
+        .filter((result) => result.url)
+        .slice(0, maxResults)
+        // Providers mark matches with <strong> and escape text: plain text only.
+        .map((result) => ({ ...result, title: plainTextFromHtml(result.title), snippet: plainTextFromHtml(result.snippet) }));
       return untrustedToolResult(
         formatResults(query, results),
         { provider: config.provider, query, count: results.length, results },

@@ -118,6 +118,11 @@ export function condenseSessions(texts: string[], maxChars: number): string {
           .filter(Boolean)
           .join(" ");
         lines.push(`  ${role}${extra ? ` (${extra})` : ""}: ${text}`);
+      } else if (type === "diagnostics") {
+        // What /doctor saw: codes and counts (U4 #17).
+        const summary = (entry.summary ?? {}) as { status?: string; problems?: unknown; counts?: unknown };
+        const problems = Array.isArray(summary.problems) && summary.problems.length > 0 ? summary.problems.join(",") : "none";
+        lines.push(`  <doctor> status=${String(summary.status ?? "?")} problems=${problems} counts=${clip(summary.counts ?? {}, 200)}`);
       } else if (type !== "session" && type !== "thinking_level_change") {
         lines.push(`  <${type}> ${clip(entry.event ?? entry.customType ?? entry.modelId ?? "", 160)}`);
       }

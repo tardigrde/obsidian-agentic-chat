@@ -59,7 +59,6 @@ import {
 } from "./service-listeners";
 import { AgentStreamRuntime } from "./stream-runtime";
 import { AgentLoopGuard } from "./loop-guard";
-import { AgentTurnCap, CHILD_TURN_CAP } from "./turn-cap";
 import { buildStopNoticeMessage, type StopNoticeModel } from "./stop-notice";
 import { AgentRuntimeResourceState } from "./runtime-resource-state";
 import type { PluginCatalog } from "../plugins/service";
@@ -131,6 +130,7 @@ export class AgentService {
   private readonly toolCalls: AgentToolCallController;
   private readonly subagents: AgentSubagentRuntime;
   private readonly sessionEvents: AgentSessionEventRecorder;
+  private readonly sessionManager: ObsidianSessionManager;
   private readonly actionAudit: AgentActionAuditRecorder;
   private readonly observability: AgentObservabilityRuntime;
   private readonly fileCheckpoints: AgentFileCheckpointRecorder;
@@ -145,8 +145,8 @@ export class AgentService {
   private readonly sessionState = new AgentSessionLocalState();
   private readonly listeners = new AgentServiceListeners();
   private readonly loopGuard = new AgentLoopGuard();
-  private readonly turnCap = new AgentTurnCap({ maxTurns: () => this.getSettings().maxTurnsPerPrompt });
   private readonly recentEvents: string[] = [];
+  private readonly queuedTexts: string[] = [];
   private readonly promptTurns: AgentPromptTurnRuntime;
   private disposal: Promise<void> | null = null;
 
@@ -164,6 +164,7 @@ export class AgentService {
     this.app = options.app;
     this.getSettings = options.getSettings;
     const sessionManager = options.sessionManager;
+    this.sessionManager = sessionManager;
     this.artifactStore = options.artifactStore;
     this.webFetch = options.webFetch ?? createDynamicProxiedFetcher(() => this.getSettings().network, createObsidianFetcher());
     this.observability = new AgentObservabilityRuntime({
@@ -225,7 +226,12 @@ export class AgentService {
       getSettings: this.getSettings,
       getResources: () => this.runtimeResources.current,
       buildStreamFn: () => this.streams.buildStreamFn(),
-      recordUsage: (usage) => this.sessionState.recordSubagentUsage(usage),
+      // Each child model call counts at once, so the spend cap stops a fan-out
+      // while it runs, not only after the dispatch returns (U4 #9).
+      recordUsage: (usage, dispatchId) => {
+        this.sessionState.recordSubagentUsage(usage, dispatchId);
+        this.enforceSpendCap();
+      },
       webFetch: this.webFetch,
       artifactStore: options.artifactStore,
       // Deferred: the controller is constructed next and shares this runtime's registry.
@@ -233,7 +239,6 @@ export class AgentService {
         beforeToolCall: (context, signal) => this.toolCalls.beforeToolCall(context, signal),
         afterToolCall: (context) => this.toolCalls.afterToolCall(context),
       },
-      createTurnCap: () => new AgentTurnCap({ maxTurns: CHILD_TURN_CAP }),
     });
     this.toolCalls = new AgentToolCallController({
       app: this.app,
@@ -250,6 +255,7 @@ export class AgentService {
       recordCheckpoint: (input) => this.actionAudit.recordCheckpoint(input),
       recordFileCheckpoint: (checkpoint) => this.fileCheckpoints.record(checkpoint),
       subagentRegistry: this.subagents.registry,
+      isPathIgnored: (path) => this.runtimeResources.isPathIgnored(path),
     });
     this.conversation = new AgentConversation({
       sessionManager,
@@ -269,7 +275,6 @@ export class AgentService {
       subagents: this.subagents,
       toolCalls: this.toolCalls,
       loopGuard: options.loopGuardDisabled ? DISABLED_LOOP_GUARD : this.loopGuard,
-      turnCap: this.turnCap,
       sessions: this.conversation,
       onEvent: (event) => this.handleAgentEvent(event),
     });
@@ -471,6 +476,17 @@ export class AgentService {
     return this.runtimeResources.reload();
   }
 
+  /** Append a `/doctor` summary (codes and counts) to the active session (U4 #17). */
+  async recordDiagnostics(summary: Record<string, unknown>): Promise<void> {
+    if (!this.sessionManager.hasActiveSession()) return;
+    await this.sessionManager.appendDiagnostics(summary);
+  }
+
+  /** Whether the provider the next turn uses has a key (Ollama needs none). */
+  hasProviderKey(): boolean {
+    return this.hasApiKey();
+  }
+
   getRuntimeDiagnostics(): AgentRuntimeDiagnostics {
     const settings = this.getSettings();
     return buildRuntimeDiagnostics({
@@ -588,11 +604,21 @@ export class AgentService {
     }
 
     const message = createUserMessage(text, attached);
+    // The model will hold this text: a note in it counts as sent at once (U4).
+    this.queuedTexts.push(text);
     this.sessionState.clearError();
     // Steering is user input too: user-provided info ends any running streak.
     this.resetTurnGuards();
     agent.steer(message);
     this.notifyChange();
+  }
+
+  /**
+   * User text queued into the running turn (steers), not yet in the messages.
+   * The context dedupe counts it as sent; cleared when the run ends.
+   */
+  queuedUserTexts(): string[] {
+    return this.agent?.state.isStreaming ? [...this.queuedTexts] : [];
   }
 
   /** Whether the model the next turn will use accepts image input (vision). */
@@ -750,14 +776,19 @@ export class AgentService {
 
   private async runPrompt(run: PromptTurnRun, expectedSessionToken?: number): Promise<void> {
     await this.initialize();
-    // A fresh prompt starts a new epoch: neither the identical-batch streak nor
-    // the turn budget from a previous user turn carries into this one.
+    // A fresh prompt starts a new epoch: the identical-batch streak of a
+    // previous user turn does not carry into this one.
     this.resetTurnGuards();
     await this.promptTurns.run(this.steering.settling(run), expectedSessionToken);
   }
 
   private async handleAgentEvent(event: AgentEvent): Promise<void> {
     this.recordRecentEvent(event);
+    if (event.type === "agent_start" || event.type === "agent_end") this.queuedTexts.length = 0;
+    // A dispatch's tool result now carries its children's usage (U4 #8).
+    if (event.type === "message_end" && event.message.role === "toolResult") {
+      this.sessionState.settleSubagentUsage((event.message as { toolCallId: string }).toolCallId);
+    }
     this.observability.handleAgentEvent(event);
     await handleAgentRuntimeEvent(event, {
       recordMessageEnd: (message) => this.sessionEvents.recordMessageEnd(message),
@@ -799,16 +830,14 @@ export class AgentService {
   }
 
   /**
-   * When the loop guard or the turn cap fired, append the plain-text
+   * When the loop guard fired, append the plain-text
    * explanation at the end of the transcript (JSONL + chat bubble) plus a
    * transient Notice. The message is transcript-only: the parent agent's
    * `convertToLlm` drops it, so the model never reads text it did not write
-   * (#283). The loop-guard notice wins when both fired in the
-   * same turn, so the user never gets two stop notes. Runs once per fire — each
-   * guard clears its notice on the next prompt.
+   * (#283). Runs once per fire; the guard clears its notice on the next prompt.
    */
   private async emitTurnGuardMessage(): Promise<void> {
-    const text = this.loopGuard.noticeText ?? this.turnCap.noticeText;
+    const text = this.loopGuard.noticeText;
     if (!text) return;
     const message = buildStopNoticeMessage(text, this.agent?.state.model as StopNoticeModel | undefined);
     // Keep it in the live transcript so the UI and replay match; toLlmMessages
@@ -853,10 +882,9 @@ export class AgentService {
     return this.conversation.requireAgent();
   }
 
-  /** Neither the identical-batch streak nor the turn budget survives new user input or a session change. */
+  /** The identical-batch streak does not survive new user input or a session change. */
   private resetTurnGuards(): void {
     this.loopGuard.reset();
-    this.turnCap.reset();
   }
 
   private async runCommandPlan(plan: AgentCommandPlan): Promise<void> {

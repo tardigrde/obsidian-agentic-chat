@@ -173,6 +173,11 @@ export function createWebFetchTool(config: WebFetchConfig): AgentTool<typeof Fet
       const offset = clampOffset(params.offset);
       const contentType = response.headers["content-type"] ?? "";
       const rendered = renderFetched(url, response.text, contentType, limit, offset);
+      // A cookie or bot wall is not the page: fail, and store no artifact (U4 #15).
+      const wall = detectWall(rendered.sourceText);
+      if (wall) {
+        throw new Error(`Could not read ${url}: the site returned a ${wall} instead of the page. Try another source.`);
+      }
       const artifact =
         config.artifactStore && rendered.sourceText
           ? await sourceArtifacts.write(config.artifactStore, {
@@ -214,6 +219,23 @@ export function createWebFetchTool(config: WebFetchConfig): AgentTool<typeof Fet
       );
     },
   };
+}
+
+/** Short pages that are a wall in front of the content, and what kind. */
+const WALL_PATTERNS: ReadonlyArray<[RegExp, string]> = [
+  [/cookies? (?:must|need to|have to) be (?:enabled|turned on)|enable cookies|cookies are (?:disabled|blocked)/i, "cookie wall"],
+  [/(?:enable|turn on) javascript|javascript is (?:disabled|required|not enabled)|requires javascript/i, "JavaScript wall"],
+  [/are you a robot|verify (?:that )?you are (?:a )?human|captcha|checking your browser|unusual traffic|access denied|request blocked/i, "bot check"],
+  [/subscribe to (?:continue|read)|this content is for subscribers|sign in to (?:continue|read)/i, "paywall"],
+];
+/** A real article is longer than this; a wall page is short. */
+const WALL_MAX_CHARS = 1_500;
+
+export function detectWall(text: string): string | null {
+  const body = text.trim();
+  if (body.length > WALL_MAX_CHARS) return null;
+  for (const [pattern, kind] of WALL_PATTERNS) if (pattern.test(body)) return kind;
+  return null;
 }
 
 interface RenderedPage {

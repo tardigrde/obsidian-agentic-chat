@@ -22,6 +22,7 @@ import {
 } from "./message-content";
 import { acHook } from "./test-hooks";
 import { addUsage, emptyUsage } from "../agent/usage";
+import { subagentDetailsUsage } from "../agent/session-usage";
 import { formatTurnMeta } from "./format";
 import { openSystemUrl } from "../platform/system-browser";
 import { isPinnedToBottom } from "./scroll-pinning";
@@ -247,7 +248,10 @@ export class TranscriptView {
       // Pass the persisted details wrapped in the result shape endStep reads
       // (`resultObject.details`), so replay re-derives the live verdict — a
       // stopped subagent dispatch must render red here too, not green.
-      if (result) bubble.endStep(call.id, result.text, result.isError, { details: result.details });
+      if (result) {
+        bubble.endStep(call.id, result.text, result.isError, { details: result.details });
+        this.addToolResultUsage(result.details);
+      }
     }
     this.applyAssistantMessage(bubble, message, { canRetry: isLast });
   }
@@ -375,6 +379,17 @@ export class TranscriptView {
     if (!bubble) return;
     if (event.type === "text_delta" && event.delta) bubble.appendText(event.delta);
     else if (event.type === "thinking_delta" && event.delta) bubble.appendReasoning(event.delta);
+  }
+
+  /**
+   * A subagent dispatch's children cost counts in this turn's footer (U4 #8).
+   * Called with the tool result's `details`, live and on replay.
+   */
+  addToolResultUsage(details: unknown): void {
+    const usage = subagentDetailsUsage(details);
+    if (!usage) return;
+    this.turnUsage ??= emptyUsage();
+    addUsage(this.turnUsage, usage);
   }
 
   finalizeBubble(message: AgentMessage): void {

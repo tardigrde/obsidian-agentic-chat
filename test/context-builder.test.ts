@@ -376,3 +376,30 @@ describe("sentUserText", () => {
     expect(text).not.toContain("reply");
   });
 });
+
+describe("note dedupe edges (U4)", () => {
+  async function activeNoteContext(sentText?: string): Promise<string> {
+    const fake = app();
+    await fake.vault.create("Plan.md", `# Plan\n\nThe full plan body. ${"Step and detail. ".repeat(30)}`);
+    return await buildPromptContext({ app: fake, activeNotePath: "Plan.md", attachments: [], isPathIgnored: () => false, sentText });
+  }
+
+  it("after a compaction the note goes out in full once, even when the summary quotes it", async () => {
+    const first = await activeNoteContext();
+    // The summarizer copied the whole earlier user message into its summary.
+    const summary = { role: "user", content: [{ type: "text", text: `<conversation-summary>\n${first}\n</conversation-summary>` }], timestamp: 1 };
+    const afterCompaction = await activeNoteContext(sentUserText([summary as never]));
+    expect(afterCompaction).toContain("The full plan body");
+    // Once sent again, the next message stubs it.
+    const next = await activeNoteContext(sentUserText([summary as never, { role: "user", content: afterCompaction, timestamp: 2 }]));
+    expect(next).toContain('Active note "Plan.md" is unchanged');
+  });
+
+  it("a steer queued into the running turn marks the note as sent at once", async () => {
+    const steered = await activeNoteContext();
+    // The steer is not in the messages yet; it waits in the agent's queue.
+    const next = await activeNoteContext(sentUserText([], [steered]));
+    expect(next).toContain('Active note "Plan.md" is unchanged');
+    expect(next).not.toContain("The full plan body");
+  });
+});

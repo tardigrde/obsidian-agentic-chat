@@ -1,5 +1,5 @@
 import type { App } from "obsidian";
-import { Agent, type AgentTool, type AgentTurnContext, type StreamFn } from "@earendil-works/pi-agent-core";
+import { Agent, type AgentTool, type StreamFn } from "@earendil-works/pi-agent-core";
 import type { Usage } from "@earendil-works/pi-ai";
 import type { ToolArtifactStoreLike } from "../artifacts/tool-artifact-store";
 import { activeModelConfig, apiKeyForProvider } from "../settings-schema";
@@ -14,28 +14,19 @@ import type { WebFetcher } from "../tools/web-fetch";
 import { createArtifactTool } from "../artifacts/tool-artifact-tools";
 import { ReadMemo } from "../vault/read-memo";
 import { resolveModePolicy } from "./modes";
-import { buildStopNoticeMessage } from "./stop-notice";
 import type { AgentRuntimeResources } from "./runtime-resources";
 import type { AgentRole } from "./subagents";
 import type { AfterToolCallContext, AgentToolCallController, BeforeToolCallContext } from "./tool-call-controller";
-
-/** Structural child turn cap, so this runtime does not import the cap module. */
-export interface ChildTurnCap {
-  readonly noticeText: string | null;
-  shouldStopAfterTurn: (turn: AgentTurnContext) => boolean;
-}
 
 export interface SubagentRuntimeOptions {
   app: App;
   getSettings: () => AgenticChatSettings;
   getResources: () => AgentRuntimeResources;
   buildStreamFn: () => StreamFn;
-  recordUsage: (usage: Usage) => void;
+  recordUsage: (usage: Usage, dispatchId: string) => void;
   webFetch: WebFetcher;
   artifactStore?: ToolArtifactStoreLike;
   toolCalls: Pick<AgentToolCallController, "beforeToolCall" | "afterToolCall">;
-  /** Build a fresh turn cap for one child dispatch. Omitted means no child cap. */
-  createTurnCap?: () => ChildTurnCap;
 }
 
 /**
@@ -48,11 +39,10 @@ export class AgentSubagentRuntime {
   private readonly getSettings: () => AgenticChatSettings;
   private readonly getResources: () => AgentRuntimeResources;
   private readonly buildStreamFn: () => StreamFn;
-  private readonly recordUsage: (usage: Usage) => void;
+  private readonly recordUsage: (usage: Usage, dispatchId: string) => void;
   private readonly webFetch: WebFetcher;
   private readonly artifactStore: ToolArtifactStoreLike | undefined;
   private readonly toolCalls: Pick<AgentToolCallController, "beforeToolCall" | "afterToolCall">;
-  private readonly createTurnCap: (() => ChildTurnCap) | undefined;
   private childNamespaceCounter = 0;
   /** Per-runtime stop/error state, shared with this runtime's tool-call controller. */
   readonly registry = new SubagentRegistry();
@@ -66,7 +56,6 @@ export class AgentSubagentRuntime {
     this.webFetch = options.webFetch;
     this.artifactStore = options.artifactStore;
     this.toolCalls = options.toolCalls;
-    this.createTurnCap = options.createTurnCap;
   }
 
   createTool(): AgentTool {
@@ -74,7 +63,7 @@ export class AgentSubagentRuntime {
       getProfiles: () => this.getResources().profiles,
       createChildAgent: (profile) => this.createChildAgent(profile),
       recordUsage: this.recordUsage,
-      maxRuntimeSeconds: () => this.getSettings().subagentTimeoutSeconds,
+      maxParallel: () => this.getSettings().maxParallelSubagents,
       registry: this.registry,
       artifactStore: this.artifactStore,
     });
@@ -101,7 +90,6 @@ export class AgentSubagentRuntime {
       (tool) => resolveModePolicy(settings.mode, settings.approval, tool.name).policy !== "deny",
     );
     const tools = filterChildTools(childTools, profile.toolAllowlist ?? []);
-    const turnCap = this.createTurnCap?.();
     const child = new Agent({
       streamFn: this.buildStreamFn(),
       initialState: {
@@ -117,16 +105,6 @@ export class AgentSubagentRuntime {
       afterToolCall: (context) => this.toolCalls.afterToolCall(namespaceAfterToolCall(context, childNamespace)),
       toolExecution: "sequential",
     });
-    if (turnCap) {
-      // A capped child ends gracefully and leaves a plain-text note as its last
-      // assistant message, so the parent sees why the child stopped.
-      child.finishTurn = (turn) => {
-        if (!turnCap.shouldStopAfterTurn(turn)) return undefined;
-        const notice = turnCap.noticeText;
-        if (notice) child.state.messages.push(buildStopNoticeMessage(notice, child.state.model));
-        return { action: "end" as const };
-      };
-    }
     return child;
   }
 

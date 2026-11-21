@@ -68,17 +68,19 @@ describe("mergeSettings — retired working directories", () => {
 });
 
 describe("mergeSettings — defaults", () => {
-  it("heals the subagent timeout to whole seconds, 0 = disabled", () => {
-    expect(mergeSettings(null).subagentTimeoutSeconds).toBe(0);
-    expect(mergeSettings({ subagentTimeoutSeconds: 300 }).subagentTimeoutSeconds).toBe(300);
-    expect(mergeSettings({ subagentTimeoutSeconds: -5 }).subagentTimeoutSeconds).toBe(0);
-    expect(mergeSettings({ subagentTimeoutSeconds: 12.9 }).subagentTimeoutSeconds).toBe(12);
-    expect(mergeSettings({ subagentTimeoutSeconds: "x" as unknown as number }).subagentTimeoutSeconds).toBe(0);
+  it("heals the parallel-subagent setting to a whole number in 1..20, default 10", () => {
+    expect(mergeSettings(null).maxParallelSubagents).toBe(10);
+    expect(mergeSettings({ maxParallelSubagents: 3 }).maxParallelSubagents).toBe(3);
+    expect(mergeSettings({ maxParallelSubagents: 0 }).maxParallelSubagents).toBe(1);
+    expect(mergeSettings({ maxParallelSubagents: 99 }).maxParallelSubagents).toBe(20);
+    expect(mergeSettings({ maxParallelSubagents: 4.7 }).maxParallelSubagents).toBe(4);
+    expect(mergeSettings({ maxParallelSubagents: "x" as unknown as number }).maxParallelSubagents).toBe(10);
   });
 
-  it("caps the subagent timeout at 24h so setTimeout stays in its valid range", () => {
-    expect(mergeSettings({ subagentTimeoutSeconds: 100_000 }).subagentTimeoutSeconds).toBe(86_400);
-    expect(mergeSettings({ subagentTimeoutSeconds: Number.MAX_SAFE_INTEGER }).subagentTimeoutSeconds).toBe(86_400);
+  it("drops the removed turn cap and subagent timeout from a stored data.json (U4)", () => {
+    const merged = mergeSettings({ maxTurnsPerPrompt: 60, subagentTimeoutSeconds: 300 } as never) as unknown as Record<string, unknown>;
+    expect(merged.maxTurnsPerPrompt).toBeUndefined();
+    expect(merged.subagentTimeoutSeconds).toBeUndefined();
   });
 
   it("drops a legacy projects key from stored settings", () => {
@@ -768,11 +770,4 @@ describe("mergeSettings — MCP", () => {
   });
 });
 
-describe("maxTurnsPerPrompt (#283)", () => {
-  it("defaults to 25 and heals stored values", () => {
-    expect(mergeSettings(undefined).maxTurnsPerPrompt).toBe(25);
-    expect(mergeSettings({ maxTurnsPerPrompt: 60 } as never).maxTurnsPerPrompt).toBe(60);
-    expect(mergeSettings({ maxTurnsPerPrompt: -4 } as never).maxTurnsPerPrompt).toBe(3);
-    expect(mergeSettings({ maxTurnsPerPrompt: "x" } as never).maxTurnsPerPrompt).toBe(25);
-  });
-});
+

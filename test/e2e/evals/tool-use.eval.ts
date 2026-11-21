@@ -311,7 +311,6 @@ async function configurePlugin(): Promise<Record<string, unknown>> {
       openrouterModel: string;
       temperature: number;
       mode: string;
-      maxTurnsPerPrompt: number;
       ignoredGlobs: string;
       approval: { mutating: string; perTool: Record<string, string> };
       privacy: { allowFallbacks: boolean; denyDataCollection: boolean; requireZDR: boolean };
@@ -352,7 +351,7 @@ async function configurePlugin(): Promise<Record<string, unknown>> {
     // credit. A run never needs more than a few thousand output tokens, so
     // cap it and leave the key budget for the whole suite.
     settings.maxTokens = 8192;
-    settings.maxTurnsPerPrompt = config.maxTurnsPerPrompt;
+    // The plugin has no turn cap since U4; the case timeout bounds a run.
     settings.ignoredGlobs = "";
     await plugin.saveSettings?.();
     // WebDriver serializes the return value, so this is a copy: a later case

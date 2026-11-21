@@ -68,8 +68,8 @@ local server that speaks HTTP on `localhost` instead.
 
 ### The agent is going in circles. How do I stop it?
 
-Press **Stop**. A turn also stops on its own after **Max turns per prompt**
-(default 25), on the loop guard, or at the spend cap. To redirect without
+Press **Stop** (or Escape in the composer). A turn also stops on its own on the
+loop guard or at the spend cap. There is no turn cap. To redirect without
 stopping, type and press Enter while it works. That steers the run.
 
 ### Where do I report a bug?

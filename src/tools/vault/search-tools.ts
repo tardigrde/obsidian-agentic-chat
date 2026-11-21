@@ -32,7 +32,10 @@ export async function searchVault(
   const includeContent = kind === "both" || kind === "content";
 
   const fileResults = includeFiles
-    ? findVaultFiles(app, isIgnored, query, rootPath, params.maxResults ?? 100)
+    ? findVaultFiles(app, isIgnored, query, rootPath, params.maxResults ?? 100, {
+        regex: params.regex,
+        caseSensitive: params.caseSensitive,
+      })
     : emptyFileSearch();
   const contentResults = includeContent
     ? await searchVaultContent(app, isIgnored, query, rootPath, {
@@ -65,13 +68,14 @@ function findVaultFiles(
   query: string,
   rootPath: string,
   maxResults: number,
+  options: { regex?: boolean; caseSensitive?: boolean } = {},
 ): { matches: string[]; count: number; truncated: boolean } {
   const matches = app.vault
     .getFiles()
     .map((file) => file.path)
     .filter((path) => !isIgnored(path))
     .filter((path) => !rootPath || path === rootPath || path.startsWith(`${rootPath}/`))
-    .filter((path) => matchesFindPattern(path, query))
+    .filter((path) => matchesFindPattern(path, query, options))
     .sort((left, right) => left.localeCompare(right));
   const visible = matches.slice(0, maxResults);
   return { matches: visible, count: matches.length, truncated: matches.length > visible.length };

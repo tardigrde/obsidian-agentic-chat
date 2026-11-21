@@ -45,7 +45,7 @@ The system prompt lists these tools, but they are not in the model's tool list u
 
 | Tool | What it does |
 | --- | --- |
-| `import_document` | Extract PDF, EPUB, DOCX, PPTX, or XLSX text into artifacts with citations. |
+| `import_document` | Extract PDF, EPUB, DOCX, PPTX, or XLSX text into artifacts with citations. PDFs are read with the pdf.js that Obsidian ships; a PDF over 50 MB, or one whose text is unreadable (custom font encodings, scans), is refused rather than stored. |
 | `create_skill` | Create a skill package. Defaults to ask. YOLO does not auto-approve it. `/undo` cannot revert it. |
 | `mcp__<id>__<tool>` | Opt-in remote MCP tools behind the approval gate. The system prompt lists one line per MCP server. |
 

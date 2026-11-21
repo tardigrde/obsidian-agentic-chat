@@ -1,4 +1,4 @@
-import { type App } from "obsidian";
+import { TFile, type App } from "obsidian";
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import type { Skill } from "../skills/skill-prompt";
 import type { AgenticChatSettings } from "../settings-schema";
@@ -22,7 +22,7 @@ import { mcpServerStateFromServer, type McpServerSettings } from "../mcp/setting
 import { createArtifactTool } from "../artifacts/tool-artifact-tools";
 import type { ToolArtifactStoreLike } from "../artifacts/tool-artifact-store";
 import { type IgnoreMatcher } from "../vault/ignore";
-import { createFileSystemDenyMatcher } from "../vault/file-system-sandbox";
+import { createPrivateMatcher, noteMetadataFromCache } from "../vault/private-rules";
 import type { ReadMemo } from "../vault/read-memo";
 import { formatInstructionsOverlay, loadVaultInstructions } from "./instructions";
 import {
@@ -69,7 +69,14 @@ export async function loadAgentRuntimeResources(
   // S5: FileSystemSandboxPolicy deny-globs — user ignoredGlobs + protected metadata globs
   // (`.obsidian/**`, `.git/**`, `.trash/**` plus the vault's actual configDir) merged via one engine (`glob-pattern.ts`).
   const vaultConfigDir = (app.vault as unknown as { configDir?: string }).configDir;
-  const ignoreMatcher = createFileSystemDenyMatcher(settings.ignoredGlobs, vaultConfigDir);
+  // U4 #11: the same setting also takes #tag and property=value rules, read
+  // live from the metadata cache so a newly tagged note is private at once.
+  const ignoreMatcher = createPrivateMatcher(settings.ignoredGlobs, vaultConfigDir, (path) => {
+    const file = app.vault.getAbstractFileByPath(path);
+    if (!(file instanceof TFile)) return null;
+    const cache = (app as { metadataCache?: { getFileCache?: (file: TFile) => unknown } }).metadataCache?.getFileCache?.(file);
+    return noteMetadataFromCache(cache as Parameters<typeof noteMetadataFromCache>[0]);
+  });
   // One plugin catalog: the caller may pass the PluginService cache. Without
   // it, scan the folder here (the default for probes and minimal harnesses).
   const plugins =

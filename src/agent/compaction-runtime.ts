@@ -1,3 +1,4 @@
+import { sumSubagentResultUsage } from "./session-usage";
 import type { AgentMessage, StreamFn } from "@earendil-works/pi-agent-core";
 import { contentText, normalizeContext, type Model, type Usage } from "@earendil-works/pi-ai";
 import type { AgenticChatSettings } from "../settings-schema";
@@ -530,6 +531,8 @@ function collectDroppedUsage(messages: AgentMessage[]): Usage {
   const total = emptyUsage();
   const assistant = sumAssistantUsage(messages);
   if (assistant) addUsage(total, assistant);
+  // Subagent dispatches folded into the summary keep their cost too (U4 #8).
+  addUsage(total, sumSubagentResultUsage(messages).usage);
   for (const message of messages) {
     const carried = getCompactedUsage(message);
     if (carried) addUsage(total, carried);

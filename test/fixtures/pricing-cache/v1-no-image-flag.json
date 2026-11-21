@@ -1,0 +1,1 @@
+{"fetchedAt":1795186320000,"models":{"deepseek/deepseek-v4.1-flash-1017":{"id":"deepseek/deepseek-v4.1-flash-1017","n":"DeepSeek V4.1 Flash","c":163840,"m":65536,"pi":0.1,"po":0.4,"pr":0.01,"pw":0,"t":1,"re":1,"tlm":null},"openai/gpt-5-mini":{"id":"openai/gpt-5-mini","n":"GPT-5 Mini","c":400000,"m":128000,"pi":0.25,"po":2,"pr":0.03,"pw":0,"t":1,"re":1,"tlm":null}}}

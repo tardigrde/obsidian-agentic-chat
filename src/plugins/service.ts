@@ -15,10 +15,8 @@ import { loadPlugins, mcpServerFromPluginEntry, type LoadedPlugin } from "./load
 import { validatePluginManifest } from "./manifest";
 import { sweepImportStages } from "./import-sweep";
 import {
-  materializeBuiltins,
   materializeLegacySkills,
   materializeMySkills,
-  removeBuiltins,
   scaffoldSkillPackage,
   writeMcpServerPackage,
   type McpServerPackage,
@@ -345,20 +343,6 @@ export class PluginService {
       this.cache?.find((p) => p.rootPath === rootPath) ?? this.cache?.find((p) => p.name === name) ?? null;
     if (cached) return cached.mcpServers.map((server) => server.id);
     return this.vault.readMcpServerIds(name, rootPath);
-  }
-
-  /** Materialize the `builtins` package when absent; never overwrites user edits. */
-  async ensureBuiltinsMaterialized(): Promise<boolean> {
-    const created = await materializeBuiltins(this.vault);
-    if (created) this.invalidate();
-    return created;
-  }
-
-  /** Recreate the `builtins` package from scratch (Repair button). Also restores `my-skills` when missing. */
-  async repairBuiltins(): Promise<void> {
-    await removeBuiltins(this.vault);
-    await this.ensureBuiltinsMaterialized();
-    await this.ensureMySkillsMaterialized();
   }
 
   /** Materialize the user's `my-skills` package; only creates missing files. */

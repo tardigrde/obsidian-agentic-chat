@@ -45,6 +45,7 @@ import {
 import { SessionActivationCoordinator, type SessionUiResetOptions } from "./session-activation-coordinator";
 import {
   renderActionPanel,
+  renderDoctorPanel,
   renderErrorPanel,
   renderInfoPanel,
 } from "./info-panel-renderer";
@@ -92,6 +93,7 @@ export class ChatView extends ItemView {
   private contextEl!: HTMLElement;
   private contextRingEl!: SVGCircleElement;
   private contextPercentEl!: HTMLElement;
+  private sessionCostEl!: HTMLElement;
   private workingEl!: HTMLElement;
   /** A pointer press in this view is being handled; its click decides focus. */
   private pointerActivation = false;
@@ -212,6 +214,7 @@ export class ChatView extends ItemView {
         contextEl: () => this.contextEl,
         contextRingEl: () => this.contextRingEl,
         contextPercentEl: () => this.contextPercentEl,
+        sessionCostEl: () => this.sessionCostEl,
         sendButton: () => this.sendButton,
         composerInput: () => this.inputEl,
         stopButton: () => this.stopButton,
@@ -723,6 +726,7 @@ export class ChatView extends ItemView {
     this.contextEl = layout.contextEl;
     this.contextRingEl = layout.contextRingEl;
     this.contextPercentEl = layout.contextPercentEl;
+    this.sessionCostEl = layout.sessionCostEl;
     this.workingEl = layout.workingEl;
   }
 
@@ -891,6 +895,10 @@ export class ChatView extends ItemView {
       get activeNotePath() { return view.activeNotePath; },
       clearEmptyState: () => view.clearEmptyState(),
       renderInfoMessage: (title, entries) => view.renderInfoMessage(title, entries),
+      renderDoctorReport: (report) => {
+        renderDoctorPanel(view.messagesEl, report);
+        view.scrollToBottom({ force: true });
+      },
       renderActionList: (title, subtitle, items) => view.renderActionList(title, subtitle, items),
       renderErrorMessage: (message) => view.renderErrorMessage(message),
       showServiceError: () => view.showServiceError(),
