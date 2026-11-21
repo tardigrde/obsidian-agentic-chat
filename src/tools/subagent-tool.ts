@@ -52,11 +52,6 @@ export interface SubagentDetails {
   children: SubagentChildStatus[];
 }
 
-/**
- * Per-service subagent state: live stop hooks and error details awaiting the
- * tool-call controller. Each `AgentSubagentRuntime` (and therefore each chat
- * service) owns one, so equal tool-call ids in different services never collide.
- */
 /** A finished child kept for a follow-up (`action: "continue"`). */
 export interface RetainedChild {
   id: string;
@@ -64,6 +59,12 @@ export interface RetainedChild {
   child: Agent;
 }
 
+/**
+ * Per-service subagent state: live stop hooks, error details awaiting the
+ * tool-call controller, and retained children. Each `AgentSubagentRuntime`
+ * (and therefore each chat service) owns one, so equal tool-call ids in
+ * different services never collide.
+ */
 export class SubagentRegistry {
   private readonly activeStops = new Map<string, () => void>();
   private readonly pendingErrorDetails = new Map<string, SubagentDetails>();
@@ -98,6 +99,11 @@ export class SubagentRegistry {
 
   get retainedCount(): number {
     return this.retained.size;
+  }
+
+  /** The active session changed: its children may not be continued from another one. */
+  clearRetained(): void {
+    this.retained.clear();
   }
 
   setActiveStop(id: string, stop: () => void): void {

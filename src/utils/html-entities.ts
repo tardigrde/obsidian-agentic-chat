@@ -40,5 +40,13 @@ export function decodeHtmlEntities(input: string): string {
 
 /** Search snippets arrive with highlight markup (`<strong>`): plain text only. */
 export function plainTextFromHtml(input: string): string {
-  return decodeHtmlEntities(input.replace(/<[^>]*>/g, "")).replace(/\s+/g, " ").trim();
+  // Decode first, then strip until nothing changes: an encoded tag
+  // (`&lt;img onerror=…&gt;`) or a nested one (`<scr<b>ipt>`) never survives.
+  let text = decodeHtmlEntities(input);
+  let previous: string;
+  do {
+    previous = text;
+    text = text.replace(/<[^>]*>/g, "");
+  } while (text !== previous);
+  return text.replace(/\s+/g, " ").trim();
 }

@@ -51,6 +51,9 @@ export function parsePrivateRules(text: string): PrivateRules {
     if (property) {
       const value = property[2].trim();
       rules.properties.push({ key: property[1].toLowerCase(), value: value === "" || value === "*" ? null : value.toLowerCase() });
+      // Also keep it as a path glob: a stored literal path such as `todo=done.md`
+      // was a glob before property rules existed, and must stay hidden.
+      rules.globs.push(rule);
       continue;
     }
     rules.globs.push(rule);

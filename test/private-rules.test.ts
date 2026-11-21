@@ -49,3 +49,11 @@ describe("createPrivateMatcher", () => {
     ]);
   });
 });
+
+describe("a property-shaped line still hides its literal path (U4-B review)", () => {
+  it("todo=done.md stays a path glob as well as a property rule", () => {
+    const rules = parsePrivateRules("todo=done.md");
+    expect(rules.globs).toContain("todo=done.md");
+    expect(rules.properties).toEqual([{ key: "todo", value: "done.md" }]);
+  });
+});

@@ -6,6 +6,7 @@ import { createDocumentTools } from "../src/tools/document-tools";
 import { legacyStableTextHash } from "../src/retrieval/source-hash";
 import {
   MAX_PDF_BYTES,
+  MAX_PDF_PAGES,
   PDF_IMPORT_CONTENT_TYPE,
   PDF_IMPORT_SOURCE_TOOL,
   PdfArtifactDeduper,
@@ -279,5 +280,38 @@ describe("PDF source ingestion (pdf.js, U4 #10)", () => {
     const [tool] = createDocumentTools({ vault: { adapter: adapter.asDataAdapter() } } as unknown as App, store, loadPdf);
 
     await expect(tool.execute("call-1", { path: "Research/source.txt" })).rejects.toThrow(/Unsupported document format/);
+  });
+});
+
+describe("PDF hardening (U4-B review)", () => {
+  const pdfHeader = new TextEncoder().encode("%PDF-1.7\n");
+  const fakePdfJs = (document: () => Promise<unknown>): (() => Promise<PdfJsLike>) =>
+    async () => ({ getDocument: () => ({ promise: document() }) }) as unknown as PdfJsLike;
+
+  it("names a password-protected PDF instead of an opaque pdf.js error", async () => {
+    const locked = fakePdfJs(async () => {
+      throw Object.assign(new Error("No password given"), { name: "PasswordException" });
+    });
+    await expect(extractPdfText(pdfHeader, locked)).rejects.toThrow(/password-protected/);
+  });
+
+  it("stops at the page cap even when the pages hold little text", async () => {
+    let pagesRead = 0;
+    const many = fakePdfJs(async () => ({
+      numPages: 50_000,
+      getPage: async () => {
+        pagesRead += 1;
+        return { getTextContent: async () => ({ items: [{ str: "Page text.", hasEOL: true }] }) };
+      },
+      destroy: async () => {},
+    }));
+    const result = await extractPdfText(pdfHeader, many);
+    expect(pagesRead).toBe(MAX_PDF_PAGES);
+    expect(result.warnings.join(" ")).toMatch(/first 2,000 of 50,000 pages/);
+  });
+
+  it("counts combining marks as readable (decomposed diacritics)", () => {
+    const decomposed = "Tie\u0302\u0301ng Vie\u0323\u0302t ".repeat(20).normalize("NFD");
+    expect(readableRatio(decomposed)).toBeGreaterThan(0.95);
   });
 });

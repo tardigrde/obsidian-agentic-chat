@@ -18,6 +18,8 @@ export const PDF_TEXT_EXTRACTOR = "pdfjs";
 export const MAX_PDF_BYTES = 50 * 1024 * 1024;
 /** Keep at most this much extracted text; the rest is dropped with a warning. */
 export const MAX_PDF_TEXT_CHARS = 1_500_000;
+/** Pages read at most: empty pages add no text, so the text cap alone never stops them. */
+export const MAX_PDF_PAGES = 2_000;
 /** Refuse text where fewer than this share of characters are readable (broken font encodings). */
 export const MIN_READABLE_RATIO = 0.85;
 
@@ -93,12 +95,24 @@ export async function extractPdfText(input: PdfInput, loadPdfJs: PdfJsLoader): P
   }
   const pdfjs = await loadPdfJs();
   // pdf.js may detach the buffer it gets: hand it a copy.
-  const document = await pdfjs.getDocument({ data: bytes.slice(), isEvalSupported: false, disableFontFace: true }).promise;
+  let document: Awaited<ReturnType<PdfJsLike["getDocument"]>["promise"]>;
+  try {
+    document = await pdfjs.getDocument({ data: bytes.slice(), isEvalSupported: false, disableFontFace: true }).promise;
+  } catch (error) {
+    if ((error as { name?: string } | null)?.name === "PasswordException") {
+      throw new Error("PDF is password-protected. Export a copy without a password, then import that.", { cause: error });
+    }
+    throw error;
+  }
   const warnings: string[] = [];
   const pages: string[] = [];
   let total = 0;
   try {
-    for (let pageNumber = 1; pageNumber <= document.numPages; pageNumber += 1) {
+    const lastPage = Math.min(document.numPages, MAX_PDF_PAGES);
+    if (document.numPages > MAX_PDF_PAGES) {
+      warnings.push(`Read the first ${MAX_PDF_PAGES.toLocaleString("en-US")} of ${document.numPages.toLocaleString("en-US")} pages.`);
+    }
+    for (let pageNumber = 1; pageNumber <= lastPage; pageNumber += 1) {
       const page = await document.getPage(pageNumber);
       const content = await page.getTextContent();
       const text = content.items.map((item) => `${item.str ?? ""}${item.hasEOL ? "\n" : ""}`).join("");
@@ -126,10 +140,10 @@ export async function extractPdfText(input: PdfInput, loadPdfJs: PdfJsLoader): P
   return { text, extractor: PDF_TEXT_EXTRACTOR, pageCount: document.numPages, warnings };
 }
 
-/** Share of letters, digits, punctuation, symbols, and spaces (not control or replacement characters). */
+/** Share of letters (with combining marks), digits, punctuation, symbols, and spaces (not control or replacement characters). */
 export function readableRatio(text: string): number {
   if (!text) return 0;
-  const readable = text.match(/[\p{L}\p{N}\p{P}\p{S}\p{Zs}\n\t]/gu)?.length ?? 0;
+  const readable = text.match(/[\p{L}\p{M}\p{N}\p{P}\p{S}\p{Zs}\n\t]/gu)?.length ?? 0;
   const replacement = text.match(/\uFFFD/gu)?.length ?? 0;
   return Math.max(0, readable - replacement) / text.length;
 }

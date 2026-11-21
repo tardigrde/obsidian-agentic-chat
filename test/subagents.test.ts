@@ -646,3 +646,10 @@ describe("subagent: no turn cap, continue, parallel, live usage (U4)", () => {
     await Promise.all(runs);
   });
 });
+
+describe("subagent prompt text names no fixed parallel limit", () => {
+  it("defers to the tool description, which uses the setting", () => {
+    const text = formatAgentRolesForSystemPrompt([{ name: "explorer", description: "read-only recon" } as never]);
+    expect(text).not.toMatch(/up to \d+/);
+  });
+});

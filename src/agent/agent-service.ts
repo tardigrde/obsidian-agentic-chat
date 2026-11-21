@@ -264,7 +264,14 @@ export class AgentService {
       buildConfiguration: () => this.parentConfiguration.build(),
       sessionEvents: this.sessionEvents,
       sessionState: this.sessionState,
-      toolCalls: this.toolCalls,
+      toolCalls: {
+        clearSessionState: () => {
+          this.toolCalls.clearSessionState();
+          // A retained child belongs to the conversation that made it: no
+          // `continue` across a session switch (its context and cost would leak).
+          this.subagents.registry.clearRetained();
+        },
+      },
       runtimeResources: this.runtimeResources,
     });
     this.parentConfiguration = new AgentParentConfigurationRuntime({

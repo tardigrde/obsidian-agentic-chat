@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import type { WebFetcher, WebHttpRequest, WebHttpResponse } from "../src/tools/web-fetch";
 import { createWebSearchTool, type WebSearchConfig } from "../src/tools/web-search";
+import { plainTextFromHtml } from "../src/utils/html-entities";
 
 function stubFetcher(
   response: Partial<WebHttpResponse>,
@@ -169,5 +170,13 @@ describe("web_search tool", () => {
     expect(text).toContain("Tom & Jerry");
     expect(text).toContain("The best § 3 — cats");
     expect(text).not.toContain("<strong>");
+  });
+});
+
+describe("plainTextFromHtml leaves no markup", () => {
+  it("drops encoded and nested tags, keeps entities as text", () => {
+    expect(plainTextFromHtml("&lt;img src=x onerror=alert(1)&gt;hi")).toBe("hi");
+    expect(plainTextFromHtml("<scr<b>ipt>alert(1)</script> ok")).not.toMatch(/<\s*script/i);
+    expect(plainTextFromHtml("<strong>Tom &amp; Jerry</strong> &sect;2, a &lt; b")).toBe("Tom & Jerry §2, a < b");
   });
 });

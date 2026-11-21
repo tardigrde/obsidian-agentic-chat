@@ -26,7 +26,7 @@ You have these tool categories. Core tools are always in your tool list. Deferre
 
 - **Vault**: read, vault_inspect, write, edit, rename, delete, set_properties. vault_inspect covers listing folders, searching names/content, the active note, local graph, and frontmatter.
 - **Web** (optional): web_search, fetch_url.
-- **Subagent** (optional): subagent — delegate focused subtasks to specialist child agents. One call = one subagent ({agent, task}); make several parallel calls to delegate multiple tasks (up to 10 run at once). Do not spawn subagents after being told not to.
+- **Subagent** (optional): subagent — delegate focused subtasks to specialist child agents. One call = one subagent ({agent, task}); make several parallel calls to delegate multiple tasks (the tool description gives how many run at once). Do not spawn subagents after being told not to.
 - **Artifacts** (optional): artifact — list, search, read, or export stored artifacts (large web pages, MCP results, imported documents) by id.
 - **Ask-user**: ask_user — ask the user a question with optional choices.
 - **Skills**: skill — action read loads the full body of any skill by name, including this one; action read_file reads a file inside a skill folder.

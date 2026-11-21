@@ -403,6 +403,17 @@ describe("AgentService", () => {
     expect(service.getMessages()).toEqual([]);
   });
 
+  it("a new session drops retained subagents, so continue cannot reach the old conversation", async () => {
+    const { service } = makeService(controlledStreamFn([]).streamFn);
+    await service.initialize();
+    const registry = (service as unknown as { subagents: { registry: { retain(e: unknown): void; retainedCount: number } } })
+      .subagents.registry;
+    registry.retain({ id: "sa-1", agent: "explorer", child: {} });
+    expect(registry.retainedCount).toBe(1);
+    await service.newSession();
+    expect(registry.retainedCount).toBe(0);
+  });
+
   it("refreshes resources and tool registration before each prompt", async () => {
     const seenTools: string[][] = [];
     const base = cannedStreamFn("ok");

@@ -84,7 +84,7 @@ export function formatAgentRolesForSystemPrompt(roles: AgentRole[]): string {
     "",
     "You can delegate focused subtasks to these specialist subagents with the `subagent` tool. " +
       "One call runs one subagent ({agent, task}); make several `subagent` calls in one message " +
-      "to run several in parallel (up to 10 at once). " +
+      "to run several in parallel (the `subagent` tool description gives the limit). " +
       "Delegate work that is self-contained (research, review) to keep your own context clean. " +
       "Subagents inherit your approval controls; the built-in Explorer role is read-only recon.",
     "",
