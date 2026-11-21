@@ -443,7 +443,7 @@ export class AgentToolCallController {
 
   /** True when any dispatched role's allowlist includes a mutating tool that is not per-tool denied. */
   private dispatchCanMutate(settings: AgenticChatSettings, args: unknown): boolean {
-    const tasks = normalizeTasks((args ?? {}) as Parameters<typeof normalizeTasks>[0], (id) => this.subagentRegistry.retainedAgent(id));
+    const tasks = normalizeTasks(args ?? {}, (id) => this.subagentRegistry.retainedAgent(id));
     return tasks.some((task) => {
       const profile = findAgentRole(this.getProfiles(), task.agent);
       if (!profile) return false;

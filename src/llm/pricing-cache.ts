@@ -43,7 +43,7 @@ let memoryCache: PricingCache | null = null;
 let lastFetchError: string | null = null;
 let lastFetchAttemptAt = 0;
 let failedAttempts = 0;
-let retryTimer: ReturnType<typeof setTimeout> | null = null;
+let retryTimer: number | null = null;
 
 /** What `/doctor` reports about the model catalog. */
 export interface ModelCatalogStatus {
@@ -154,7 +154,7 @@ export function clearPricingCacheForTests(): void {
   lastFetchError = null;
   lastFetchAttemptAt = 0;
   failedAttempts = 0;
-  if (retryTimer) clearTimeout(retryTimer);
+  if (retryTimer) window.clearTimeout(retryTimer);
   retryTimer = null;
   inFlightPromise = null;
 }
@@ -255,7 +255,7 @@ function scheduleRetry(): void {
   const delay = CATALOG_RETRY_DELAYS_MS[failedAttempts];
   failedAttempts += 1;
   if (delay === undefined || retryTimer) return;
-  retryTimer = setTimeout(() => {
+  retryTimer = window.setTimeout(() => {
     retryTimer = null;
     void startFetch();
   }, delay);
