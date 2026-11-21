@@ -131,6 +131,22 @@ export function replayToolCallTurn(
   };
 }
 
+/**
+ * One model message with text and tool calls in the order given, as real
+ * models write them: `Retrying those:` then a `web_search` call (U4 #1).
+ * Ends with `toolUse` when it has a call, else `stop`.
+ */
+export function replayMixedTurn(
+  parts: Array<{ text: string } | { id: string; name: string; args: JsonObject }>,
+  options: Omit<ReplayTurn, "content"> = {},
+): ReplayTurn {
+  const content: AssistantMessage["content"] = parts.map((part) =>
+    "text" in part ? textContent(part.text) : { type: "toolCall" as const, id: part.id, name: part.name, arguments: cloneJsonObject(part.args) },
+  );
+  const hasCall = content.some((block) => block.type === "toolCall");
+  return { ...options, content, stopReason: options.stopReason ?? (hasCall ? "toolUse" : "stop") };
+}
+
 export function replayErrorTurn(errorMessage: string, options: Omit<ReplayTurn, "content" | "stopReason"> = {}): ReplayTurn {
   return { ...options, content: [], stopReason: "error", errorMessage };
 }
