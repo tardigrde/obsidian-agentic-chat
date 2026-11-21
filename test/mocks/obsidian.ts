@@ -85,6 +85,11 @@ export const Platform = {
   isDesktopApp: true,
 };
 
+/** Obsidian's bundled pdf.js. Tests pass pdfjs-dist through `createDocumentTools` instead. */
+export function loadPdfJs(): Promise<never> {
+  return Promise.reject(new Error("loadPdfJs is not available in tests"));
+}
+
 /** Stub network access: the web tools inject their own fetcher in tests. */
 export function requestUrl(): Promise<{
   status: number;

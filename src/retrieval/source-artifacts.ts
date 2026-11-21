@@ -1,3 +1,4 @@
+import { decodeHtmlEntities } from "../utils/html-entities";
 import type { ToolArtifactMetadata, ToolArtifactStoreLike } from "../artifacts/tool-artifact-store";
 import { formatSourceReference } from "./citations";
 import { formatFrontmatterScalar, parseFrontmatterFields } from "../vault/frontmatter";
@@ -70,6 +71,8 @@ export function extractReadableSource(html: string, contentType = ""): ReadableS
   if (!looksLikeHtml(html, contentType)) {
     return { title: "", text: normalizeText(html), extractor: "plain-text", sourceKind: "web" };
   }
+  // Page chrome first: language lists, menus, site headers (U4 #15).
+  html = removeChrome(html);
 
   const title = extractTitle(html);
   const video = extractVideoMetadata(html);
@@ -294,27 +297,57 @@ export function looksLikeHtml(text: string, contentType: string): boolean {
   return /html|xml/i.test(contentType) || (!contentType && /<(!doctype html|html|head|body|p|div|a|span|h[1-6])\b/i.test(text.slice(0, 2000)));
 }
 
-const NAMED_ENTITIES: Record<string, string> = {
-  amp: "&",
-  lt: "<",
-  gt: ">",
-  quot: '"',
-  apos: "'",
-  nbsp: " ",
-  mdash: "\u2014",
-  ndash: "\u2013",
-  hellip: "\u2026",
-};
-
 function decodeEntities(input: string): string {
-  return input.replace(/&(#x?[0-9a-f]+|[a-z]+);/gi, (match, code: string) => {
-    const lower = code.toLowerCase();
-    if (lower.startsWith("#")) {
-      const num = lower[1] === "x" ? Number.parseInt(lower.slice(2), 16) : Number.parseInt(lower.slice(1), 10);
-      return Number.isFinite(num) && num > 0 ? String.fromCodePoint(num) : match;
+  return decodeHtmlEntities(input);
+}
+
+/**
+ * Elements that are page chrome, not the article: navigation and site
+ * headers by role, Wikipedia's language list and menus, skip links, cookie
+ * banners, GitHub's app header. Before this, the first window of a Wikipedia
+ * page was its list of 300 languages, and a GitHub page began with 3,000
+ * characters of navigation (U4 #15).
+ */
+const CHROME_ATTR =
+  /\b(?:role\s*=\s*["'](?:navigation|banner|search|contentinfo|complementary)["']|(?:id|class)\s*=\s*["'][^"']*(?:interlanguage|p-lang|mw-portlet-lang|vector-menu|vector-header|mw-navigation|navbox|catlinks|mw-jump-link|cookie|consent|breadcrumb|AppHeader|js-header|skip-to|sidebar)[^"']*["'])/i;
+
+function removeChrome(html: string): string {
+  let output = html;
+  let searchFrom = 0;
+  const opening = /<([a-z][a-z0-9:-]*)\b([^>]*)>/gi;
+  for (;;) {
+    opening.lastIndex = searchFrom;
+    let match: RegExpExecArray | null;
+    let found: RegExpExecArray | null = null;
+    while ((match = opening.exec(output))) {
+      if (CHROME_ATTR.test(match[2])) {
+        found = match;
+        break;
+      }
     }
-    return NAMED_ENTITIES[lower] ?? match;
-  });
+    if (!found) return output;
+    const end = matchingCloseIndex(output, found[1].toLowerCase(), found.index + found[0].length);
+    if (end === -1 || found[0].endsWith("/>")) {
+      searchFrom = found.index + found[0].length;
+      continue;
+    }
+    output = `${output.slice(0, found.index)} ${output.slice(end)}`;
+    searchFrom = found.index;
+  }
+}
+
+/** Index just past the close tag that balances an element opened before `from`, or -1. */
+function matchingCloseIndex(html: string, tag: string, from: number): number {
+  const pattern = new RegExp(`<(/?)${tag}\\b[^>]*>`, "gi");
+  pattern.lastIndex = from;
+  let depth = 1;
+  let match: RegExpExecArray | null;
+  while ((match = pattern.exec(html))) {
+    if (match[0].endsWith("/>")) continue;
+    depth += match[1] ? -1 : 1;
+    if (depth === 0) return match.index + match[0].length;
+  }
+  return -1;
 }
 
 function isSourceTextExtractor(value: string | undefined): value is SourceTextExtractor {

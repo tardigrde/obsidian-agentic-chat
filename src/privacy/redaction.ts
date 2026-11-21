@@ -36,6 +36,28 @@ const ASSIGNMENT_SECRET_PATTERN = new RegExp(
 );
 const HIGH_ENTROPY_PATTERN = /\b(?=[A-Za-z0-9+/=]{32,}\b)(?=[A-Za-z0-9+/=]*[A-Za-z])(?=[A-Za-z0-9+/=]*\d)[A-Za-z0-9+/]{32,}={0,2}\b/g;
 
+/** Same, without `/`: inside a URL, path segments are not secrets (U4 #16). */
+const HIGH_ENTROPY_NO_SLASH = /\b(?=[A-Za-z0-9+=]{32,}\b)(?=[A-Za-z0-9+=]*[A-Za-z])(?=[A-Za-z0-9+=]*\d)[A-Za-z0-9+]{32,}={0,2}\b/g;
+const URL_PATTERN = /\bhttps?:\/\/[^\s"'<>()]+/gi;
+
+/**
+ * High-entropy redaction that keeps URLs readable: `/` joined the path of
+ * `https://www.sciencedirect.com/science/article/pii/...` into one long
+ * "token" that became `https://www.sciencedirect.[redacted]`. In a URL only
+ * a long opaque segment or query value is redacted.
+ */
+function redactHighEntropy(text: string): string {
+  let output = "";
+  let last = 0;
+  for (const match of text.matchAll(URL_PATTERN)) {
+    const start = match.index ?? 0;
+    output += text.slice(last, start).replace(HIGH_ENTROPY_PATTERN, REDACTED_VALUE);
+    output += match[0].replace(HIGH_ENTROPY_NO_SLASH, REDACTED_VALUE);
+    last = start + match[0].length;
+  }
+  return output + text.slice(last).replace(HIGH_ENTROPY_PATTERN, REDACTED_VALUE);
+}
+
 export interface RedactTextOptions {
   maxLength?: number;
   redactHighEntropy?: boolean;
@@ -59,7 +81,7 @@ export function redactText(value: string, options: RedactTextOptions = {}): stri
     .replace(BASIC_PATTERN, `Basic ${REDACTED_VALUE}`)
     .replace(PROVIDER_KEY_PATTERN, REDACTED_VALUE)
     .replace(ASSIGNMENT_SECRET_PATTERN, `$1=${REDACTED_VALUE}`);
-  if (options.redactHighEntropy) redacted = redacted.replace(HIGH_ENTROPY_PATTERN, REDACTED_VALUE);
+  if (options.redactHighEntropy) redacted = redactHighEntropy(redacted);
   return truncateString(redacted, maxLength);
 }
 

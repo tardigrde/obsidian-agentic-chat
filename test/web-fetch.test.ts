@@ -603,3 +603,39 @@ describe("fetch_url tool", () => {
     await expect(run(tool, { url: "https://evil.com/page" })).resolves.toBeDefined();
   });
 });
+
+describe("fetch_url quality (U4 #15)", () => {
+  const html = (body: string) => ({ text: `<html><head><title>Page</title></head><body>${body}</body></html>`, headers: { "content-type": "text/html" } });
+
+  it("a cookie wall fails the fetch and writes no artifact", async () => {
+    const { store, writes } = memoryArtifactStore();
+    const tool = createWebFetchTool({
+      fetcher: stubFetcher(html("<p>Cookies must be enabled to use this site. Please enable cookies and reload.</p>")),
+      charLimit: 10_000,
+      artifactStore: store,
+    });
+    await expect(run(tool, { url: "https://journal.example/article" })).rejects.toThrow(/cookie wall instead of the page/);
+    expect(writes).toHaveLength(0);
+  });
+
+  it("a Wikipedia page starts with the article, not its list of languages", () => {
+    const languages = Array.from({ length: 200 }, (_, index) => `<li class="interlanguage-link"><a>Language ${index}</a></li>`).join("");
+    const page = `<html><head><title>Okapi - Wikipedia</title></head><body><main id="content">
+      <div id="p-lang-btn" class="vector-dropdown mw-portlet mw-portlet-lang"><div class="vector-menu-content"><ul>${languages}</ul></div></div>
+      <div id="bodyContent" class="vector-body"><div class="mw-content-ltr mw-parser-output"><p>The okapi is a giraffid native to the Congo. &sect; 2 covers its range.</p></div></div>
+    </main></body></html>`;
+    const extracted = extractReadableSource(page, "text/html");
+    expect(extracted.text.startsWith("The okapi is a giraffid")).toBe(true);
+    expect(extracted.text).not.toContain("Language 1");
+    expect(extracted.text).toContain("§ 2 covers its range.");
+  });
+
+  it("a GitHub page drops its app header and navigation", () => {
+    const nav = Array.from({ length: 80 }, (_, index) => `<a href="/x${index}">Menu item ${index}</a>`).join(" ");
+    const page = `<html><body><header class="AppHeader" role="banner">${nav}</header><nav aria-label="Repository">${nav}</nav>
+      <main><article class="markdown-body"><h1>tool</h1><p>README: install with npm and run it.</p></article></main></body></html>`;
+    const extracted = extractReadableSource(page, "text/html");
+    expect(extracted.text).toContain("README: install with npm and run it.");
+    expect(extracted.text).not.toContain("Menu item");
+  });
+});
