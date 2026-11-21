@@ -6,7 +6,8 @@ import { createPrivateMatcher, noteMetadataFromCache, parsePrivateRules, type No
 describe("parsePrivateRules", () => {
   it("splits on commas and new lines into globs, tags, and properties", () => {
     expect(parsePrivateRules("Private/, *.secret.md\n#Private, #health/x\nprivate=true, draft=, status=*\n# a comment\nprivate")).toEqual({
-      globs: ["Private/", "*.secret.md", "private"],
+      // A property-shaped line also stays a literal path glob (no leak for an old `a=b.md` path).
+      globs: ["Private/", "*.secret.md", "private=true", "draft=", "status=*", "private"],
       tags: ["private", "health/x"],
       properties: [
         { key: "private", value: "true" },
