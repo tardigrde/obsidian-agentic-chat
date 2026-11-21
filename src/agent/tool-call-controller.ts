@@ -324,7 +324,7 @@ export class AgentToolCallController {
   ): Promise<ToolGateDecision> {
     // Unknown agents fail closed with a distinct audit: the dispatch never ran,
     // so it must not be logged as auto-approved (execute would throw unknown-agent).
-    const unknown = normalizeTasks((args ?? {})).find((task) => !findAgentRole(this.getProfiles(), task.agent));
+    const unknown = normalizeTasks((args ?? {}) as Parameters<typeof normalizeTasks>[0], (id) => this.subagentRegistry.retainedAgent(id)).find((task) => !findAgentRole(this.getProfiles(), task.agent));
     const available = this.getProfiles().map((candidate) => candidate.name).join(", ") || "(none)";
     const unknownAgentReason = unknown
       ? `subagent: unknown agent "${unknown.agent.trim()}". Available: ${available}.`
@@ -401,7 +401,7 @@ export class AgentToolCallController {
 
   /** True when any dispatched role's allowlist includes a mutating tool that is not per-tool denied. */
   private dispatchCanMutate(settings: AgenticChatSettings, args: unknown): boolean {
-    const tasks = normalizeTasks((args ?? {}));
+    const tasks = normalizeTasks((args ?? {}) as Parameters<typeof normalizeTasks>[0], (id) => this.subagentRegistry.retainedAgent(id));
     return tasks.some((task) => {
       const profile = findAgentRole(this.getProfiles(), task.agent);
       if (!profile) return false;
