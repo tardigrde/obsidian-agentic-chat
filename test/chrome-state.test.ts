@@ -40,12 +40,12 @@ describe("chrome state helpers", () => {
 
 });
 
-describe("composerSendState (U3 #12: the send button state machine)", () => {
+describe("composerSendState (U3 #12, U4: one round button)", () => {
   const rows: Array<[running: boolean, queued: boolean, draftEmpty: boolean, action: string, enabled: boolean, label: RegExp]> = [
     [false, false, true, "send", true, /^Send$/],
     [false, false, false, "send", true, /^Send$/],
     [false, true, false, "send", true, /^Send$/],
-    [true, false, true, "queue", false, /type a message/],
+    [true, false, true, "stop", true, /^Stop \(Esc\)$/],
     [true, false, false, "queue", true, /^Queue: send after this turn$/],
     [true, true, false, "update", true, /^Update the queued message$/],
     [true, true, true, "update", true, /^Update the queued message$/],
@@ -55,6 +55,6 @@ describe("composerSendState (U3 #12: the send button state machine)", () => {
     expect(state.action).toBe(action);
     expect(state.enabled).toBe(enabled);
     expect(state.label).toMatch(label);
-    expect(state.icon).toBe(action === "send" ? "arrow-up" : "list-plus");
+    expect(state.icon).toBe(action === "send" ? "arrow-up" : action === "stop" ? "square" : "list-plus");
   });
 });

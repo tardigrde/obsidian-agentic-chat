@@ -314,9 +314,10 @@ describe("agentic-chat deterministic approvals", function () {
       textTurn("queue final", "Queued answer used the edited draft."),
     ]);
     await sendPrompt("scripted queue initial");
+    // U4: an empty draft shows Stop in the round button's place.
     await browser.waitUntil(
-      async () => (await $('[data-ac="send"]').getAttribute("data-ac-state")) === "queue",
-      { timeout: 5_000, timeoutMsg: "send button did not switch to queue mode" },
+      async () => (await $('[data-ac="send"]').getAttribute("data-ac-state")) === "stop",
+      { timeout: 5_000, timeoutMsg: "the round button did not switch to Stop" },
     );
 
     await sendPrompt("queued draft before edit");

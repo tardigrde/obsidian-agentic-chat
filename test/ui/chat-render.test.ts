@@ -77,14 +77,15 @@ describe("activity line", () => {
     ui.emit(streamDelta("thinking_delta", "trace reasoning step one"));
     vi.advanceTimersByTime(1_500);
     await settle();
-    expect(text(last(".agentic-chat-thought-label"))).toBe("Thinking…");
+    expect(text(last(".agentic-chat-thought-label"))).toBe("Thinking");
     expect(text(last(".agentic-chat-thought-text"))).toBe("trace reasoning step one");
 
     ui.emit(streamDelta("text_delta", "measured answer"));
     ui.emit(assistantEndText("measured answer"));
     ui.emit({ type: "agent_end" });
     await settle();
-    expect(text(last(".agentic-chat-thought.is-done .agentic-chat-thought-label"))).toBe("Thought for 1.5s:");
+    expect(text(last(".agentic-chat-thought.is-done .agentic-chat-thought-label"))).toBe("Thought");
+    expect(text(last(".agentic-chat-thought.is-done .agentic-chat-thought-time"))).toBe("2s");
     expect(head()).toBe("Thought");
     expect(last('[data-ac="activity"]')?.classList.contains("is-hidden")).toBe(false);
     // U3 #3: the reasoning is a row of the step timeline, in event order.
@@ -97,7 +98,8 @@ describe("activity line", () => {
     ui.emit(streamDelta("thinking_delta", "cached trace"));
     ui.emit(assistantEndText("cached answer"));
     await settle();
-    expect(text(last(".agentic-chat-thought.is-done .agentic-chat-thought-label"))).toBe("Thought:");
+    expect(text(last(".agentic-chat-thought.is-done .agentic-chat-thought-label"))).toBe("Thought");
+    expect(text(last(".agentic-chat-thought.is-done .agentic-chat-thought-time"))).toBe("");
   });
 
   it("an abort mid-thinking leaves no spinner and no empty entry", async () => {
@@ -210,8 +212,10 @@ function dispatch(opts: { id: string; children: Child[]; isError: boolean; conte
   ui.emit({ type: "agent_end" });
 }
 
-describe("subagent dispatch card", () => {
-  it("shows one aggregated status pill with exclusive Stop/Done and a usage readout", async () => {
+const blockSummary = () => text(last('[data-ac="subagents"] .agentic-chat-subagent-block-summary'));
+
+describe("subagent section (U4 #5)", () => {
+  it("summarizes the children in its head; Stop only on a running row; cost once settled", async () => {
     startAssistantTurn();
     ui.emit(toolStart("t-sub", "subagent", { agent: "explorer", task: "map the vault" }));
     ui.emit({
@@ -227,7 +231,7 @@ describe("subagent dispatch card", () => {
         },
       },
     });
-    expect(text(last(".agentic-chat-step-status"))).toBe("Running…");
+    expect(blockSummary()).toBe("Subagents · 1 running · 1 done");
     expect(lastAll(".agentic-chat-subagent .agentic-chat-subagent-stop")).toHaveLength(1);
 
     ui.emit({
@@ -243,17 +247,13 @@ describe("subagent dispatch card", () => {
         },
       },
     });
-    expect(text(last(".agentic-chat-step-status"))).toBe("Done");
+    expect(blockSummary()).toBe("Subagents · 2 done");
     expect(lastAll(".agentic-chat-subagent .agentic-chat-subagent-stop")).toHaveLength(0);
-    const meta = lastAll(".agentic-chat-subagent-meta").map(text);
-    expect(meta).toHaveLength(2);
-    for (const line of meta) {
-      expect(line).toMatch(/tok/);
-      expect(line).toContain("$");
-    }
+    expect(lastAll(".agentic-chat-subagent-time").map(text)).toEqual(["2m 5s", "1m 30s"]);
+    expect(lastAll(".agentic-chat-subagent-meta").map(text)).toEqual(["$0.01", "$0.0060"]);
   });
 
-  it("a progress tick does not re-open a line or a child the user closed", async () => {
+  it("a progress tick keeps the section and the row as the user left them", async () => {
     startAssistantTurn();
     ui.emit(toolStart("t-tick", "subagent", { agent: "explorer", task: "map" }));
     const tick = (summary: string) =>
@@ -265,21 +265,17 @@ describe("subagent dispatch card", () => {
         },
       });
     tick("");
-    const activity = last('[data-ac="activity"]');
+    const block = last('[data-ac="subagents"]');
     const child = last(".agentic-chat-subagent") as HTMLDetailsElement;
-    // U3 #10: a running subagent starts collapsed, like any tool row; Stop is on the row head.
-    expect(activity?.classList.contains("is-open")).toBe(false);
+    // Collapsed by default, also while running.
+    expect(block?.classList.contains("is-open")).toBe(false);
     expect(child.open).toBe(false);
-    expect(last('[data-ac="step"] .agentic-chat-step-head .agentic-chat-subagent-head-stop')).not.toBeNull();
-    // The user opens the line and the row: the row opens the child's log too.
-    (last('[data-ac="activity-head"]') as HTMLElement).click();
-    (last('[data-ac="step"] .agentic-chat-step-head') as HTMLElement).click();
-    expect(child.open).toBe(true);
+    (last('[data-ac="subagents-head"]') as HTMLElement).click();
+    child.open = true;
     tick("still going");
-    expect(last('[data-ac="activity"]')?.classList.contains("is-open")).toBe(true);
+    expect(block?.classList.contains("is-open")).toBe(true);
     expect((last(".agentic-chat-subagent") as HTMLDetailsElement).open).toBe(true);
-    // And closes both again; a later tick does not re-open them.
-    (last('[data-ac="step"] .agentic-chat-step-head') as HTMLElement).click();
+    child.open = false;
     tick("more");
     expect((last(".agentic-chat-subagent") as HTMLDetailsElement).open).toBe(false);
   });
@@ -290,7 +286,7 @@ describe("subagent dispatch card", () => {
     ui.emit(toolStart("t-stop", "subagent", { agent: "explorer", task: "hang" }));
     ui.emit({ type: "tool_execution_update", toolCallId: "t-stop", partialResult: { details: { kind: "subagent", children: stopped } } });
     expect(text(last(".agentic-chat-subagent-status"))).toBe("stopped");
-    expect(text(last(".agentic-chat-step-status"))).toBe("Stopped");
+    expect(blockSummary()).toBe("Subagents · 1 stopped");
     // A stopped dispatch settles as a normal result (isError false); the red icon
     // comes from the persisted child statuses.
     ui.emit({
@@ -303,7 +299,7 @@ describe("subagent dispatch card", () => {
     expect(cls(last(".agentic-chat-step"))).toContain("is-error");
   });
 
-  it("rehydrates a done dispatch from tool_execution_end alone, collapsed with its summary", () => {
+  it("rehydrates a done dispatch from tool_execution_end alone, collapsed with its report", () => {
     dispatch({
       id: "t-r1-done",
       contentText: "summary text",
@@ -312,10 +308,10 @@ describe("subagent dispatch card", () => {
     });
     expect(cls(last(".agentic-chat-step"))).toContain("is-done");
     expect(cls(last(".agentic-chat-step"))).not.toContain("is-running");
-    expect(text(last(".agentic-chat-subagent pre"))).toContain("found 3 notes");
-    expect(text(last(".agentic-chat-step-status"))).toBe("Done");
+    expect(text(last(".agentic-chat-subagent-log"))).toContain("found 3 notes");
+    expect(blockSummary()).toBe("Subagents · 1 done");
     expect(lastAll(".agentic-chat-subagent-stop")).toHaveLength(0);
-    expect(last(".agentic-chat-step-head")?.getAttribute("aria-expanded")).toBe("false");
+    expect(last('[data-ac="subagents-head"]')?.getAttribute("aria-expanded")).toBe("false");
   });
 
   it("rehydrates an aborted dispatch as stopped (red) and an error dispatch as failed", () => {
@@ -326,7 +322,7 @@ describe("subagent dispatch card", () => {
       children: [{ agent: "explorer", task: "hang", status: "aborted", summary: "Stopped by user", durationMs: 5000 }],
     });
     expect(cls(last('[data-ac="step"] .agentic-chat-status-icon svg'))).toContain("alert-circle");
-    expect(text(last(".agentic-chat-step-status"))).toBe("Stopped");
+    expect(blockSummary()).toBe("Subagents · 1 stopped");
     expect(text(last(".agentic-chat-subagent-status"))).toBe("stopped");
 
     dispatch({
@@ -336,22 +332,22 @@ describe("subagent dispatch card", () => {
       children: [{ agent: "explorer", task: "bad", status: "error", summary: "disk full", durationMs: 1000 }],
     });
     expect(cls(last(".agentic-chat-step"))).toContain("is-error");
-    expect(text(last(".agentic-chat-step-status"))).toBe("Failed");
+    expect(blockSummary()).toBe("Subagents · 1 failed");
   });
 
-  it("toggles a collapsed replay card open and keeps Stop hidden", () => {
+  it("opens a collapsed replayed section and keeps Stop hidden", () => {
     dispatch({
       id: "t-r1-toggle",
       contentText: "toggle summary",
       isError: false,
       children: [{ agent: "explorer", task: "toggle me", status: "done", summary: "toggle summary", durationMs: 1000 }],
     });
-    const toggle = last(".agentic-chat-step-head");
+    const toggle = last('[data-ac="subagents-head"]');
     expect(toggle?.getAttribute("aria-expanded")).toBe("false");
     toggle?.click();
-    expect(last(".agentic-chat-step-head")?.getAttribute("aria-expanded")).toBe("true");
+    expect(last('[data-ac="subagents-head"]')?.getAttribute("aria-expanded")).toBe("true");
     expect(lastAll(".agentic-chat-subagent-stop")).toHaveLength(0);
-    expect(text(last(".agentic-chat-subagent pre"))).toContain("toggle summary");
+    expect(text(last(".agentic-chat-subagent-log"))).toContain("toggle summary");
   });
 });
 

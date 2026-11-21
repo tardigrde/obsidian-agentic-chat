@@ -58,9 +58,18 @@ export async function latestInfoText(): Promise<string> {
   });
 }
 
-/** Wait until no turn is running (the Stop control is gone). */
+/**
+ * Wait until no turn is running. Stop and Queue share one round button (U4):
+ * Stop hides while the user types, so idle is "the button says Send".
+ */
 export async function waitForIdle(timeout = 10_000): Promise<void> {
-  await browser.waitUntil(async () => !(await $('[data-ac="stop"]').isDisplayed()), {
+  // No chat view open is idle too (a spec may have closed the pane).
+  const idle = async () =>
+    await browser.execute(() => {
+      const send = document.querySelector('[data-ac="send"]');
+      return !send || send.getAttribute("data-ac-state") === "send";
+    });
+  await browser.waitUntil(idle, {
     timeout,
     timeoutMsg: "the turn never settled",
   });
@@ -114,8 +123,9 @@ export async function trashPaths(paths: string[]): Promise<void> {
 }
 
 /**
- * An approval card that still waits for a choice. A resolved card stays in
- * the transcript as a one-line record, so "gone" means "no pending card".
+ * An approval card that still waits for a choice. A settled card leaves the
+ * transcript and its step row records the choice (U4 #4); a card with no step
+ * row stays as a one-line record, so "gone" means "no pending card".
  */
 export const PENDING_APPROVAL = '[data-ac="approval"]:not(.is-resolved)';
 
@@ -127,11 +137,16 @@ export async function waitForApprovalSettled(timeout = 5_000): Promise<void> {
   await $(PENDING_APPROVAL).waitForExist({ reverse: true, timeout, timeoutMsg: "the approval card never settled" });
 }
 
-/** The outcome of the newest resolved card: allowed, always, denied, or stopped. */
+/**
+ * The newest settled approval: allowed, always, denied, or stopped. Read from
+ * the step row that records it (U4 #4), else from a one-line resolved card.
+ */
 export async function lastApprovalOutcome(): Promise<string | null> {
-  return await browser.execute(
-    () => Array.from(document.querySelectorAll('[data-ac="approval"].is-resolved')).at(-1)?.getAttribute("data-ac-state") ?? null,
-  );
+  return await browser.execute(() => {
+    const recorded = Array.from(document.querySelectorAll('[data-ac="step"][data-ac-approval]')).at(-1);
+    if (recorded) return recorded.getAttribute("data-ac-approval");
+    return Array.from(document.querySelectorAll('[data-ac="approval"].is-resolved')).at(-1)?.getAttribute("data-ac-state") ?? null;
+  });
 }
 
 export async function allowApproval(): Promise<void> {

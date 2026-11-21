@@ -11,8 +11,8 @@ import { contextLevel, contextPercent, formatContextBreakdown, lastPromptTokens 
 import { highestUnnotifiedThreshold, type Notifier } from "./notifications";
 import type { TranscriptView } from "./transcript-view";
 
-/** What the send button does now; also its `data-ac-state` test hook. */
-export type SendAction = "send" | "queue" | "update";
+/** What the round button does now; also the send button's `data-ac-state` test hook. */
+export type SendAction = "send" | "stop" | "queue" | "update";
 
 export interface ComposerSendInput {
   /** A turn runs in this tab. */
@@ -27,28 +27,27 @@ export interface ComposerSendState {
   action: SendAction;
   enabled: boolean;
   label: string;
-  icon: "arrow-up" | "list-plus";
+  icon: "arrow-up" | "list-plus" | "square";
 }
 
 /**
- * The send button's state machine, as one table (U3 #12):
+ * The composer's one round button, as one table (U3 #12, U4 Stop/Queue):
  *
- * | running | queued | draft | action | enabled | label                                           |
- * |---------|--------|-------|--------|---------|-------------------------------------------------|
- * | no      | any    | any   | send   | yes     | Send                                            |
- * | yes     | no     | empty | queue  | no      | Queue: type a message to send after this turn   |
- * | yes     | no     | text  | queue  | yes     | Queue: send after this turn                     |
- * | yes     | yes    | any   | update | yes     | Update the queued message                       |
+ * | running | queued | draft | action | enabled | label                       |
+ * |---------|--------|-------|--------|---------|-----------------------------|
+ * | no      | any    | any   | send   | yes     | Send                        |
+ * | yes     | no     | empty | stop   | yes     | Stop (Esc)                  |
+ * | yes     | no     | text  | queue  | yes     | Queue: send after this turn |
+ * | yes     | yes    | any   | update | yes     | Update the queued message   |
  *
- * Idle Send stays enabled with an empty draft: Enter on nothing is a no-op,
- * and the muted resting style says so.
+ * `stop` shows the Stop button in the same place; Escape in the composer stops
+ * too, and Enter while a turn runs steers. Idle Send stays enabled with an
+ * empty draft: Enter on nothing is a no-op, and the muted resting style says so.
  */
 export function composerSendState(input: ComposerSendInput): ComposerSendState {
   if (!input.running) return { action: "send", enabled: true, label: "Send", icon: "arrow-up" };
   if (input.queued) return { action: "update", enabled: true, label: "Update the queued message", icon: "list-plus" };
-  if (input.draftEmpty) {
-    return { action: "queue", enabled: false, label: "Queue: type a message to send after this turn", icon: "list-plus" };
-  }
+  if (input.draftEmpty) return { action: "stop", enabled: true, label: "Stop (Esc)", icon: "square" };
   return { action: "queue", enabled: true, label: "Queue: send after this turn", icon: "list-plus" };
 }
 
@@ -207,12 +206,7 @@ export class ChatChrome {
     // One spinner per turn: the activity line spins while the turn runs, so the
     // status line says "Working…" without a second ring (U3 #5).
     working.hide();
-    if (running) {
-      this.deps.elements.stopButton().show();
-    } else {
-      this.deps.elements.stopButton().hide();
-      this.deps.elements.statusEl().setText("");
-    }
+    if (!running) this.deps.elements.statusEl().setText("");
   }
 
   /** Render the send button from {@link composerSendState}; on each running change and each input. */
@@ -229,6 +223,15 @@ export class ChatChrome {
       setIcon(sendButton, state.icon);
     }
     sendButton.disabled = !state.enabled;
+    // One round button: Stop takes the send button's place while the draft is empty.
+    const stopButton = this.deps.elements.stopButton();
+    if (state.action === "stop") {
+      stopButton.show();
+      sendButton.hide();
+    } else {
+      stopButton.hide();
+      sendButton.show();
+    }
     if (sendButton.getAttribute("aria-label") !== state.label) {
       sendButton.setAttr("aria-label", state.label);
       sendButton.setAttr("title", state.label);

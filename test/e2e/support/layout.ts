@@ -169,3 +169,53 @@ export async function waitWithinWindow(selectors: string[], timeout = 5_000): Pr
     throw last instanceof Error ? last : new Error(String(last));
   }
 }
+
+/**
+ * The visible children matching `childSelector` inside each `containerSelector`
+ * must not overlap one another: a row's box may not cut into the next row
+ * (U4 #2: a thought row showed the top of its second line under the next
+ * row's border). A 1px tolerance absorbs borders and fractional layout.
+ */
+export async function expectNoOverlapWithin(containerSelector: string, childSelector: string): Promise<void> {
+  const overlaps = await browser.execute(
+    (container, child) => {
+      const bad: string[] = [];
+      for (const root of Array.from(document.querySelectorAll(container))) {
+        const rects = Array.from(root.querySelectorAll<HTMLElement>(child))
+          .filter((el) => el.getClientRects().length > 0 && getComputedStyle(el).display !== "none")
+          .map((el) => ({ el, rect: el.getBoundingClientRect() }));
+        for (let i = 0; i < rects.length; i += 1) {
+          for (let j = i + 1; j < rects.length; j += 1) {
+            const a = rects[i].rect;
+            const b = rects[j].rect;
+            if (rects[i].el.contains(rects[j].el) || rects[j].el.contains(rects[i].el)) continue;
+            const width = Math.min(a.right, b.right) - Math.max(a.left, b.left);
+            const height = Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top);
+            if (width > 1 && height > 1) bad.push(`${child}[${i}] ${Math.round(a.top)}..${Math.round(a.bottom)} overlaps [${j}] ${Math.round(b.top)}..${Math.round(b.bottom)}`);
+          }
+        }
+      }
+      return bad;
+    },
+    containerSelector,
+    childSelector,
+  );
+  if (overlaps.length > 0) throw new Error(`overlapping rows: ${overlaps.join("; ")}`);
+}
+
+/**
+ * Each visible element matching `selector` shows all of its own content: no
+ * clipped text (scroll size within the client box). A one-line row that hides
+ * a second line under `overflow: hidden` fails here, where `height > 0` passes.
+ */
+export async function expectTextFits(selector: string): Promise<void> {
+  const clipped = await browser.execute((sel) => {
+    return Array.from(document.querySelectorAll<HTMLElement>(sel))
+      .filter((el) => el.getClientRects().length > 0 && getComputedStyle(el).display !== "none")
+      .map((el, index) => ({ index, text: (el.textContent ?? "").slice(0, 40), scroll: el.scrollHeight, client: el.clientHeight }))
+      .filter((entry) => entry.scroll > entry.client + 1);
+  }, selector);
+  if (clipped.length > 0) {
+    throw new Error(`clipped content in ${selector}: ${clipped.map((entry) => `#${entry.index} "${entry.text}" ${entry.scroll}>${entry.client}`).join("; ")}`);
+  }
+}
