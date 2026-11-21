@@ -10,7 +10,7 @@
 - Skill tools: `skill` (actions `read` and `read_file`, always loaded) and
   `create_skill` (deferred; the model loads it with `search_tools`).
 - The New skill wizard on the Advanced settings tab (Agent plugins).
-- The Repair built-ins action.
+- Built-in skills served from code (no vault copy); a vault skill of the same name overrides.
 
 ## How to get to it (user view)
 
@@ -18,7 +18,7 @@
 - Type a full command and press Enter or click **Send**.
 - Type `/skill <name> [args]`, or a bare `/<skill-name> [args]`.
 - Open Settings and select Agentic Chat, then open **Advanced** and find **Agent plugins**, then click
-  **New skill…** or **Repair built-ins**.
+  **New skill…**.
 - The model calls skill tools on its own. They appear as tool steps.
 
 ## Driving it with the probe harness
@@ -81,7 +81,7 @@ await $(".agentic-chat-info").waitForExist();
 | Retired `read_skill`, `read_skill_file`, `load_skill`, `unload_skill` tools | `src/agent/runtime-resources.ts#buildAgentParentTools` | `test/feature-cut-2026-11.test.ts#feature cut 2026-11: tool consolidation` (unit only) | `partial` |
 | `create_skill` (deferred; loaded by `search_tools`) | `src/tools/skill-tools.ts#createCreateSkillTool` | `test/skill-create-tool.test.ts#create_skill tool` (unit only) | `partial` |
 | New skill modal | `src/ui/new-skill-modal.ts#onOpen` | no committed check | `NONE` |
-| Repair built-ins | `src/settings-tab-plugins.ts#pluginDefinitions` | no committed check | `NONE` |
+| Built-in skills served from code, never copied to the vault | `src/skills/builtin-skills.ts#builtinSkills` | `test/plugins-service-import.test.ts#the plugin never writes a builtins package to the vault` (unit only) | `partial` |
 | Retired standalone inspect tools (`ls`, `search`, `find`, `grep`, `get_active_note`, `get_backlinks`, `get_links`, `local_graph`, `get_properties`) | `src/tools/tool-contracts.ts#BUILTIN_TOOL_NAMES` | `test/tool-contracts.test.ts#drives tool registration order; the old standalone inspect tools are gone` (unit only) | `partial` |
 
 ## Gotchas
