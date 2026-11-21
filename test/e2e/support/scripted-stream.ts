@@ -33,6 +33,30 @@ export function toolTurn(
   };
 }
 
+/**
+ * One model message with text and tool calls in the given order, as real
+ * models write them ("Retrying those:" then a web_search call). The other
+ * helpers make one shape per message, so they cannot script text, tool, text
+ * (U4 test gap 1).
+ */
+export function mixedTurn(
+  label: string,
+  parts: Array<{ text: string } | { id: string; name: string; args: Record<string, unknown> }>,
+  options: TurnOptions = {},
+): ScriptedTurn {
+  const content: ScriptedTurn["content"] = parts.map((part) =>
+    "text" in part
+      ? { type: "text" as const, text: part.text }
+      : { type: "toolCall" as const, id: part.id, name: part.name, arguments: part.args as unknown as JsonObject },
+  );
+  return {
+    ...options,
+    label,
+    stopReason: content.some((block) => block.type === "toolCall") ? "toolUse" : "stop",
+    content,
+  };
+}
+
 export function readTurn(label: string, path: string, options: TurnOptions = {}): ScriptedTurn {
   return {
     ...options,

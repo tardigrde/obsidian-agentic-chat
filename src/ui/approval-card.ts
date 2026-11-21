@@ -79,6 +79,11 @@ export class ApprovalCard {
     return this.outcomeValue;
   }
 
+  /** The gated tool call, when the request names it. */
+  get toolCallId(): string | undefined {
+    return this.request.toolCallId;
+  }
+
   get settled(): boolean {
     return this.phaseValue === "settled";
   }

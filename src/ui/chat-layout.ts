@@ -175,6 +175,12 @@ export function buildLayout(deps: ChatLayoutDeps): ChatLayoutElements {
       callbacks.cancelEditing();
       return;
     }
+    // Escape stops the turn in flight (U4 Stop/Queue).
+    if (event.key === "Escape" && !event.isComposing && callbacks.isStreaming()) {
+      event.preventDefault();
+      callbacks.stopActiveTurn();
+      return;
+    }
     if (event.key === "ArrowUp" && callbacks.recallHistory(-1)) {
       event.preventDefault();
       return;
@@ -298,10 +304,11 @@ export function buildLayout(deps: ChatLayoutDeps): ChatLayoutElements {
     }
   });
 
-  // Send / stop: round buttons. Stop shows while a turn runs; send then queues.
+  // One round button: Send, then Stop while a turn runs with an empty draft,
+  // Queue once the user types (chat-chrome composerSendState).
   const stopButton = toolbar.createEl("button", {
     cls: ["agentic-chat-stop", "agentic-chat-round"],
-    attr: { type: "button", "aria-label": "Stop" },
+    attr: { type: "button", "aria-label": "Stop (Esc)", title: "Stop (Esc)" },
   });
   acHook(stopButton, "stop");
   setIcon(stopButton, "square");

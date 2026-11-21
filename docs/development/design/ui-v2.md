@@ -117,8 +117,11 @@ With `prefers-reduced-motion`, spinners and pulses are static.
 
 ### Activity line
 
-One line per turn, above the answer, shared by every assistant message of the
-turn:
+One line per **segment**: a run of thoughts and tool calls between two texts
+(U4 #1). A turn reads in event order, `[thoughts+tools] text [thoughts+tools]
+text`, like OpenCode desktop. A new segment starts when the open one already
+has text below it, or when a message's own text comes before its tool call
+("Retrying those:" then `web_search`). Each segment has its own line:
 
 ```
 [status icon] <summary> [· N failed] <elapsed> ›
@@ -131,17 +134,23 @@ turn:
 - **Running:** a spinner and the current action (`Reading Meetings/…`), or
   `Thinking…` before any step.
 - **Needs you:** the orange hand, `· needs you`, and the line opens; the
-  approval card renders right below it.
+  waiting approval card renders right below the segment, outside the block.
 - **Finished:** a green check. A turn that ended in an error shows the red
   icon, and the inline error block (with Retry) follows the answer. A turn with
   no tool call and no reasoning hides the line.
-- **Body:** reasoning first (`Thought for 3s: …`, folded to three lines, click
-  to show all), then one compact row per tool call: status icon, short verb,
-  argument (a clickable vault path when there is one), and time. A row with
-  details opens on click; failed rows open by themselves. Subagent rows hold
-  the subagent tree with a Stop per running child, and open while it runs.
+- **Body:** thoughts and tool rows in event order. A thought row folds to one
+  head, bold **Thought** and its time (`Thought 2s`), with no body text; the
+  chevron shows on hover and focus, and a click opens the full trace (U4 #3).
+  A tool row: status icon, short verb, argument (a clickable vault path when
+  there is one), and time. A row with details opens on click; failed rows open
+  by themselves.
+- **Subagents** get a section of their own after the segment's line (U4 #5):
+  `Subagents · 1 running · 23s`, collapsed by default (also when done), one
+  row per child (agent, task, status, time, cost, Stop while it runs). A row
+  opens the child's own timeline: its text, one line per tool call, and its
+  report.
 - Collapsed by default for finished and replayed turns. The open state is per
-  turn and not saved.
+  segment and not saved.
 
 ### Inline approval card
 
@@ -159,13 +168,16 @@ turn:
 - **Background tabs.** The tab gets the orange dot and "needs approval" in its
   `aria-label`, and a notice fires. The card waits in that tab and shows when
   the user switches there. Nothing switches tabs on its own. A card that
-  settles out of sight (a Stop, an abort, the spend cap) shows its outcome
-  once on switch-back, so the user sees that an approval was asked.
+  settles out of sight (a Stop, an abort, the spend cap) records its outcome
+  on its step row on switch-back, so the user sees that an approval was asked.
 - **Stop, abort, or closing the tab** settles the card as stopped with
   `STOPPED_APPROVAL_REASON`.
-- **Resolved:** the card collapses to one muted line (`Allowed once`,
-  `Allowed: always for write`, `Denied`, `Stopped`) and stays as a record until
-  the transcript re-renders.
+- **Resolved:** the card leaves the transcript; its step row keeps one line,
+  `Allowed by you`, `Allowed by you (always)`, `Denied by you`, or `Stopped by
+  you` (U4 #4), so seven approvals never stack apart from their rows. A tab
+  switch keeps the line; a reload does not (decisions are in the audit log,
+  not the session). A card with no step row (no call id) stays as one muted
+  line.
 
 ### Messages
 
@@ -190,8 +202,10 @@ turn:
   effort** as one pill (the name opens the model picker; the muted effort value
   cycles the level, as does Alt+click on the pill), a spacer, the **context
   ring** with its %, **Safe / YOLO** (a shield, orange while YOLO, icon only on
-  touch), and the round **send / stop**. While a turn runs, Stop shows and send
-  queues (`data-ac-state` `send`, `queue`, `update`).
+  touch), and one round button. While a turn runs it is **Stop** on an empty
+  draft and **Queue** once the user types (`data-ac-state` `send`, `stop`,
+  `queue`, `update`). Escape in the composer stops the turn; Enter while a
+  turn runs steers.
 - **Context ring:** % only. The breakdown is the hover tooltip on desktop; a
   tap, Enter, or Space opens it as a panel above the card (touch has no
   hover). Esc or a tap outside closes it. It shows the estimate, and the

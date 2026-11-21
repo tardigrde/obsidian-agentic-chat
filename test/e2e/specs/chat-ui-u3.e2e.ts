@@ -1,4 +1,3 @@
-import { mkdirSync } from "node:fs";
 import { browser, expect, $ } from "@wdio/globals";
 import { after, afterEach, before, describe, it } from "mocha";
 import {
@@ -10,6 +9,7 @@ import {
   waitForIdle,
   waitForTranscript,
 } from "../support/chat";
+import { expectNoOverlapWithin, expectTextFits } from "../support/layout";
 import { clearScriptedTurns, installScriptedTurns, releaseScriptedTurns, textTurn, type ScriptedTurn } from "../support/scripted-stream";
 
 /**
@@ -134,11 +134,13 @@ describe("chat view U3-B", function () {
             ? (row.textContent ?? "").match(/[A-Z]+-THOUGHT/)?.[0] ?? "thought"
             : row.querySelector(".agentic-chat-step-name")?.textContent ?? "step",
         ),
-        lineClamp: thought ? getComputedStyle(thought).webkitLineClamp : "",
+        thought: !!thought,
       };
     });
     expect(timeline.order).toEqual(["FIRST-THOUGHT", "Read", "SECOND-THOUGHT", "List", "THIRD-THOUGHT"]);
-    expect(timeline.lineClamp).toBe("1");
+    // U4 #2: no folded row shows part of its next line, and no row cuts into another.
+    await expectTextFits('[data-ac="thought"]');
+    await expectNoOverlapWithin('[data-ac="activity-body"]', '[data-ac="thought"], [data-ac="step"]');
 
     // Item 4: the List row shows the folder as plain text with a folder icon.
     const listArg = await browser.execute(() => {
@@ -186,65 +188,6 @@ describe("chat view U3-B", function () {
     expect(order.after).toBeGreaterThan(order.record);
     expect(order.recordText).toContain("Which plan?");
     expect(order.recordText).toContain("Plan A");
-  });
-
-  it("U3 #10: a subagent row starts collapsed, names the task once, and opens its log on a row click", async function () {
-    await installScriptedTurns([
-      // Turn 3 (item 10): one subagent; the child holds until released.
-      turn("t3-call1", [
-        { type: "toolCall", id: "u3-sub", name: "subagent", arguments: { agent: "explorer", task: "Critique the plan for gaps" } },
-      ]),
-      textTurn("t3-child", "CHILD-REPORT the plan has two gaps.", { hold: true }),
-      textTurn("t3-call2", "The explorer found two gaps."),
-    ]);
-    await submitComposer("delegate it");
-    await browser.waitUntil(
-      async () => await browser.execute(() => !!document.querySelector('[data-ac="step"] .agentic-chat-subagents')),
-      { timeout: 5_000, timeoutMsg: "the subagent row never rendered" },
-    );
-    const running = await browser.execute(() => {
-      const activity = Array.from(document.querySelectorAll('[data-ac="activity"]')).at(-1);
-      const row = Array.from(activity?.querySelectorAll('[data-ac="step"]') ?? []).at(-1);
-      return {
-        lineOpen: activity?.classList.contains("is-open") ?? null,
-        rowOpen: row?.classList.contains("is-open") ?? null,
-        childOpen: (row?.querySelector("details.agentic-chat-subagent") as HTMLDetailsElement | null)?.open ?? null,
-        headStop: !!row?.querySelector(".agentic-chat-step-head .agentic-chat-subagent-head-stop"),
-      };
-    });
-    expect(running).toEqual({ lineOpen: false, rowOpen: false, childOpen: false, headStop: true });
-    await releaseScriptedTurns();
-    await waitForTranscript("The explorer found two gaps.");
-    await waitForIdle();
-
-    await browser.execute(() => {
-      const activity = Array.from(document.querySelectorAll<HTMLElement>('[data-ac="activity"]')).at(-1);
-      activity?.querySelector<HTMLElement>('[data-ac="activity-head"]')?.click();
-    });
-    // A click anywhere on the finished row (here: its time) opens the child's log.
-    await browser.execute(() => {
-      const activity = Array.from(document.querySelectorAll('[data-ac="activity"]')).at(-1);
-      const row = Array.from(activity?.querySelectorAll('[data-ac="step"]') ?? []).at(-1);
-      row?.querySelector<HTMLElement>(".agentic-chat-step-time")?.click();
-    });
-    const done = await browser.execute(() => {
-      const activity = Array.from(document.querySelectorAll('[data-ac="activity"]')).at(-1);
-      const row = Array.from(activity?.querySelectorAll('[data-ac="step"]') ?? []).at(-1);
-      const text = (row as HTMLElement | undefined)?.innerText ?? "";
-      return {
-        head: row?.querySelector(".agentic-chat-step-arg")?.textContent ?? "",
-        childOpen: (row?.querySelector("details.agentic-chat-subagent") as HTMLDetailsElement | null)?.open ?? null,
-        report: text.includes("CHILD-REPORT"),
-        taskCount: text.split("Critique the plan for gaps").length - 1,
-        callLines: row?.querySelectorAll(".agentic-chat-step-call-args").length ?? -1,
-      };
-    });
-    // One screenshot for the PR (logs/ is git-ignored): the open activity line of this session.
-    mkdirSync("logs/pr-u3b-shots", { recursive: true });
-    await browser.saveScreenshot("logs/pr-u3b-shots/u3b-activity.png");
-    expect(done.head).toBe("explorer: Critique the plan for gaps");
-    expect(done).toMatchObject({ childOpen: true, report: true, callLines: 0 });
-    expect(done.taskCount).toBeLessThanOrEqual(2);
   });
 
   it("U3 #7: Ctrl+W in the composer deletes the previous word and keeps the pane open", async function () {

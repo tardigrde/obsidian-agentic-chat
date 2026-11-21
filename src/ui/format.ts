@@ -259,3 +259,10 @@ export function formatTurnMeta(input: { usage?: Usage | null; elapsedMs?: number
   }
   return parts.join(" · ");
 }
+
+/** `12s`, `1m 4s`: the clock of the activity line, a thought, and the subagent block. */
+export function formatShortElapsed(ms: number): string {
+  const seconds = Math.max(0, Math.round(ms / 1000));
+  if (seconds < 60) return `${seconds}s`;
+  return `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
+}

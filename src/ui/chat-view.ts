@@ -568,8 +568,10 @@ export class ChatView extends ItemView {
       return choice;
     } finally {
       tab.pendingApprovals = (tab.pendingApprovals ?? []).filter((pending) => pending !== card);
-      // Settled out of sight: keep it for the switch-back (shown once).
+      // Settled out of sight: keep it for the switch-back (recorded once).
       if (tab !== this.activeTab && this.tabs.includes(tab)) tab.unseenApprovals = [...(tab.unseenApprovals ?? []), card];
+      // In sight: the card leaves; its step row says "Allowed by you" (U4 #4).
+      else if (tab === this.activeTab && !this.closed) this.transcript.recordApproval(card);
       // A settled card gives up focus; when nothing else holds it, hand it on.
       const active = this.containerEl.ownerDocument.activeElement;
       // Only when this chat is still the active view: a click in another

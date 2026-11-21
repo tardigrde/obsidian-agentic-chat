@@ -60,7 +60,7 @@ function chrome() {
 }
 
 const IDLE = { send: "send", stop: false, working: false, statusSpinner: false, modeDisabled: false };
-const STREAMING = { send: "queue", stop: true, working: true, statusSpinner: false, modeDisabled: true };
+const STREAMING = { send: "stop", stop: true, working: true, statusSpinner: false, modeDisabled: true };
 
 async function mount(turns: ReplayTurn[], held?: Gate, settings = {}): Promise<void> {
   ui = await mountChatView({ turns, waitForRelease: held?.wait, settings });
@@ -156,15 +156,28 @@ describe("chat view state machine", () => {
     expect(handlers.every((handler) => gone.includes(handler))).toBe(true);
   });
 
+  it("streaming: Escape in the composer stops the turn", async () => {
+    const held = gate();
+    await mount([replayTextTurn("never finishes", { hold: true })], held);
+    await ui.send("long task");
+    expect(chrome()).toEqual(STREAMING);
+    ui.$<HTMLTextAreaElement>('[data-ac="composer-input"]')?.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }),
+    );
+    await ui.idle();
+    expect(chrome()).toEqual(IDLE);
+    held.release();
+  });
+
   it("streaming: the Queue button holds the draft as a chip and sends it after the turn", async () => {
     const held = gate();
     await mount([replayTextTurn("first", { hold: true }), replayTextTurn("second")], held);
     await ui.send("first prompt");
     expect(chrome()).toEqual(STREAMING);
-    // U3 #12: an empty draft has nothing to queue.
+    // U4: one round button. An empty draft shows Stop in its place, not a dead Queue.
     const send = ui.$<HTMLButtonElement>('[data-ac="send"]');
-    expect(send?.disabled).toBe(true);
-    expect(send?.getAttribute("aria-label")).toMatch(/type a message/i);
+    expect(shown(send)).toBe(false);
+    expect(shown(ui.$('[data-ac="stop"]'))).toBe(true);
 
     // ArrowUp recalls the sent prompt without an input event: Queue follows it.
     ui.$<HTMLTextAreaElement>('[data-ac="composer-input"]')?.dispatchEvent(
@@ -172,6 +185,9 @@ describe("chat view state machine", () => {
     );
     expect(ui.$<HTMLTextAreaElement>('[data-ac="composer-input"]')?.value).toBe("first prompt");
     expect(send?.disabled).toBe(false);
+    expect(chrome().send).toBe("queue");
+    expect(shown(send)).toBe(true);
+    expect(shown(ui.$('[data-ac="stop"]'))).toBe(false);
     ui.$<HTMLTextAreaElement>('[data-ac="composer-input"]')!.value = "";
 
     await ui.queue("follow-up prompt");
@@ -287,8 +303,9 @@ describe("chat view state machine", () => {
     // The last card is done: focus goes back to the composer, not to <body>.
     expect(card?.ownerDocument.activeElement).toBe(ui.$('[data-ac="composer-input"]'));
     await ui.idle();
-    expect(ui.$('[data-ac="approval"]')?.getAttribute("data-ac-state")).toBe("allowed");
-    expect(ui.$(".agentic-chat-approval-outcome")?.textContent).toBe("Allowed once");
+    // The settled card leaves; its step row keeps the decision (U4 #4).
+    expect(ui.$('[data-ac="approval"]')).toBeNull();
+    expect(ui.$('[data-ac="step-approval"]')?.textContent).toBe("Allowed by you");
     expect(ui.app.vault.contentOf("Notes/new.md")).toBe("hello");
     expect(chrome()).toEqual(IDLE);
     expect(ui.calls()).toBe(2);
@@ -450,7 +467,8 @@ describe("chat view state machine", () => {
     deny()?.click();
     await ui.idle();
 
-    expect(ui.$('[data-ac="approval"]')?.getAttribute("data-ac-state")).toBe("denied");
+    expect(ui.$('[data-ac="approval"]')).toBeNull();
+    expect(ui.$('[data-ac="step-approval"]')?.textContent).toBe("Denied by you");
     expect(ui.app.vault.contentOf("Notes/new.md")).toBeUndefined();
     expect(ui.$(".agentic-chat-step")?.className).toContain("is-error");
     expect(ui.root.textContent).toContain("wrong folder");
@@ -463,7 +481,8 @@ describe("chat view state machine", () => {
     await settle();
     ui.$<HTMLButtonElement>('[data-ac="stop"]')?.click();
     await ui.idle();
-    expect(ui.$('[data-ac="approval"]')?.getAttribute("data-ac-state")).toBe("stopped");
+    expect(ui.$('[data-ac="approval"]')).toBeNull();
+    expect(ui.$('[data-ac="step-approval"]')?.textContent).toBe("Stopped by you");
     expect(ui.app.vault.contentOf("Notes/new.md")).toBeUndefined();
     expect(chrome()).toEqual(IDLE);
     expect(ui.calls()).toBe(1);

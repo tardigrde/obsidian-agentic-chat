@@ -231,7 +231,7 @@ describe("AgentToolCallController", () => {
     });
 
     expect(decision).toEqual({ block: true, reason: "The user declined this action." });
-    expect(requests).toEqual([{ toolName: "write", label: "Write file", args: { path: "Notes/a.md", content: "hi" } }]);
+    expect(requests).toEqual([{ toolName: "write", label: "Write file", args: { path: "Notes/a.md", content: "hi" }, toolCallId: "call-1" }]);
     expect(controller.canUndo()).toBe(false);
   });
 
@@ -304,7 +304,7 @@ describe("AgentToolCallController", () => {
     });
 
     expect(decision).toEqual({ block: true, reason: "The user declined this MCP tool call." });
-    expect(requests).toEqual([{ toolName: tool.name, label: tool.label, args }]);
+    expect(requests).toEqual([{ toolName: tool.name, label: tool.label, args, toolCallId: "call-1" }]);
   });
 
 

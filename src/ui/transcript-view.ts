@@ -3,7 +3,7 @@ import type { ImageContent, Usage } from "@earendil-works/pi-ai";
 import { type App, type Component, Notice } from "obsidian";
 import { errorMessage } from "../utils/errors";
 import { AssistantBubble } from "./assistant-bubble";
-import { ActivityLine } from "./activity-line";
+import { ActivityLine, type ApprovalRecord } from "./activity-line";
 import type { ApprovalCard } from "./approval-card";
 import { FOLDER_PREFIX } from "./autocomplete";
 import { stripContextPreamble } from "./composer-input";
@@ -51,9 +51,16 @@ export interface TranscriptViewHost {
  */
 export class TranscriptView {
   private bubble: AssistantBubble | null = null;
-  // The current turn's activity line (one per user turn) and its messages.
+  // The open segment of the current turn: one activity line per run of steps
+  // between two texts (U4 #1). A turn reads `[steps] text [steps] text`.
   private activity: ActivityLine | null = null;
+  private turnSegments: ActivityLine[] = [];
+  // Bubbles created in the open segment: once one has text, the next step opens a new segment.
+  private segmentBubbles: AssistantBubble[] = [];
+  private turnLive = false;
   private turnBubbles: AssistantBubble[] = [];
+  // Settled approvals by tool call id, so a re-render (tab switch) keeps the record line.
+  private readonly approvalOutcomes = new Map<string, ApprovalRecord>();
   private turnError = false;
   private locallyRenderedUserMessages = 0;
   // Last error message rendered inside an assistant bubble. Used to suppress the
@@ -85,52 +92,94 @@ export class TranscriptView {
     this.runStartedAt = performance.now();
   }
 
-  /** A new turn: one activity line, then the turn's messages below it. */
+  /** A new turn: its first segment, then the turn's messages below it. */
   private startTurn(live: boolean): ActivityLine {
     this.finishTurn();
     this.turnBubbles = [];
     this.turnError = false;
-    this.activity = new ActivityLine(this.messagesEl, {
-      live,
+    this.turnLive = live;
+    return this.openSegment();
+  }
+
+  /** The next segment of the turn: a fresh activity line at the end of the transcript. */
+  private openSegment(): ActivityLine {
+    const previous = this.activity;
+    // The earlier segment's steps are over: settle its line (spinner, clock).
+    if (previous && !previous.hasRunningStep) previous.finish();
+    const segment = new ActivityLine(this.messagesEl, {
+      live: this.turnLive,
       onOpenNote: (path) => openVaultPath(this.host.app, path),
       isFolder: (path) => isVaultFolder(this.host.app, path),
       onStopSubagentChild: (id) => this.host.abortSubagentChild(id),
       onChange: () => this.scrollToBottom(),
     });
-    return this.activity;
+    this.activity = segment;
+    this.turnSegments.push(segment);
+    this.segmentBubbles = [];
+    return segment;
   }
 
-  /** The turn is over: settle its activity line and put its sources under the answer. */
+  /** The turn is over: settle its segments and put its sources under the answer. */
   private finishTurn(): void {
-    const activity = this.activity;
-    if (!activity) return;
+    const segments = this.turnSegments;
+    if (segments.length === 0 && !this.activity) return;
     this.activity = null;
-    activity.finish({ error: this.turnError });
+    this.turnSegments = [];
+    this.segmentBubbles = [];
+    segments.forEach((segment, index) => segment.finish({ error: this.turnError && index === segments.length - 1 }));
+    const sources = new Set<string>();
+    for (const segment of segments) for (const path of segment.sourcePaths) sources.add(path);
     const answer = [...this.turnBubbles].reverse().find((bubble) => bubble.hasText) ?? this.turnBubbles.at(-1);
-    answer?.renderSourceChips(activity.sourcePaths);
+    answer?.renderSourceChips(sources);
     this.turnBubbles = [];
   }
 
-  /** The activity line of the turn in flight, if any. */
+  /** The open segment of the turn in flight, if any. */
   get currentActivity(): ActivityLine | null {
     return this.activity;
   }
 
-  /** Show an approval below the current turn's activity line. */
+  /**
+   * A waiting approval shows below the open segment, outside its block. A
+   * settled one leaves the transcript: its step row keeps one line,
+   * `Allowed by you` or `Denied by you` (U4 #4).
+   */
   mountApproval(card: ApprovalCard): void {
-    const slot = this.activity?.approvalSlot ?? this.messagesEl;
-    // The card follows the text this turn already wrote, so the screen keeps
-    // the order of events (U3 #15). With no text yet it stays under the line.
-    if (slot !== this.messagesEl) {
-      const written = Array.from(this.messagesEl.querySelectorAll(":scope > .agentic-chat-assistant:not(.is-empty)")).at(-1);
-      if (written && slot.compareDocumentPosition(written) & Node.DOCUMENT_POSITION_FOLLOWING) written.after(slot);
+    if (card.settled) {
+      this.recordApproval(card);
+      return;
     }
+    const slot = this.activity?.approvalSlot ?? this.messagesEl;
     if (card.el.parentElement !== slot) slot.appendChild(card.el);
-    this.activity?.setNeedsYou(!card.settled);
+    this.activity?.setNeedsYou(true);
     this.scrollToBottom({ force: true });
   }
 
-  /** An approval settled: the activity line drops its needs-you state. */
+  /**
+   * One card settled: record the decision on its step row and drop the card.
+   * A card with no step row to hold it (no call id) stays as its one-line record.
+   */
+  recordApproval(card: ApprovalCard): void {
+    const outcome = card.outcome;
+    const id = card.toolCallId;
+    const segment = id ? this.turnSegments.find((candidate) => candidate.hasStep(id)) : undefined;
+    if (outcome && id) this.approvalOutcomes.set(id, outcome);
+    if (outcome && id && segment) {
+      card.el.remove();
+      segment.recordApproval(id, outcome);
+      return;
+    }
+    if (!card.el.isConnected) (this.activity?.approvalSlot ?? this.messagesEl).appendChild(card.el);
+  }
+
+  private applyApprovalRecord(id: string): void {
+    const outcome = this.approvalOutcomes.get(id);
+    if (!outcome) return;
+    const segment = this.turnSegments.find((candidate) => candidate.hasStep(id));
+    segment?.recordApproval(id, outcome);
+  }
+
+  /** Every approval settled: the activity line drops its needs-you state. */
   approvalSettled(): void {
     this.activity?.setNeedsYou(false);
   }
@@ -167,8 +216,10 @@ export class TranscriptView {
   }
 
   dispose(): void {
+    for (const segment of this.turnSegments) segment.dispose();
     this.activity?.dispose();
     this.activity = null;
+    this.turnSegments = [];
     this.destroyMountedBubbles();
     this.bubble = null;
     if (this.userScrollIntentTimer !== null) window.clearTimeout(this.userScrollIntentTimer);
@@ -191,8 +242,11 @@ export class TranscriptView {
 
   renderTranscript(messages: AgentMessage[]): void {
     this.destroyMountedBubbles();
+    for (const segment of this.turnSegments) segment.dispose();
     this.activity?.dispose();
     this.activity = null;
+    this.turnSegments = [];
+    this.segmentBubbles = [];
     this.turnBubbles = [];
     this.messagesEl.empty();
     this.bubble = null;
@@ -241,15 +295,18 @@ export class TranscriptView {
     bubble.beginThinking();
     const reasoning = thinkingText(message);
     if (reasoning) bubble.appendReasoning(reasoning);
+    // The live order: the message's text, then its tool calls. A call after
+    // text opens the next segment, below that text (U4 #1).
+    this.applyAssistantMessage(bubble, message, { canRetry: isLast });
     for (const call of toolCalls(message)) {
       bubble.startStep(call.id, call.name, JSON.stringify(call.arguments ?? {}));
+      this.applyApprovalRecord(call.id);
       const result = toolResults.get(call.id);
       // Pass the persisted details wrapped in the result shape endStep reads
       // (`resultObject.details`), so replay re-derives the live verdict — a
       // stopped subagent dispatch must render red here too, not green.
       if (result) bubble.endStep(call.id, result.text, result.isError, { details: result.details });
     }
-    this.applyAssistantMessage(bubble, message, { canRetry: isLast });
   }
 
   /**
@@ -387,12 +444,17 @@ export class TranscriptView {
     const bubble = this.createBubble();
     this.mountedBubbles.add(bubble);
     this.turnBubbles.push(bubble);
+    this.segmentBubbles.push(bubble);
     return bubble;
   }
 
   private createBubble(): AssistantBubble {
-    const activity = this.activity ?? this.startTurn((this.host.isStreaming?.() ?? false));
+    let activity = this.activity ?? this.startTurn((this.host.isStreaming?.() ?? false));
+    // The open segment already has text below it: this message's thoughts and
+    // steps start the next segment, after that text.
+    if (this.segmentBubbles.some((bubble) => bubble.hasText)) activity = this.openSegment();
     return new AssistantBubble(this.messagesEl, activity, {
+      nextSegment: () => this.openSegment(),
       onRetry: () => this.host.retryLast(),
       onOpenExternalLink: (target) => void this.openRenderedExternalLink(target),
       onOpenNote: (path) => openVaultPath(this.host.app, path),

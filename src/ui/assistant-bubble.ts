@@ -23,6 +23,11 @@ export interface BubbleActions {
   onOpenNote?: (path: string) => void;
   /** Called after buffered streaming text/reasoning mutates the bubble. */
   onContentChange?: () => void;
+  /**
+   * A tool call after this message's text: open the next timeline segment
+   * (U4 #1), so the row shows below the text it followed.
+   */
+  nextSegment?: () => ActivityLine;
 }
 
 /**
@@ -57,14 +62,30 @@ export class AssistantBubble {
   private flushHandle: number | null = null;
   private finalized = false;
 
+  // Segments this message wrote steps into; a step's later events go to its own.
+  private readonly segments: ActivityLine[] = [];
+  private pastText = false;
+  // The segment that holds this message's reasoning row.
+  private reasoningSegment: ActivityLine | null = null;
+
   constructor(
     parent: HTMLElement,
-    readonly activity: ActivityLine,
+    private activityValue: ActivityLine,
     private readonly actions: BubbleActions = {},
   ) {
+    this.segments.push(activityValue);
     this.el = acHook(parent.createDiv({ cls: ["agentic-chat-message", "agentic-chat-assistant"] }), "assistant-message");
     this.textEl = acHook(this.el.createDiv({ cls: ["agentic-chat-text", "is-streaming", "is-empty"] }), "assistant-text");
     this.actionsEl = acHook(this.el.createDiv({ cls: "agentic-chat-actions" }), "turn-actions");
+  }
+
+  /** The segment this message writes new steps into. */
+  get activity(): ActivityLine {
+    return this.activityValue;
+  }
+
+  private segmentOf(id: string): ActivityLine {
+    return this.segments.find((segment) => segment.hasStep(id)) ?? this.activityValue;
   }
 
   /** Where this message's reasoning is in its lifecycle. */
@@ -110,6 +131,7 @@ export class AssistantBubble {
   private ensureReasoning(): void {
     if (this.reasoningPhaseValue !== "none") return;
     this.reasoningPhaseValue = "thinking";
+    this.reasoningSegment = this.activity;
     this.reasoning = this.activity.addReasoning();
   }
 
@@ -131,7 +153,7 @@ export class AssistantBubble {
     if (this.pendingReasoning && this.reasoning) {
       this.reasoning.append(this.pendingReasoning);
       this.pendingReasoning = "";
-      this.activity.touch();
+      (this.reasoningSegment ?? this.activity).touch();
       changed = true;
     }
     if (changed) {
@@ -166,7 +188,7 @@ export class AssistantBubble {
     this.reasoningPhaseValue = "dropped";
     this.reasoning.remove();
     this.reasoning = null;
-    this.activity.touch();
+    (this.reasoningSegment ?? this.activity).touch();
   }
 
   /** Settle the reasoning entry (`Thought for 3s:`). Idempotent. */
@@ -174,21 +196,27 @@ export class AssistantBubble {
     if (this.reasoningPhaseValue !== "thinking" || !this.reasoning) return;
     this.reasoningPhaseValue = "thought";
     this.reasoning.settle();
-    this.activity.touch();
+    (this.reasoningSegment ?? this.activity).touch();
   }
 
   startStep(id: string, name: string, rawArgs: string): void {
     // A tool call means the text before it is done; settle the reasoning too.
     if (this.reasoningPhaseValue === "thinking" && (this.pendingReasoning.trim() || this.reasoning?.text.trim())) this.settleReasoning();
-    this.activity.startStep(id, name, rawArgs);
+    // Text then a tool call: the row belongs below the text, in a new segment.
+    if (this.hasText && !this.pastText && this.actions.nextSegment) {
+      this.pastText = true;
+      this.activityValue = this.actions.nextSegment();
+      this.segments.push(this.activityValue);
+    }
+    this.activityValue.startStep(id, name, rawArgs);
   }
 
   updateStep(id: string, partial: unknown): void {
-    this.activity.updateStep(id, partial);
+    this.segmentOf(id).updateStep(id, partial);
   }
 
   endStep(id: string, result: string, isError: boolean, resultObject?: unknown): void {
-    this.activity.endStep(id, result, isError, resultObject);
+    this.segmentOf(id).endStep(id, result, isError, resultObject);
     const details = (resultObject as { details?: unknown } | undefined)?.details;
     if (isAskUserDetails(details) && details.status === "answered") this.renderAnsweredQuestion(details);
   }
