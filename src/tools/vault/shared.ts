@@ -1,3 +1,4 @@
+import { privatePathMessage } from "../../vault/private-rules";
 import type { App, TFile } from "obsidian";
 import type { AgentToolResult } from "@earendil-works/pi-agent-core";
 import type { IgnoreMatcher } from "../../vault/ignore";
@@ -39,11 +40,12 @@ export function getVaultFile(app: App, path: string, isIgnored: IgnoreMatcher): 
 }
 
 /**
- * Reject access to an ignored path with the same error a missing file produces,
- * so the model cannot distinguish "hidden" from "does not exist".
+ * Reject access to a private path with an honest message (U4 #11, owner
+ * decision): "not found" made the model conclude a folder was empty and
+ * invited guessing. The model learns it is private, not what it holds.
  */
 export function assertVisible(isIgnored: IgnoreMatcher, path: string): void {
-  if (isIgnored(path)) throw new Error(`File not found: ${path}`);
+  if (isIgnored(path)) throw new Error(privatePathMessage(path));
 }
 
 /** Strip edge slashes from adapter entries (loader parity: trimEdges). */

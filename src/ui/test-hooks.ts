@@ -49,6 +49,7 @@ export const AC_HOOKS = [
   "composer-card",
   "composer-input",
   "chips",
+  "private-chip",
   "send",
   "stop",
   "status",

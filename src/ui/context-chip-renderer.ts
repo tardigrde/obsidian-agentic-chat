@@ -7,9 +7,12 @@ import {
 } from "./context-attachments";
 import { truncateText } from "./format";
 import { isImagePath } from "./image-attachments";
+import { acHook } from "./test-hooks";
 
 export interface ContextChipRenderState {
   activeNotePath: string | null;
+  /** A focused note that is private: a lock chip, nothing sent (U4 #11). */
+  privateNotePath?: string | null;
   attachments: readonly ContextAttachment[];
 }
 
@@ -26,6 +29,8 @@ export function renderContextChips(
   parent.empty();
   if (state.activeNotePath) {
     renderAttachmentChip(parent, state.activeNotePath, true, callbacks.removeActiveNote);
+  } else if (state.privateNotePath) {
+    renderPrivateNoteChip(parent, state.privateNotePath);
   }
   for (const entry of state.attachments) {
     renderAttachmentChip(parent, entry, false, () => callbacks.removeAttachment(entry));
@@ -61,6 +66,16 @@ function renderAttachmentChip(
   const remove = chip.createSpan({ cls: "agentic-chat-chip-remove" });
   setIcon(remove, "x");
   remove.addEventListener("click", onRemove);
+}
+
+/** The focused note is private: the agent gets nothing from it. */
+function renderPrivateNoteChip(parent: HTMLElement, path: string): void {
+  const chip = acHook(parent.createDiv({ cls: ["agentic-chat-chip", "is-private"] }), "private-chip");
+  const icon = chip.createSpan({ cls: "agentic-chat-chip-icon" });
+  setIcon(icon, "lock");
+  chip.createSpan({ cls: "agentic-chat-chip-label", text: contextAttachmentLabel(path) });
+  chip.createSpan({ cls: "agentic-chat-chip-tag", text: "🔒 private, not sent" });
+  chip.setAttr("title", "This note matches your private rules (Settings, Ignored files). Nothing from it goes to the model.");
 }
 
 /** A prompt queued while the agent is busy; preview + cancel affordance. */

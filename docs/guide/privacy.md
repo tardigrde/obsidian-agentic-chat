@@ -29,11 +29,20 @@ Strict routing can mean a model has no compliant endpoint. In that case, choose 
 
 Ollama keeps prompts, note content, and tool results on your device, assuming your Ollama server itself is local.
 
-## Ignore list
+## Private notes
 
-Globs in **Settings > Advanced > Ignored files** (for example `Private/`,
-`*.secret.md`, `**/diary/**`) hide notes from the agent. Matching files report
-as not found to every tool and are never auto-attached. Two exceptions still
+**Settings > Advanced > Ignored files > Ignored paths** takes rules separated by
+commas or new lines:
+
+- a path glob or name: `Private/`, `*.secret.md`, `**/diary/**`, `private`
+- a tag: `#private` (nested tags such as `#private/health` too; frontmatter and inline)
+- a property: `private=true`, or `private=` for any value
+
+The agent cannot read, list, search, or change a matching note. It is told
+"Blocked: ... is private (excluded in settings)", and a folder listing says how
+many private items it hides. A call on a private path is blocked before any
+approval card, so you are never asked to approve it. A private active note
+shows as a "🔒 private, not sent" chip and is never sent. Two exceptions still
 reach the model: the standing-instructions file (`AGENTS.md`, `CLAUDE.md`, or
 `GEMINI.md`) is sent every turn even if it matches a glob, and an image you
 attach yourself is sent as you chose. Do not keep secrets in the instructions
