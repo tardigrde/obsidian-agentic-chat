@@ -4,7 +4,7 @@ import type { PromptTurnRun } from "./prompt-turn-runtime";
 /**
  * Owns the user text that was queued into a running turn but never reached the
  * model. pi polls its steering and follow-up queues only between model turns,
- * so a run that ends early (stop, turn cap, loop guard) or a steer that lands
+ * so a run that ends early (stop, loop guard, spend cap) or a steer that lands
  * after the last poll leaves messages queued, and the next prompt would deliver
  * them as new. Every path that ends a run drains the queues here; the composer
  * takes the text back.

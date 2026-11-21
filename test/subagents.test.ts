@@ -20,6 +20,8 @@ import {
 } from "../src/tools/subagent-tool";
 import { buildModel } from "../src/llm/models";
 import { filterChildTools } from "../src/agent/subagent-runtime";
+import { createReplayStreamController, replayTextTurn, replayToolCallTurn } from "../src/agent/replay-stream";
+import { lastAssistantText } from "../src/tools/subagent-tool";
 import { createVaultTools } from "../src/tools/vault-tools";
 
 const TEST_MODEL: Model<"openai-completions"> = buildModel({
@@ -279,7 +281,9 @@ describe("createSubagentTool", () => {
       undefined,
       (partial) => updates.push(partial.details),
     );
-    expect(unwrapToolOutput(firstText(result.content))).toBe("child result");
+    expect(unwrapToolOutput(firstText(result.content))).toBe(
+      'child result\n\n[child id: sa-1. To follow up with this subagent, call subagent with {action: "continue", id: "sa-1", task}.]',
+    );
     expect(result.details.children[0]).toMatchObject({ agent: "researcher", status: "done", summary: "child result" });
     expect(usages).toHaveLength(1);
     expect(usages[0].totalTokens).toBe(7);
@@ -468,46 +472,6 @@ describe("createSubagentTool", () => {
     expect(result.details.children[0].status).toBe("aborted");
   });
 
-  it("settles a timed-out child as aborted without rejecting the dispatch", async () => {
-    const tool = createSubagentTool({
-      getProfiles: () => [RESEARCHER],
-      createChildAgent: () => makeChild(abortErrorStreamFn()),
-      maxRuntimeSeconds: () => 0.05,
-    });
-    const result = await tool.execute("call-t", { agent: "researcher", task: "slow" }, undefined);
-    // A timeout settles like a stop: normal result, no re-dispatch pressure.
-    expect(result.details.children[0].status).toBe("aborted");
-    expect(result.details.children[0].summary).toMatch(/Timed out after/i);
-  });
-
-  it("settles a timed-out child as aborted even when its stream ends cleanly on abort", async () => {
-    const tool = createSubagentTool({
-      getProfiles: () => [RESEARCHER],
-      createChildAgent: () => makeChild(hangingStreamFn()),
-      maxRuntimeSeconds: () => 0.05,
-    });
-    const result = await tool.execute("call-t2", { agent: "researcher", task: "slow" }, undefined);
-    expect(result.details.children[0].status).toBe("aborted");
-    expect(result.details.children[0].summary).toMatch(/Timed out after/i);
-  });
-
-  it("reports an explicit user stop over a timeout firing at the same moment", async () => {
-    const registry = new SubagentRegistry();
-    const tool = createSubagentTool({
-      getProfiles: () => [RESEARCHER],
-      createChildAgent: () => makeChild(hangingStreamFn()),
-      maxRuntimeSeconds: () => 0.05,
-      registry,
-    });
-    const pending = tool.execute("call-race", { agent: "researcher", task: "hang" }, undefined);
-    await new Promise((resolve) => setTimeout(resolve, 25));
-    registry.abort("call-race");
-    const result = await pending;
-    // The user asked for the stop; report that, not the timeout.
-    expect(result.details.children[0].status).toBe("aborted");
-    expect(result.details.children[0].summary).toBe("Stopped by user");
-  });
-
   it("keeps a completed child's output when a stop arrives after it finishes", async () => {
     const tool = createSubagentTool({
       getProfiles: () => [RESEARCHER],
@@ -537,9 +501,12 @@ describe("createSubagentTool", () => {
       getProfiles: () => [RESEARCHER],
       createChildAgent: () => makeChild(abortErrorStreamFn()),
       recordUsage: (usage) => usages.push(usage),
-      maxRuntimeSeconds: () => 0.05,
     });
-    const result = await tool.execute("call-u-abort", { agent: "researcher", task: "t" }, undefined);
+    const controller = new AbortController();
+    const pending = tool.execute("call-u-abort", { agent: "researcher", task: "t" }, controller.signal);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    controller.abort();
+    const result = await pending;
     const child = result.details.children[0];
     expect(child.status).toBe("aborted");
     expect(child.durationMs).toBeGreaterThanOrEqual(0);
@@ -576,5 +543,106 @@ describe("createSubagentTool", () => {
     const results = await Promise.all(calls);
     expect(results).toHaveLength(12);
     expect(results.every((result) => result.details.children[0].status !== "running")).toBe(true);
+  });
+});
+
+describe("subagent: no turn cap, continue, parallel, live usage (U4)", () => {
+  const COST = { input: 2, output: 3, totalTokens: 5, cost: { total: 0.001 } };
+  /** A child with one real tool, driven by scripted model turns. */
+  function scriptedChild(turns: Parameters<typeof createReplayStreamController>[0]): Agent {
+    const controller = createReplayStreamController(turns);
+    const list = {
+      name: "list",
+      label: "List",
+      description: "list a folder",
+      parameters: { type: "object", properties: { path: { type: "string" } } },
+      execute: async () => ({ content: [{ type: "text" as const, text: "a.md, b.md" }], details: {} }),
+    };
+    return new Agent({
+      streamFn: controller.streamFn,
+      initialState: { systemPrompt: "child", model: TEST_MODEL, thinkingLevel: "off", tools: [list as never], messages: [] },
+    });
+  }
+
+  it("a child that works past the old 10-turn cap returns its report, not a cap notice", async () => {
+    const turns = Array.from({ length: 14 }, (_, index) => replayToolCallTurn(`l${index}`, "list", { path: `F${index}` }, { usage: COST }));
+    turns.push(replayTextTurn("REPORT: 14 folders listed, nothing missing.", { usage: COST }));
+    const usages: number[] = [];
+    const tool = createSubagentTool({
+      getProfiles: () => [RESEARCHER],
+      createChildAgent: () => scriptedChild(turns),
+      recordUsage: (usage) => usages.push(usage.cost?.total ?? 0),
+    });
+    const result = await tool.execute("call-long", { agent: "researcher", task: "list everything" }, undefined);
+    expect(result.details.children[0]).toMatchObject({ status: "done", summary: "REPORT: 14 folders listed, nothing missing." });
+    expect(unwrapToolOutput(firstText(result.content))).not.toMatch(/Turn cap/);
+    // One usage report per child model call, so the spend cap sees the fan-out live.
+    expect(usages).toHaveLength(15);
+    expect(result.details.children[0].usage?.costUsd).toBeCloseTo(0.015);
+  });
+
+  it("the report is the last text the child wrote, even when its last message is tool calls only", () => {
+    const messages = [
+      { role: "assistant", content: [{ type: "text", text: "Findings so far: two gaps." }, { type: "toolCall", id: "x", name: "list", arguments: {} }] },
+      { role: "toolResult", content: [] },
+      { role: "assistant", content: [{ type: "toolCall", id: "y", name: "list", arguments: {} }] },
+    ] as never;
+    expect(lastAssistantText(messages)).toBe("Findings so far: two gaps.");
+  });
+
+  it('continues a finished child by id with its context intact ({action: "continue"})', async () => {
+    let created = 0;
+    const turns = [
+      replayTextTurn("First answer.", { usage: COST }),
+      replayTextTurn("Follow-up answer.", { usage: COST }),
+    ];
+    const child = scriptedChild(turns);
+    const registry = new SubagentRegistry();
+    const tool = createSubagentTool({
+      getProfiles: () => [RESEARCHER],
+      createChildAgent: () => {
+        created += 1;
+        return child;
+      },
+      registry,
+    });
+    const first = await tool.execute("call-1", { agent: "researcher", task: "first task" }, undefined);
+    expect(unwrapToolOutput(firstText(first.content))).toContain('id: "sa-1"');
+    const second = await tool.execute("call-2", { action: "continue", id: "sa-1", task: "and the follow-up?" }, undefined);
+    expect(created).toBe(1);
+    expect(second.details.children[0]).toMatchObject({ agent: "researcher", status: "done", summary: "Follow-up answer." });
+    // Its context kept the first task; this run's usage counts only this run.
+    expect(JSON.stringify(child.state.messages)).toContain("first task");
+    expect(second.details.children[0].usage?.costUsd).toBeCloseTo(0.001);
+    await expect(tool.execute("call-3", { action: "continue", id: "sa-9", task: "x" }, undefined)).rejects.toThrow(/no child with id "sa-9"/);
+  });
+
+  it("keeps the last 10 children per tab and drops the oldest", () => {
+    const registry = new SubagentRegistry();
+    for (let index = 0; index < 12; index += 1) registry.retain({ id: registry.nextChildId(), agent: "researcher", child: {} as Agent });
+    expect(registry.retainedCount).toBe(10);
+    expect(registry.retainedChild("sa-1")).toBeUndefined();
+    expect(registry.retainedAgent("sa-12")).toBe("researcher");
+  });
+
+  it("runs at most `maxParallelSubagents` children at once; the rest queue", async () => {
+    const registry = new SubagentRegistry();
+    let created = 0;
+    const tool = createSubagentTool({
+      getProfiles: () => [RESEARCHER],
+      createChildAgent: () => {
+        created += 1;
+        return makeChild(hangingStreamFn());
+      },
+      maxParallel: () => 2,
+      registry,
+    });
+    const controller = new AbortController();
+    const runs = [0, 1, 2].map((index) => tool.execute(`p-${index}`, { agent: "researcher", task: `t${index}` }, controller.signal));
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    expect(created).toBe(2);
+    expect(tool.description).toContain("up to 2 at once");
+    controller.abort();
+    await Promise.all(runs);
   });
 });

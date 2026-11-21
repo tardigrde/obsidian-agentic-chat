@@ -1,5 +1,4 @@
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
-import { healMaxTurns, PARENT_TURN_CAP } from "./agent/turn-cap";
 import {
   DEFAULT_OPENAI_COMPATIBLE_BASE_URL,
   DEFAULT_OLLAMA_BASE_URL,
@@ -33,6 +32,13 @@ import {
   healObservabilitySettings,
   type ObservabilitySettings,
 } from "./observability/settings";
+
+/** Subagents that run at once by default; the rest queue. */
+export const DEFAULT_PARALLEL_SUBAGENTS = 10;
+/** Bounds for the parallel-subagent setting. */
+export const MIN_PARALLEL_SUBAGENTS = 1;
+export const MAX_PARALLEL_SUBAGENTS = 20;
+
 
 export interface AgenticChatSettings {
   provider: ProviderId;
@@ -71,8 +77,6 @@ export interface AgenticChatSettings {
   maxTokens: number;
   requestTimeoutMs: number;
   maxNetworkRetries: number;
-  /** Assistant turns per prompt before the turn cap stops the run (#283). */
-  maxTurnsPerPrompt: number;
   systemPrompt: string;
   /**
    * Session permission posture: `safe` honors the approval policy, `yolo` auto-approves
@@ -83,8 +87,8 @@ export interface AgenticChatSettings {
   approval: ApprovalSettings;
   /** Agent Plugins packages loaded from a vault folder. */
   plugins: PluginSettings;
-  /** Auto-abort a subagent after this many seconds (max 86400). 0 disables the timeout. */
-  subagentTimeoutSeconds: number;
+  /** Subagents that run at once in one turn; the rest queue (U4). */
+  maxParallelSubagents: number;
   /**
    * Newline-separated gitignore-style globs the agent may never read or see.
    * Enforced at the tool layer; matched files are invisible, not just denied.
@@ -172,7 +176,6 @@ export const DEFAULT_SETTINGS: AgenticChatSettings = {
   maxTokens: 0,
   requestTimeoutMs: 90_000,
   maxNetworkRetries: 2,
-  maxTurnsPerPrompt: PARENT_TURN_CAP,
   systemPrompt: DEFAULT_SYSTEM_PROMPT,
   mode: DEFAULT_MODE,
   // Strongest privacy out of the box: zero data retention, no prompt
@@ -180,7 +183,7 @@ export const DEFAULT_SETTINGS: AgenticChatSettings = {
   privacy: { denyDataCollection: true, requireZDR: true, allowFallbacks: true },
   approval: DEFAULT_APPROVAL_SETTINGS,
   plugins: DEFAULT_PLUGIN_SETTINGS,
-  subagentTimeoutSeconds: 0,
+  maxParallelSubagents: DEFAULT_PARALLEL_SUBAGENTS,
   ignoredGlobs: "",
   notifications: { enabled: true, costAlertUsd: 0, costCapUsd: 0 },
   compaction: { enabled: true, thresholdPercent: 80 },
@@ -209,7 +212,7 @@ export const MAX_RESPONSE_TOKENS = 1_000_000;
 /**
  * Numeric leaves the settings UI bounds. A persisted value outside its range is
  * treated like a wrong type and falls back to the default. Fields with a
- * dedicated heal (turn cap, sampling) keep their own policy.
+ * dedicated heal (parallel subagents, sampling) keep their own policy.
  */
 const SETTING_NUMBER_RANGES: Readonly<Record<string, readonly [number, number]>> = {
   temperature: [0, 2],
@@ -265,8 +268,7 @@ export function mergeSettings(stored: Partial<AgenticChatSettings> | null | unde
     },
     mcp: healedMcp,
     plugins: healedPlugins,
-    subagentTimeoutSeconds: healSubagentTimeout(stored?.subagentTimeoutSeconds),
-    maxTurnsPerPrompt: healMaxTurns(stored?.maxTurnsPerPrompt),
+    maxParallelSubagents: healParallelSubagents(stored?.maxParallelSubagents),
     observability: healObservabilitySettings(sanitizeProxyLeaves(stored?.observability)),
   };
   // Last pass: a persisted leaf whose type (or UI-bounded number) is invalid
@@ -373,6 +375,10 @@ const RETIRED_SETTING_KEYS = [
   "outputStyle",
   "embeddings",
   "toolBudget",
+  // U4 (owner, 2026-11-21): no turn caps and no subagent timeout. Stop, the
+  // loop guard, and the spend cap are the guards.
+  "maxTurnsPerPrompt",
+  "subagentTimeoutSeconds",
 ] as const;
 
 /**
@@ -432,13 +438,11 @@ export function retiredSettingsNotices(stored: unknown): string[] {
   return notices;
 }
 
-/** Upper bound for the subagent timeout (24h) — keeps `setTimeout` under its 32-bit delay range. */
-export const MAX_SUBAGENT_TIMEOUT_SECONDS = 86_400;
 
-/** Heal the subagent auto-abort timeout: whole seconds clamped to [0, 24h]; 0 = disabled. */
-export function healSubagentTimeout(value: unknown): number {
-  if (typeof value !== "number" || !Number.isFinite(value)) return 0;
-  return Math.min(Math.max(0, Math.trunc(value)), MAX_SUBAGENT_TIMEOUT_SECONDS);
+/** Heal the parallel-subagent setting: a whole number in [1, 20], default 10. */
+export function healParallelSubagents(value: unknown): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) return DEFAULT_PARALLEL_SUBAGENTS;
+  return Math.min(Math.max(MIN_PARALLEL_SUBAGENTS, Math.trunc(value)), MAX_PARALLEL_SUBAGENTS);
 }
 
 /** Heal the context-window override: 0 = auto-detect, otherwise a positive integer. */

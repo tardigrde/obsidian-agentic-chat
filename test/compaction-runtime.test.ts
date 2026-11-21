@@ -87,6 +87,9 @@ function largeTranscript(): AgentMessage[] {
   ];
 }
 
+/** The notice the removed turn cap (pre-U4) saved into sessions. */
+const LEGACY_TURN_CAP_NOTICE = "Turn cap: stopped after 25 assistant turns. Send another message to continue.";
+
 describe("AgentCompactionRuntime", () => {
   it("summarizes, carries dropped usage, rewrites the session, and returns the compacted transcript", async () => {
     const { adapter, runtime, path } = await setup();
@@ -336,7 +339,6 @@ describe("AgentCompactionRuntime", () => {
 
   it("keeps guard stop notices out of the summary prompt (#283)", async () => {
     const { buildStopNoticeMessage } = await import("../src/agent/stop-notice");
-    const { buildTurnCapNotice } = await import("../src/agent/turn-cap");
     const prompts: string[] = [];
     const streamFn = ((model: Model<"openai-completions">, context: TranscriptContext) => {
       prompts.push(JSON.stringify(context.messages));
@@ -360,8 +362,8 @@ describe("AgentCompactionRuntime", () => {
     }) as unknown as StreamFn;
     const { runtime } = await setup({ summarize: null, buildStreamFn: () => streamFn });
     const transcript = largeTranscript();
-    // A capped run early in the conversation: the notice lands in the summarized part.
-    transcript.splice(2, 0, buildStopNoticeMessage(buildTurnCapNotice(25)));
+    // A capped run saved before U4 removed the cap: the notice lands in the summarized part.
+    transcript.splice(2, 0, buildStopNoticeMessage(LEGACY_TURN_CAP_NOTICE));
 
     const result = await runtime.compactWithResult(transcript, 128_000, { force: true });
 

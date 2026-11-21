@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-import { PARENT_TURN_CAP } from "../src/agent/turn-cap";
 import { CHAOS_TARGETS } from "../scripts/chaos/monkey-core";
 import type { ChaosAction } from "../scripts/chaos/monkey-actions";
 
@@ -24,7 +23,6 @@ const NEW_TARGETS = [
   "steer",
   "queue",
   "stop-send",
-  "max-turns",
   "settings-persistence",
   "approval-paths",
   "session-reload",
@@ -127,20 +125,20 @@ describe("chaos call budget", () => {
 
   it("skips an action that does not fit and keeps the cheap actions running", async () => {
     const { focusedSequence, modelCallsFor, planChaosBudget, scriptedTurnsFor } = await loadBudget();
-    const expensive = focusedSequence("max-turns")[0];
+    const expensive = focusedSequence("approval-paths")[0];
     const plan = planChaosBudget([cheap("cheap-1"), expensive, cheap("cheap-2")], 4);
 
     expect(plan.stopReason).toBeUndefined();
     expect(plan.steps.map((step) => [step.action.id, step.status])).toEqual([
       ["cheap-1", "run"],
-      ["max-turns", "skipped"],
+      ["approval-paths", "skipped"],
       ["cheap-2", "run"],
     ]);
     const skipped = plan.steps[1];
-    if (skipped.status !== "skipped") throw new Error("expected max-turns to be skipped");
-    expect(skipped.needed).toBe(PARENT_TURN_CAP);
+    if (skipped.status !== "skipped") throw new Error("expected approval-paths to be skipped");
+    expect(skipped.needed).toBe(4);
     expect(skipped.remaining).toBe(3);
-    expect(skipped.reason).toContain(`${PARENT_TURN_CAP} model calls`);
+    expect(skipped.reason).toContain(`4 model calls`);
     expect(skipped.reason).toContain("3 remaining");
 
     const runnable = plan.steps.filter((step) => step.status === "run").map((step) => step.action);
@@ -162,10 +160,10 @@ describe("chaos call budget", () => {
 
   it("stops with max-calls only when no remaining action fits", async () => {
     const { focusedSequence, planChaosBudget } = await loadBudget();
-    const expensive = focusedSequence("max-turns")[0];
-    const plan = planChaosBudget([expensive, expensive], 4);
+    const expensive = focusedSequence("approval-paths")[0];
+    const plan = planChaosBudget([expensive, expensive], 3);
 
-    expect(plan.steps.map((step) => [step.action.id, step.status])).toEqual([["max-turns", "skipped"]]);
+    expect(plan.steps.map((step) => [step.action.id, step.status])).toEqual([["approval-paths", "skipped"]]);
     expect(plan.stopReason).toBe("max-calls");
   });
 });
@@ -189,13 +187,6 @@ describe("chaos scripted turns", () => {
     }
   });
 
-  it("uses the full parent turn budget plus one beyond-cap turn for max-turns", async () => {
-    const { focusedSequence, scriptedTurnsForAction } = await loadActions();
-    const turns = scriptedTurnsForAction(focusedSequence("max-turns")[0]);
-    expect(turns).toHaveLength(PARENT_TURN_CAP + 1);
-    expect(turns.at(-1)?.label).toContain("beyond cap");
-  });
-
   it("holds steering and queue turns, and delays the stop turn so abort can win", async () => {
     const { focusedSequence, scriptedTurnsForAction } = await loadActions();
     expect(scriptedTurnsForAction(focusedSequence("steer")[0])[0].hold).toBe(true);
@@ -215,10 +206,7 @@ describe("chaos scripted turns", () => {
     for (const target of CHAOS_TARGETS) {
       for (const action of focusedSequence(target)) {
         const turns = scriptedTurnsForAction(action);
-        if (action.kind === "max-turns") {
-          expect(modelCallsFor(action)).toBe(PARENT_TURN_CAP);
-          expect(turns).toHaveLength(PARENT_TURN_CAP + 1);
-        } else if (
+        if (
           action.kind !== "settings" &&
           action.kind !== "mcp" &&
           action.kind !== "settings-persistence" &&

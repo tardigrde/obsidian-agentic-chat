@@ -2,9 +2,8 @@ import type { DropdownComponent, SettingDefinitionItem } from "obsidian";
 import { type ApprovalPolicy, setPerToolApproval } from "./agent/approval";
 import { type AgentMode, MODE_ORDER, MODES } from "./agent/modes";
 import { DEFAULT_SYSTEM_PROMPT } from "./agent/system-prompt";
-import { MAX_TURN_CAP, MIN_TURN_CAP } from "./agent/turn-cap";
 import { boundedNumberRow, controlDef, headingRow, row } from "./settings-definition-kit";
-import { healSubagentTimeout, MAX_RESPONSE_TOKENS, type AgenticChatSettings } from "./settings-schema";
+import { MAX_PARALLEL_SUBAGENTS, MAX_RESPONSE_TOKENS, MIN_PARALLEL_SUBAGENTS, type AgenticChatSettings } from "./settings-schema";
 import { MUTATING_TOOLS } from "./tools/tool-contracts";
 import { createVaultTools } from "./tools/vault-tools";
 import { clampRowNumber, type SettingsTabHost } from "./settings-tab-host";
@@ -61,19 +60,6 @@ export function agentDefinitions(settings: AgenticChatSettings, host: SettingsTa
       { type: "slider", key: "maxNetworkRetries", min: 0, max: 5, step: 1 },
       "Automatic retries on rate limits and transient server errors.",
     ),
-    boundedNumberRow({
-      name: "Max turns per prompt",
-      desc:
-        `Stop the agent after this many model turns (${MIN_TURN_CAP}-${MAX_TURN_CAP}). ` +
-        "Sending or steering a message starts a new count. Send another message to continue.",
-      min: MIN_TURN_CAP,
-      max: MAX_TURN_CAP,
-      get: () => settings.maxTurnsPerPrompt,
-      set: async (value) => {
-        settings.maxTurnsPerPrompt = value;
-        await host.save();
-      },
-    }),
     row("System prompt", (setting) => {
       setting
         .setDesc("Sent at the start of every conversation.")
@@ -154,22 +140,18 @@ export function approvalDefinitions(settings: AgenticChatSettings, host: Setting
 
 export function subagentDefinitions(settings: AgenticChatSettings, host: SettingsTabHost): SettingDefinitionItem[] {
   return [
-    row("Subagent timeout", (setting) => {
-      setting
-        .setDesc(
-          "Auto-stop a subagent that runs longer than this many seconds (0 disables, max 86400). " +
-            "The child is aborted and the Dispatch step settles as stopped.",
-        )
-        .addText((text) =>
-          text
-            .setPlaceholder("0 = disabled")
-            .setValue(settings.subagentTimeoutSeconds > 0 ? String(settings.subagentTimeoutSeconds) : "")
-            .onChange(async (value) => {
-              // Same heal path as load: whole seconds clamped to [0, 24h].
-              settings.subagentTimeoutSeconds = healSubagentTimeout(Number(value));
-              await host.save();
-            }),
-        );
+    boundedNumberRow({
+      name: "Parallel subagents",
+      desc:
+        `How many subagents run at once in one turn (${MIN_PARALLEL_SUBAGENTS}-${MAX_PARALLEL_SUBAGENTS}); the rest queue. ` +
+        "Stop and the spend cap stop them all.",
+      min: MIN_PARALLEL_SUBAGENTS,
+      max: MAX_PARALLEL_SUBAGENTS,
+      get: () => settings.maxParallelSubagents,
+      set: async (value) => {
+        settings.maxParallelSubagents = value;
+        await host.save();
+      },
     }),
   ];
 }
