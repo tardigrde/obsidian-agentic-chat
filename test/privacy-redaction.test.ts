@@ -70,3 +70,14 @@ describe("privacy redaction", () => {
   });
 
 });
+
+describe("high-entropy redaction keeps URLs readable (U4 #16)", () => {
+  it("keeps a long article URL whole, still redacts an opaque token in it and a base64 secret outside it", () => {
+    const url = "https://www.sciencedirect.com/science/article/pii/S0123456789012345678";
+    const text = `see ${url} and https://api.example.com/v1?key=abcdef0123456789abcdef0123456789XYZ and secret blob QWxhZGRpbjpvcGVuIHNlc2FtZQ/abc123abc123abc123==`;
+    const redacted = redactText(text, { redactHighEntropy: true, maxLength: 10_000 });
+    expect(redacted).toContain(url);
+    expect(redacted).not.toContain("abcdef0123456789abcdef0123456789XYZ");
+    expect(redacted).not.toContain("QWxhZGRpbjpvcGVuIHNlc2FtZQ");
+  });
+});

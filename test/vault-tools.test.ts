@@ -393,6 +393,20 @@ describe("search", () => {
     });
   });
 
+  it("U4 #13: kind files with regex:true matches file names by regular expression", async () => {
+    const app = makeApp({
+      files: {
+        "Papers/attention.pdf": { content: "" },
+        "Papers/notes.pdf.md": { content: "" },
+        "Papers/summary.md": { content: "" },
+      },
+    });
+    const { details, text } = await run(getTool(app, "search"), { query: "\\.pdf$", kind: "files", regex: true });
+    expect(details.fileCount).toBe(1);
+    expect(text).toContain("Papers/attention.pdf");
+    expect(text).not.toContain("Papers/notes.pdf.md");
+  });
+
 });
 
 
