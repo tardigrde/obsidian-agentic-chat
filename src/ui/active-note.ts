@@ -11,7 +11,6 @@
 export const MAX_ACTIVE_NOTE_CHARS = 16_000;
 
 export interface ActiveNoteState {
-  /** Path of the current active note, or null when there is none. */
   activePath: string | null;
   /** The user dismissed the auto chip — stay suppressed for the rest of the session. */
   suppressed: boolean;
@@ -56,8 +55,7 @@ export function autoActiveNotePath(
 }
 
 /**
- * The focused note when it is private (U4 #11): it is never sent, but the
- * composer shows a "private, not sent" chip so the user knows why.
+ * The focused note when it is private: never sent, only a "private, not sent" chip.
  */
 export function privateActiveNotePath(
   file: ActiveNoteCandidate | null | undefined,

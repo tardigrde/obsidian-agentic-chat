@@ -194,7 +194,6 @@ function secureRandom(): number {
       return array[0] / 0x100000000;
     }
   } catch {
-    // fall through
   }
   return Math.random(); // NOSONAR - jitter for backoff, not security-sensitive; crypto is primary
 }

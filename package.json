@@ -28,6 +28,7 @@
     "typecheck": "node scripts/tsc7.mjs -noEmit",
     "typecheck:e2e": "node scripts/tsc7.mjs -p tsconfig.e2e.json --noEmit",
     "lint": "eslint .",
+    "lint:comments": "node scripts/comment-budget.mjs",
     "lint:obsidian": "eslint -c config/eslint.obsidian.mjs --max-warnings 0 src",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",

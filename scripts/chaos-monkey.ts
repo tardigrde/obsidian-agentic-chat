@@ -124,7 +124,6 @@ type ReportDriver = {
 const CHAOS_SPEC = "test/e2e/chaos/chaos-monkey.e2e.ts";
 const SESSION_DIR = "logs/chaos";
 const BOOT_ALLOWANCE_MS = 120_000;
-/** An explore step can wait up to 180 s for a live turn after the time cap is reached. */
 const EXPLORE_GRACE_MS = 300_000;
 const CHARTER_DIR = ".agents/skills/app/charters";
 

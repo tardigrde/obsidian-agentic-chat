@@ -43,7 +43,6 @@ describe("PluginService.removeFolder dot-folder guard (issue #133)", () => {
   it("returns false and still prunes settings when folder already absent (externally deleted)", async () => {
     const { app, current, service } = await seed();
     await service.scaffoldSkill({ name: "beta", description: "d", body: "# x" });
-    // Simulate external delete before Remove
     await (app as unknown as { vault: FakeVault }).vault.adapter.rmdir(".agentic-plugins/beta", true);
     expect(await app.vault.adapter.exists(".agentic-plugins/beta")).toBe(false);
     // Seed settings entries to verify prune happens even when folder absent
@@ -99,7 +98,6 @@ describe("PluginService.removeFolder dot-folder guard (issue #133)", () => {
     current.approval.perTool["write"] = "allow";
     // Ensure cache is empty (never loaded) to force cache-miss branch
     service.invalidate();
-    // Call removePackage with cache miss
     const existed = await service.removePackage("cache-miss-pkg", ".agentic-plugins/cache-miss-pkg");
     expect(existed).toBe(true);
     expect(current.plugins.mcpState[id1]).toBeUndefined();

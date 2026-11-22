@@ -80,10 +80,6 @@ export class PluginService {
     this.vault = new PluginVault(app, () => this.getSettings().plugins.folder);
   }
 
-  // ---------------------------------------------------------------------------
-  // The catalog
-  // ---------------------------------------------------------------------------
-
   /** Load (or reuse the cache of) the plugin packages. */
   async load(): Promise<LoadedPlugin[]> {
     if (this.cache) return this.cache;
@@ -184,15 +180,7 @@ export class PluginService {
     return deleted;
   }
 
-  // ---------------------------------------------------------------------------
-  // Operations that change the plugins folder
-  // ---------------------------------------------------------------------------
-
-  /**
-   * Serialize the install transaction and the recovery sweep. A sweep must not
-   * delete a stage an install is using, and two installs must not move the same
-   * backup. A rejected operation does not block the next one.
-   */
+  /** Serialize installs and the recovery sweep; a rejected operation does not block the next. */
   private runExclusive<T>(op: () => Promise<T>): Promise<T> {
     const run = this.maintenance.then(op, op);
     this.maintenance = run.then(

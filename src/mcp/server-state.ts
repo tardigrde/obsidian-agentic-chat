@@ -1,11 +1,7 @@
 import { clearMcpPerToolApprovals, type ApprovalSettings } from "../agent/approval";
 import { mcpServerStateFromServer, type McpServerSettings, type McpServerState } from "./settings";
 
-/**
- * The one rule for client-owned MCP state: what must not survive a server move
- * to a new URL (or a package rename). Tokens, static credentials, discovered
- * tools, and a pending OAuth challenge were minted for the old host.
- */
+/** Client-owned MCP state must not survive a server move: tokens, credentials, tools, OAuth. */
 export interface McpAuthClearable {
   authHeaderValue: string;
   oauth: { accessToken: string; refreshToken: string; expiresAt: number };

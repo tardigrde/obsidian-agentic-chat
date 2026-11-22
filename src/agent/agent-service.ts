@@ -151,7 +151,6 @@ export class AgentService {
   private disposal: Promise<void> | null = null;
 
   private initialization: Promise<void> | null = null;
-  /** Drops the plugin-invalidation subscription on dispose. */
   private unsubscribePluginInvalidation?: () => void;
   private pluginReloadTimer: number | undefined;
   /** Memoizes system-prompt and tool-schema token counts for the per-event readout. */
@@ -723,7 +722,6 @@ export class AgentService {
     return this.sessionActions.deleteSession(path);
   }
 
-  /** Delete every session file. Resolves with the deleted paths. */
   async clearSessions(): Promise<string[]> {
     return this.sessionActions.clearSessions();
   }

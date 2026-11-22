@@ -153,9 +153,7 @@ function buildOllamaModel(config: ModelConfig): Model<"openai-completions"> {
 function buildOpenAICompatibleModel(config: ModelConfig): Model<"openai-completions"> {
   const pricing = resolveModelPricingSync("openai-compatible", config.modelId);
   const info = resolveModelInfoSync("openai-compatible", config.modelId);
-  // Context window: explicit override wins; else try the OpenRouter catalog for
-  // the same slug (exact, or an unambiguous suffix match); else 0 = unknown.
-  // An unknown window disables auto-compaction — better than guessing 128k.
+  // Context window: explicit override, then catalog; 0 = unknown disables compaction.
   const override = config.openaiCompatibleContextWindow ?? 0;
   const contextWindow = override > 0 ? override : info?.c && info.c > 0 ? info.c : 0;
   return {
@@ -357,5 +355,4 @@ function isAbortError(error: unknown): boolean {
   return typeof error === "object" && error !== null && "name" in error && error.name === "AbortError";
 }
 
-// Keep the OpenAICompletionsCompat type referenced so downstream imports resolve.
 export type { OpenAICompletionsCompat };

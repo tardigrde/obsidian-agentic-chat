@@ -140,8 +140,7 @@ export function parseSessionEntries(content: string): SessionEntry[] {
     try {
       entries.push(JSON.parse(line) as SessionEntry);
     } catch {
-      // Skip a corrupt line rather than losing the whole session, but log it so
-      // silent data loss (e.g. a partially-flushed append) is at least visible.
+      // Skip a corrupt line; log it so silent data loss stays visible.
       console.warn("Agentic chat: skipping unparseable session entry.");
     }
   }

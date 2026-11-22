@@ -147,8 +147,7 @@ export class ApprovalCard {
     this.actionsEl = this.el.createDiv({ cls: "agentic-chat-approval-actions" });
     const allow = acHook(this.button("Allow", ["mod-cta"]), "approval-allow");
     allow.addEventListener("click", () => this.finish({ approved: true, remember: false }, "allowed"));
-    // A persistent skill write never offers "always": one fatigued click would
-    // approve every future skill write.
+    // Skill writes never offer "always"; one click would approve every future write.
     if (!this.isCreateSkill()) {
       const always = acHook(this.button(`Always allow ${this.request.toolName}`, []), "approval-always");
       always.setAttr("title", "Allow now and stop asking for this tool. Changeable in settings.");

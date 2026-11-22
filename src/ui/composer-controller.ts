@@ -85,8 +85,6 @@ export class ChatComposer {
     this.mentionCache = null;
   }
 
-  // --- autocomplete (slash commands, skills, @-mentions) ---
-
   /**
    * Debounced recompute for typing/caret events, so a fast typist (or a large
    * vault's mention scan) doesn't re-filter on every keystroke. Picking an item
@@ -159,8 +157,6 @@ export class ChatComposer {
     this.mentionCache = candidates;
     return candidates;
   }
-
-  // --- prompt editing (rewrite a sent user turn) ---
 
   /** Load a sent prompt back into the composer for rewriting. */
   beginEdit(index: number, displayText: string, el: HTMLElement): void {
@@ -235,8 +231,6 @@ export class ChatComposer {
     this.editingEl = null;
   }
 
-  // --- command history (shell-style up/down recall) ---
-
   /** Record a submitted message, skipping consecutive duplicates, then reset navigation. */
   pushHistory(text: string): void {
     this.deps.state().history.record(text);
@@ -264,8 +258,6 @@ export class ChatComposer {
     if (result.value !== undefined) this.setComposerValueQuiet(result.value);
     return true;
   }
-
-  // --- attachments + chips ---
 
   addAttachment(entry: ContextAttachment): void {
     // Image attachments only make sense for a vision-capable model.
@@ -362,8 +354,6 @@ export class ChatComposer {
     }
   }
 
-  // --- drop handling ---
-
   /**
    * Turn dropped notes/folders into context attachments instead of opening them.
    * Multi-select drops are supported — every dragged entry attaches at once. Only
@@ -428,8 +418,6 @@ export class ChatComposer {
     const file = this.deps.app.vault.getAbstractFileByPath(path);
     return file instanceof TFile || file instanceof TFolder ? [file] : [];
   }
-
-  // --- queued prompt ---
 
   queueComposerPrompt(): void {
     this.deps.state().queuedPromptArmed = true;

@@ -20,9 +20,7 @@ export function applyRememberedApprovalChoice(
   const policy = approvalPolicyForRememberedChoice(choice);
   if (!policy) return false;
   if (isPersistentSkillTool(toolName) && policy === "allow") {
-    // A persistent skill write (create_skill) must
-    // never be silently auto-allowed: one fatigued "don't ask again" would
-    // disarm the injection gate for all future calls. Remember deny, not allow.
+    // A persistent skill write never remembers allow: one click would disarm the gate.
     return false;
   }
   setPerToolApproval(settings.approval, toolName, policy);

@@ -66,6 +66,12 @@ matrix, use [Mutation testing](./mutation.md).
 For the community plugin review warnings, the lint gate, and the two intentional
 behavior recommendations, use [Community plugin review](./community-review.md).
 
+## Comments
+
+[Code comments](./comments.md) records the policy, the four cleanup categories,
+and the per-file ratchet (`npm run lint:comments`). New comments warn; deleting
+comments never fails. Cross-cutting decisions live in [ADRs](../adr/).
+
 ## Live dogfood
 
 Exploratory WebDriver and manual bug sweeps against a real vault use [`docs/development/live-dogfood.md`](https://github.com/tardigrde/obsidian-agentic-chat/blob/main/docs/development/live-dogfood.md). The file stays in the repo but out of the public site because it is a maintainer runbook, not user documentation.

@@ -18,7 +18,7 @@ import { FakeAdapter as MemoryAdapter } from "./support/fake-adapter";
 /**
  * First-principles tests for session reconstruction (src/session/).
  *
- * Derived from the documented contract (AGENTS.md "Sessions" + JSDoc):
+ * Derived from the documented contract (ADR 0011 + JSDoc):
  *   - Entries form a linked list via parentId/leafId; buildSessionContext
  *     reconstructs the message list by walking the parent chain to leafId.
  *   - Each AgentMessage is persisted exactly once (WeakSet de-dupe) on
@@ -135,7 +135,7 @@ describe("ObsidianSessionManager chaining", () => {
 
     // Walking from the returned leaf reconstructs all three in order.
     expect(sm.buildSessionContext().messages.map((m) => text(m))).toEqual(["first", "second", "third"]);
-    // The returned id is the new leaf.
+    // Appending advances the active session's message count.
     expect(sm.getActiveSessionInfo().messageCount).toBe(3);
     void secondId;
   });

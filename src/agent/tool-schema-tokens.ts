@@ -9,7 +9,6 @@ import type { AgentTool } from "@earendil-works/pi-agent-core";
  */
 export const TOOL_SCHEMA_CHARS_PER_TOKEN = 3.5;
 
-/** Estimate the tokens the model-visible tool declarations cost. */
 export function estimateToolDefinitionTokens(tools: readonly Pick<AgentTool, "name" | "description" | "parameters">[]): number {
   if (tools.length === 0) return 0;
   const modelVisible = tools.map((tool) => ({

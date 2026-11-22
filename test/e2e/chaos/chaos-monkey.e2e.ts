@@ -304,7 +304,7 @@ async function approveIfPresent(timeoutMs: number, allowed: boolean): Promise<bo
           return false;
         });
         if (!confirmed) {
-          // Some builds deny in one click; treat the disappearing modal as success.
+          // Some builds deny in one click; treat the disappearing card as success.
           await browser.pause(200);
           const stillOpen = await $('[data-ac="approval"]:not(.is-resolved)').isExisting();
           if (!stillOpen) return true;

@@ -41,7 +41,6 @@ export interface ToolApprovalRequest {
   toolName: string;
   label: string;
   args: unknown;
-  /** Optional tab/session label for background approvals (shown in modal title). */
   sessionLabel?: string;
   /** The gated call: the view records the decision on that call's step row. */
   toolCallId?: string;
@@ -49,10 +48,8 @@ export interface ToolApprovalRequest {
 
 export type ToolGateDecision = { block: true; reason: string; terminate?: boolean } | undefined;
 
-/** Reason used when the user stops a turn that is waiting for approval. */
 export const STOPPED_APPROVAL_REASON = "The turn was stopped before approval.";
 
-/** A user's decision on an approval prompt, with an optional deny reason. */
 export interface UserApprovalChoice {
   approved: boolean;
   /** Persist this decision for the tool (sets a per-tool "allow" override). */
@@ -258,7 +255,6 @@ export class AgentToolCallController {
     return undefined;
   }
 
-  /** The first private vault path a call names, or null. */
   private privateTarget(toolName: string, args: unknown): string | null {
     if (!this.isPathIgnored || !VAULT_PATH_TOOLS.has(toolName)) return null;
     const record = (args ?? {}) as Record<string, unknown>;
@@ -387,7 +383,6 @@ export class AgentToolCallController {
     }
     // Today an `ask` subagent dispatch auto-approves exactly like `allow`; only
     // the child tool calls are gated afterwards. Pinned by the approval matrix.
-    // Open question: `ask` may need to prompt here (safety review pending).
     await this.auditApproval({ decision: "auto-approved", toolCallId, toolName: SUBAGENT_TOOL_NAME, args });
     return undefined;
   }
