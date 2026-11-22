@@ -1,6 +1,7 @@
 import type { App } from "obsidian";
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { Type } from "typebox";
+import { findVaultEntry } from "../vault/path-lookup";
 import { ensureVaultParentFolder } from "../vault/storage";
 import type { IgnoreMatcher } from "../vault/ignore";
 import { normalizeVisibleVaultPath } from "./vault/shared";
@@ -32,14 +33,23 @@ export interface WebDownloadConfig {
   /** Comma-separated host suffix allowlist; empty allows all public hosts. */
   allowedHosts?: string;
   maxBytes?: number;
+  /** Vault folders the tool never writes into (the user's plugins folder: a downloaded plugin.json must not plant a package). */
+  blockedFolders?: readonly string[];
 }
 
 /**
  * The `download_file` tool: save a binary file from the web into the vault. It
  * writes, so it is a mutating tool (it asks in Safe mode), and it is only
  * registered when web access is on. It never overwrites, never writes into a
- * dot-folder (`.obsidian`, `.agentic-plugins`: a prompt-injected download must not
- * plant a plugin or a skill), and refuses a web page where a file was expected.
+ * dot-folder (`.obsidian`, `.agentic-plugins`) or the configured plugins folder (a
+ * prompt-injected download must not plant a plugin or a skill), and refuses a web
+ * page where a file was expected.
+ *
+ * Known limits, shared with `fetch_url`: Obsidian's `requestUrl` follows redirects
+ * itself, so only the first URL is checked against the allowlist and the
+ * private-address gate; and it returns the whole body, so the size cap is checked
+ * after the bytes are in memory (a missing Content-Length cannot stop a huge body
+ * from being buffered first).
  */
 export function createWebDownloadTool(config: WebDownloadConfig): AgentTool<typeof DownloadParameters> {
   const maxBytes = config.maxBytes ?? MAX_DOWNLOAD_BYTES;
@@ -57,10 +67,8 @@ export function createWebDownloadTool(config: WebDownloadConfig): AgentTool<type
       if (!isHostAllowedByAllowlist(host, config.allowedHosts ?? "")) throw new Error(`Blocked by allowlist: ${host}`);
 
       const path = normalizeVisibleVaultPath(config.isIgnored, params.path);
-      assertSavablePath(path);
-      if (config.app.vault.getAbstractFileByPath(path)) {
-        throw new Error(`${path} already exists. Choose another path; download_file never overwrites.`);
-      }
+      assertSavablePath(path, config.blockedFolders);
+      await assertFree(config.app, path);
 
       if (signal?.aborted) throw new Error("Aborted.");
       const response = await config.fetcher({ url, method: "GET" }, signal);
@@ -78,14 +86,18 @@ export function createWebDownloadTool(config: WebDownloadConfig): AgentTool<type
       if (size > maxBytes) throw tooLarge(url, size, maxBytes);
       if (size === 0) throw new Error(`${url} returned an empty body.`);
 
+      // Checked again: the request took time, and a sync client may have created it meanwhile.
+      await assertFree(config.app, path);
       await ensureVaultParentFolder(config.app, path);
       await config.app.vault.createBinary(path, response.bytes);
       const hint = /\.(pdf|epub|docx|pptx|xlsx)$/i.test(path) ? ` Use import_document on "${path}" to read it.` : "";
-      return toolResult(`Downloaded ${size.toLocaleString("en-US")} bytes (${contentType || "unknown type"}) from ${url} to ${path}.${hint}`, {
+      // The server controls the Content-Type text; echo only a plain media type.
+      const shownType = /^[a-z0-9.+-]+\/[a-z0-9.+-]+$/.test(contentType) ? contentType : "unknown type";
+      return toolResult(`Downloaded ${size.toLocaleString("en-US")} bytes (${shownType}) from ${url} to ${path}.${hint}`, {
         url,
         path,
         bytes: size,
-        contentType,
+        contentType: shownType,
       });
     },
   };
@@ -97,7 +109,20 @@ function tooLarge(url: string, size: number, max: number): Error {
 }
 
 /** The path must be a plain file path in a normal folder, with an allowed extension. */
-export function assertSavablePath(path: string): void {
+async function assertFree(app: App, path: string): Promise<void> {
+  // Exact and Unicode-normalized lookups, then the disk itself: a case-insensitive or
+  // not-yet-indexed file must not be replaced.
+  const taken = findVaultEntry(app, path) || (await app.vault.adapter.exists(path));
+  if (taken) throw new Error(`${path} already exists. Choose another path; download_file never overwrites.`);
+}
+
+export function assertSavablePath(path: string, blockedFolders: readonly string[] = []): void {
+  for (const folder of blockedFolders) {
+    const root = folder.replace(/^\/+|\/+$/g, "");
+    if (root && (path === root || path.startsWith(`${root}/`))) {
+      throw new Error(`download_file does not write into the plugins folder (${root}).`);
+    }
+  }
   const segments = path.split("/");
   if (segments.some((segment) => segment.startsWith("."))) {
     throw new Error(`download_file does not write into hidden folders or dot-files: ${path}`);

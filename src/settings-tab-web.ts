@@ -29,7 +29,7 @@ export function webDefinitions(settings: AgenticChatSettings, host: SettingsTabH
     controlDef(
       "Enable web search & fetch",
       { type: "toggle", key: "web.enabled" },
-      "Give the agent web_search, fetch_url and download_file tools. When off, the agent cannot reach the network at all.",
+      "Give the agent web_search, fetch_url and download_file tools. When off, the agent has no web tools (MCP servers are separate).",
     ),
   ];
 
@@ -99,7 +99,7 @@ export function webDefinitions(settings: AgenticChatSettings, host: SettingsTabH
     row("Allowed hosts", (setting) => {
       setting
         .setDesc(
-          "Optional comma-separated host suffixes for fetch_url. Empty allows any public host. " +
+          "Optional comma-separated host suffixes for fetch_url and download_file. Empty allows any public host. " +
             'Example: example.com, *.wikipedia.org — blocks other hosts with "Blocked by allowlist".',
         )
         .addText((text) =>

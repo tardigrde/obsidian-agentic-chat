@@ -75,9 +75,18 @@ async function openNote(path: string, body: string): Promise<void> {
   );
 }
 
+/** Text of any composer chip that is not the private-note lock chip (an active-note chip would be one). */
 async function activeChipText(): Promise<string | null> {
   return await browser.execute(
-    () => document.querySelector<HTMLElement>(".agentic-chat-chip.is-active-note")?.innerText ?? null,
+    () => document.querySelector<HTMLElement>('[data-ac="chips"] .agentic-chat-chip:not(.is-private)')?.innerText ?? null,
+  );
+}
+
+/** Wait until Obsidian reports `path` as the active file, so a later "no chip" is not a no-op. */
+async function waitActiveFile(path: string): Promise<void> {
+  await browser.waitUntil(
+    async () => await browser.executeObsidian(({ app }, expected) => app.workspace.getActiveFile()?.path === expected, path),
+    { timeout: 5_000, timeoutMsg: `${path} never became the active file` },
   );
 }
 
@@ -179,14 +188,17 @@ describe("agentic-chat smoke", function () {
     try {
       // Before U7 #4 this opened as a dashed "ACTIVE" chip that ate a composer row on a phone.
       await openNote("Welcome.md", "# Welcome\nSmoke context.");
-      await browser.pause(600);
+      await waitActiveFile("Welcome.md");
+      await browser.pause(300);
       expect(await activeChipText()).toBeNull();
 
       await openNote(PRIVATE_NOTE, "# Secret\nNever attach.");
+      await waitActiveFile(PRIVATE_NOTE);
       await browser.pause(300);
       expect(await activeChipText()).toBeNull();
 
       await openNote("AGENTS.md", "# Standing Instructions\nLoaded implicitly.");
+      await waitActiveFile("AGENTS.md");
       await browser.pause(300);
       expect(await activeChipText()).toBeNull();
     } finally {

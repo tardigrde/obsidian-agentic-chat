@@ -124,6 +124,8 @@ export interface WebFetchConfig {
   sourceArtifacts?: SourceArtifactDeduper;
   /** Comma-separated host suffix allowlist; empty allows all public hosts. */
   allowedHosts?: string;
+  /** True when this agent has `download_file`: a document URL then says how to read it. */
+  downloadHint?: boolean;
 }
 
 const ACCEPT_HEADER = "text/html,application/xhtml+xml,text/plain,application/json;q=0.9,*/*;q=0.8";
@@ -202,7 +204,7 @@ export function createWebFetchTool(config: WebFetchConfig): AgentTool<typeof Fet
       const limit = clampCharLimit(params.maxChars, config.charLimit);
       const offset = clampOffset(params.offset);
       const contentType = response.headers["content-type"] ?? "";
-      const rendered = renderFetched(url, response.text, contentType, limit, offset);
+      const rendered = renderFetched(url, response.text, contentType, limit, offset, Boolean(config.downloadHint));
       // A cookie or bot wall is not the page: fail, and store no artifact (U4 #15).
       const wall = detectWall(rendered.sourceText);
       if (wall) {
@@ -286,13 +288,20 @@ interface RenderedPage {
 /** Cap on raw bytes fed to the regex extractor, so a huge page can't freeze the UI. */
 const MAX_RAW_CHARS = 500_000;
 
-function renderFetched(url: string, raw: string, contentType: string, limit: number, offset: number): RenderedPage {
+function renderFetched(
+  url: string,
+  raw: string,
+  contentType: string,
+  limit: number,
+  offset: number,
+  downloadHint: boolean,
+): RenderedPage {
   const html = looksLikeHtml(raw, contentType);
   // Don't dump decoded binary (images, archives, PDFs) at the model — wasteful and unreadable.
   if (!html && contentType && !isTextContentType(contentType)) {
     return {
       title: "",
-      text: `Source: ${url}\n\n[Skipped: "${contentType}" is not text. fetch_url only returns readable text.${binaryHint(contentType)}]`,
+      text: `Source: ${url}\n\n[Skipped: "${contentType}" is not text. fetch_url only returns readable text.${downloadHint ? binaryHint(contentType) : ""}]`,
       sourceText: "",
       extractor: "plain-text",
       sourceKind: "web",
@@ -416,13 +425,6 @@ function normalizeTranscriptText(raw: string): string {
  * The e2e build (and only that build) can allow one loopback origin for the
  * eval fixture server; see `evalFixtureOrigin`.
  */
-/** For a document type, the way to read it: save it, then import it. */
-function binaryHint(contentType: string): string {
-  return /pdf|epub|officedocument|msword|ms-excel|ms-powerpoint/i.test(contentType)
-    ? " To read this file, save it with download_file, then use import_document."
-    : "";
-}
-
 export function normalizeWebUrl(input: string): string {
   let parsed: URL;
   try {
@@ -437,6 +439,13 @@ export function normalizeWebUrl(input: string): string {
     throw new Error(`Refusing to fetch a local or private address: ${parsed.hostname}`);
   }
   return parsed.toString();
+}
+
+/** For a document type, the way to read it: save it, then import it. */
+function binaryHint(contentType: string): string {
+  return /pdf|epub|officedocument/i.test(contentType)
+    ? " To read this file, save it with download_file, then use import_document."
+    : "";
 }
 
 /** Set by `scripts/build.mjs`: true only in the e2e build, never in a release. */

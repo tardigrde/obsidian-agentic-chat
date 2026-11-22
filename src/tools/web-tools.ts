@@ -15,10 +15,12 @@ export interface WebDownloadDeps {
   app: App;
   isIgnored: IgnoreMatcher;
   fetcher: WebBinaryFetcher;
+  /** Vault folders `download_file` never writes into. */
+  blockedFolders?: readonly string[];
 }
 
 /**
- * Build the web tools (search + fetch) when web access is enabled, else nothing.
+ * Build the web tools (search, fetch, and download when the caller can write) when web access is enabled, else nothing.
  * The enable toggle is the egress gate: these tools send data off-device, so when
  * it's off they are not registered at all and the model can't reach the network.
  */
@@ -37,7 +39,7 @@ export function createWebTools(
       maxResults: settings.maxResults,
       fetcher,
     }),
-    createWebFetchTool({ fetcher, charLimit: settings.fetchCharLimit, artifactStore, allowedHosts: settings.allowedHosts }),
+    createWebFetchTool({ fetcher, charLimit: settings.fetchCharLimit, artifactStore, allowedHosts: settings.allowedHosts, downloadHint: Boolean(download) }),
     ...(download ? [createWebDownloadTool({ ...download, allowedHosts: settings.allowedHosts })] : []),
   ];
 }

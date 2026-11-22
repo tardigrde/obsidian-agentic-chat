@@ -136,10 +136,10 @@ describe("agent runtime resources", () => {
     const on = settings();
     on.web.enabled = true;
     const offPrompt = composeAgentSystemPrompt(off, resources, "");
-    expect(offPrompt).toContain("Web access is turned off");
+    expect(offPrompt).toContain("Web access is off");
     expect(offPrompt).toContain("download_file");
     expect(offPrompt).toContain("Settings > Advanced > Web access");
-    expect(composeAgentSystemPrompt(on, resources, "")).not.toContain("Web access is turned off");
+    expect(composeAgentSystemPrompt(on, resources, "")).not.toContain("Web access is off");
   });
 
   it("registers download_file with the web tools, from the injected binary fetcher", async () => {

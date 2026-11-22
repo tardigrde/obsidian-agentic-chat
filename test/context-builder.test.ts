@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { App } from "obsidian";
 import { FOLDER_PREFIX } from "../src/ui/autocomplete";
 import { MAX_POINTER_SELECTION_CHARS } from "../src/ui/active-note";
-import { buildPromptContext, loadImageAttachments, sentUserText, visibleEditorRange } from "../src/ui/context-builder";
+import { buildPromptContext, loadImageAttachments, sentUserText } from "../src/ui/context-builder";
 import { createTextContextAttachment, MAX_TEXT_CONTEXT_CHARS } from "../src/ui/context-attachments";
 import { FakeApp } from "./helpers/fake-vault";
 
@@ -224,12 +224,23 @@ describe("buildPromptContext", () => {
   it("includes the selection and the other open notes in the pointer", async () => {
     const fake = app();
     const file = await fake.vault.create("Active.md", "body");
-    const leaf = (path: string, extension = "md") => ({ view: { file: { path, extension } } });
+    const leaf = (path: string, extension = "md", selection = "") => ({
+      view: { file: { path, extension }, editor: { getSelection: () => selection } },
+    });
+    // The chat view has focus when a prompt is sent: getActiveViewOfType(MarkdownView) is null.
     fake.workspace = {
       getActiveFile: () => file,
-      getActiveViewOfType: <T,>() => ({ file, editor: { getSelection: () => "chosen words" } }) as T,
+      getActiveViewOfType: () => null,
       iterateAllLeaves: (callback: (l: { view: unknown }) => void) => {
-        for (const l of [leaf("Active.md"), leaf("B.md"), leaf("B.md"), leaf("Private/P.md"), leaf("pic.png", "png"), leaf("C.md")]) callback(l);
+        for (const l of [
+          leaf("Active.md", "md", "chosen words"),
+          leaf("B.md"),
+          leaf("B.md"),
+          leaf("Private/P.md"),
+          leaf("pic.png", "png"),
+          leaf("AGENTS.md"),
+          leaf("C.md"),
+        ]) callback(l);
       },
     } as unknown as typeof fake.workspace;
 
@@ -244,6 +255,8 @@ describe("buildPromptContext", () => {
     expect(context).toContain('Other open notes: "B.md", "C.md"');
     expect(context).not.toContain("Private/P.md");
     expect(context).not.toContain("pic.png");
+    // A root standing-instructions file is implicit context already; it is not named.
+    expect(context).not.toContain("AGENTS.md");
   });
 
   it("names a long selection by size instead of quoting it", async () => {
@@ -252,7 +265,9 @@ describe("buildPromptContext", () => {
     const long = "w".repeat(MAX_POINTER_SELECTION_CHARS + 1);
     fake.workspace = {
       getActiveFile: () => file,
-      getActiveViewOfType: <T,>() => ({ file, editor: { getSelection: () => long } }) as T,
+      getActiveViewOfType: () => null,
+      iterateAllLeaves: (callback: (l: { view: unknown }) => void) =>
+        callback({ view: { file: { path: "Active.md", extension: "md" }, editor: { getSelection: () => long } } }),
     } as unknown as typeof fake.workspace;
     const context = await buildPromptContext({ app: fake, activeNotePath: "Active.md", attachments: [], isPathIgnored: () => false });
     expect(context).not.toContain(long);
@@ -294,6 +309,45 @@ describe("buildPromptContext", () => {
     const again = await buildPromptContext(options);
     // Deterministic: the same inputs give byte-identical text, so a held prefix never changes.
     expect(again).toBe(first);
+  });
+
+  it("a selection that spans a markdown rule does not defeat the dedupe", async () => {
+    const fake = app();
+    const file = await fake.vault.create("A.md", "body");
+    fake.workspace = {
+      getActiveFile: () => file,
+      getActiveViewOfType: () => null,
+      iterateAllLeaves: (callback: (l: { view: unknown }) => void) =>
+        callback({ view: { file: { path: "A.md", extension: "md" }, editor: { getSelection: () => "above\n\n---\n\nbelow" } } }),
+    } as unknown as typeof fake.workspace;
+    const options = { app: fake, activeNotePath: "A.md", attachments: [], isPathIgnored: () => false };
+    const first = await buildPromptContext(options);
+    expect(first).toContain("below");
+    expect(await buildPromptContext({ ...options, sentText: `${first}\n\nhello` })).toBe("");
+  });
+
+  it("a queued steer is the newest pointer: going back to the earlier note names it again", async () => {
+    const fake = app();
+    await fake.vault.create("A.md", "a");
+    await fake.vault.create("B.md", "b");
+    const at = (path: string, sentText?: string) =>
+      buildPromptContext({ app: fake, activeNotePath: path, attachments: [], isPathIgnored: () => false, sentText });
+    const first = await at("A.md");
+    const steer = await at("B.md", `${first}\n\none`);
+    // A was delivered, B is queued (not delivered yet): the latest the model will hold is B.
+    const sent = sentUserText([{ role: "user", content: first, timestamp: 1 } as never], [steer]);
+    expect(await at("A.md", sent)).toContain('Active note "A.md"');
+    // Staying on B does not repeat it.
+    expect(await at("B.md", sent)).toBe("");
+  });
+
+  it("after a compaction the pointer is sent again, even when the summary quotes it", async () => {
+    const fake = app();
+    await fake.vault.create("A.md", "a");
+    const options = { app: fake, activeNotePath: "A.md", attachments: [], isPathIgnored: () => false };
+    const first = await buildPromptContext(options);
+    const summary = { role: "user", content: [{ type: "text", text: `<conversation-summary>\n${first}\n</conversation-summary>` }], timestamp: 1 };
+    expect(await buildPromptContext({ ...options, sentText: sentUserText([summary as never]) })).toContain('Active note "A.md"');
   });
 
   it("sends a stub for an attached note whose exact text the model already holds", async () => {
@@ -394,19 +448,6 @@ describe("loadImageAttachments", () => {
     });
 
     expect(images).toEqual([{ type: "image", data: "AQID", mimeType: "image/png" }]);
-  });
-});
-
-describe("visibleEditorRange", () => {
-  it("returns null when no matching Markdown editor is active", async () => {
-    const fake = app();
-    const file = await fake.vault.create("A.md", "body");
-    fake.workspace = {
-      getActiveFile: () => null,
-      getActiveViewOfType: () => null,
-    } as unknown as typeof fake.workspace;
-
-    expect(visibleEditorRange(fake, file)).toBeNull();
   });
 });
 

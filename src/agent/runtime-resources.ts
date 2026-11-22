@@ -160,9 +160,8 @@ export function composeAgentSystemPrompt(
 export function webToolsOffNotice(settings: AgenticChatSettings): string {
   if (settings.web.enabled) return "";
   return (
-    "Web access is turned off in the plugin settings, so fetch_url, web_search and download_file are not available " +
-    "(they are not hidden or cut: they do not exist while it is off). If the user asks for something that needs the web, " +
-    "say so and tell them to turn on Settings > Advanced > Web access."
+    "Web access is off, so fetch_url, web_search and download_file do not exist (not cut, not deferred). " +
+    "If the user needs the web, say so and tell them to turn on Settings > Advanced > Web access."
   );
 }
 
@@ -239,6 +238,7 @@ export function buildAgentParentTools(options: BuildAgentParentToolsOptions): Ag
       app: options.app,
       isIgnored: options.resources.ignoreMatcher,
       fetcher: options.webDownload ?? createObsidianBinaryFetcher(),
+      blockedFolders: [options.settings.plugins.folder],
     }),
     ...(options.askUser ? [createAskUserTool(options.askUser)] : []),
     ...(options.subagentTool ? [options.subagentTool] : []),

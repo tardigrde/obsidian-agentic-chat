@@ -413,7 +413,7 @@ export class ChatView extends ItemView {
     this.registerEvent(this.app.vault.on("delete", invalidate));
     this.registerEvent(this.app.vault.on("rename", invalidate));
     this.registerEvent(this.app.vault.on("modify", invalidate));
-    // Keep the auto-attached active note in sync as the focused leaf/file changes.
+    // Keep the active-note pointer target in sync as the focused leaf/file changes.
     this.registerEvent(
       this.app.workspace.on("active-leaf-change", (leaf) => {
         this.syncActiveNote();

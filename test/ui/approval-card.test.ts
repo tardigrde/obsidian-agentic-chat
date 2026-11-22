@@ -183,6 +183,13 @@ describe("ApprovalCard decisions", () => {
     expect($(".agentic-chat-approval-outcome")?.textContent).toBe("Allowed: always for write");
   });
 
+  it("a web download never offers Always allow (it has no settings row to revoke it)", async () => {
+    ask(fakeApp(), { toolName: "download_file", args: { url: "https://example.com/a.pdf", path: "a.pdf" } });
+    await settle();
+    expect($('[data-ac="approval-always"]')).toBeNull();
+    expect(button("Allow")).toBeDefined();
+  });
+
   it("Enter allows; Esc arms the deny, and Enter in the reason confirms it with the reason", async () => {
     const allowed = ask(fakeApp(), { toolName: "write", args: { path: "a.md", content: "" } });
     key(allowed.el, "Enter");

@@ -53,7 +53,7 @@ describe("tool schema token ceiling", () => {
     const tokens = estimateToolDefinitionTokens(parentTools(false));
     // 16 always-loaded tools with web access on, measured at 3.5 chars/token (about
     // 2284 on 2026-11-16 for 15 tools, down from 2663 for the 20 tools before tool
-    // consolidation). download_file (U7 #10) adds about 150 tokens, and only while
+    // consolidation). download_file (U7 #10) adds about 115 tokens, and only while
     // web access is on. This ceiling guards against prose creeping back into descriptions.
     expect(tokens).toBeLessThan(2500);
   });

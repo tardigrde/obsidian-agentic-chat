@@ -2015,6 +2015,14 @@ body.is-mobile,
   white-space: nowrap;
 }
 
+.agentic-chat-chip-tag {
+  flex-shrink: 0;
+  color: var(--ac-text-faint);
+  font-size: var(--ac-font-tiny);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
 .agentic-chat-chip-icon,
 .agentic-chat-chip-remove {
   flex: 0 0 auto;

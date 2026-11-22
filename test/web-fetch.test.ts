@@ -396,10 +396,17 @@ describe("fetch_url tool", () => {
     const tool = createWebFetchTool({
       fetcher: stubFetcher({ text: "%PDF-1.4 binary", headers: { "content-type": "application/pdf" } }),
       charLimit: 10_000,
+      downloadHint: true,
     });
     const { text } = await run(tool, { url: "https://example.com/paper.pdf" });
     expect(text).toContain("download_file");
     expect(text).toContain("import_document");
+    // A child agent has no download_file: it gets no hint to a tool it cannot call.
+    const child = createWebFetchTool({
+      fetcher: stubFetcher({ text: "%PDF-1.4 binary", headers: { "content-type": "application/pdf" } }),
+      charLimit: 10_000,
+    });
+    expect((await run(child, { url: "https://example.com/paper.pdf" })).text).not.toContain("download_file");
   });
 
   it("clips an oversized page before extracting and flags truncation", async () => {

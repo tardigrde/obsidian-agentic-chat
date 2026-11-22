@@ -304,7 +304,7 @@ export class ChatComposer {
   /** The focused note when it is private: shown as a chip, never sent (U4 #11). */
   private privateNotePath: string | null = null;
 
-  /** The active note auto-attached this turn, or null (suppressed / none / already explicit). */
+  /** The active note the pointer names this turn, or null (none / already explicit / instruction file). */
   effectiveActiveNote(): string | null {
     const active = computeEffectiveActiveNote(this.activeNoteState());
     return active && isInstructionFilePath(active) ? null : active;

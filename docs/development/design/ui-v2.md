@@ -81,7 +81,7 @@ With `prefers-reduced-motion`, spinners and pulses are static.
 ├───────────────────────────────────────────┤
 │ ◌ Waiting for your approval               │  status line (only with news)
 │ ╭───────────────────────────────────────╮ │
-│ │ (▢ Active note ×)                     │ │  chips
+│ │ (attached files, if any)              │ │  chips
 │ │ Ask about your vault…                 │ │  textarea (1-8 lines)
 │ │ ⌀ model · effort     ◔ 38%  ⛉Safe  ●  │ │  toolbar · send/stop
 │ ╰───────────────────────────────────────╯ │

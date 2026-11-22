@@ -75,13 +75,16 @@ export interface ActiveNotePointer {
  * The pointer section. It starts with `Active note "<path>"` so the context
  * escaping and dedupe keep treating it like any other section. It carries no
  * line counts or properties: those change on every edit and the model gets them
- * on demand from `vault_inspect`.
+ * on demand from `vault_inspect`. A short selection adds its text, so the pointer
+ * is a few dozen tokens, plus at most 2,000 characters when text is selected.
  */
 export function buildActiveNotePointer(pointer: ActiveNotePointer): string {
   const lines = [
     `Active note "${pointer.path}" (a pointer as of this message; its text is not attached. Use read with startLine/endLine or vault_inspect to open what you need).`,
   ];
-  const selection = pointer.selection?.trim() ?? "";
+  // A blank-line rule in the selection would look like the section separator and
+  // cut the held pointer short when the dedupe reads it back.
+  const selection = (pointer.selection?.trim() ?? "").replaceAll("\n\n---\n\n", "\n\n\\---\n\n");
   if (selection) {
     lines.push(
       selection.length <= MAX_POINTER_SELECTION_CHARS

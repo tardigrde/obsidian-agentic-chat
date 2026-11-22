@@ -34,6 +34,7 @@ const VAULT_PATH_TOOLS: ReadonlySet<string> = new Set([
   "set_properties",
   "vault_inspect",
   "import_document",
+  "download_file",
 ]);
 
 /** A pending tool call the user must approve. */

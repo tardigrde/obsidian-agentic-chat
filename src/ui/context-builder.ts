@@ -1,4 +1,4 @@
-import { MarkdownView, TFile, TFolder, type App } from "obsidian";
+import { TFile, TFolder, type App } from "obsidian";
 import type { ImageContent } from "@earendil-works/pi-ai";
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import { isInstructionFilePath } from "../agent/instructions";
@@ -11,6 +11,7 @@ import { arrayBufferToBase64, imageMimeType, isImagePath } from "./image-attachm
 import { extractNoteSlice } from "./note-slices";
 import { stripPromptPreamble } from "../session/session-title";
 import { isSummaryMessage } from "../agent/compaction";
+import { selectionForPath } from "../vault/editor-for-path";
 
 export interface PromptContextOptions {
   app: App;
@@ -42,13 +43,16 @@ export interface ImageAttachmentOptions {
  * the next message does not send the same note again before it lands.
  */
 export function sentUserText(messages: readonly AgentMessage[], pending: readonly string[] = []): string {
-  const parts: string[] = [...pending];
+  const parts: string[] = [];
   for (const message of messages) {
     if (message.role !== "user" || isSummaryMessage(message)) continue;
     const content = message.content;
     if (typeof content === "string") parts.push(content);
     else for (const part of content) if (part.type === "text") parts.push(part.text);
   }
+  // Queued steers are newer than every delivered message, so they go last: the
+  // active-note pointer reads "latest" as the last one in this text.
+  parts.push(...pending);
   return parts.join("\n");
 }
 
@@ -182,16 +186,14 @@ function openNotePaths(app: App, activePath: string, isIgnored: (path: string) =
     const view = leaf.view as { file?: { path?: string; extension?: string } | null };
     const file = view?.file;
     if (!file?.path || file.extension?.toLowerCase() !== "md") return;
-    if (file.path === activePath || isIgnored(file.path) || paths.includes(file.path)) return;
+    if (file.path === activePath || isIgnored(file.path) || isInstructionFilePath(file.path) || paths.includes(file.path)) return;
     paths.push(file.path);
   });
   return paths.slice(0, MAX_OPEN_NOTES);
 }
 
 function activeSelection(app: App, path: string): string {
-  const view = app.workspace.getActiveViewOfType?.(MarkdownView);
-  if (!view || view.file?.path !== path || !view.editor) return "";
-  return view.editor.getSelection?.() ?? "";
+  return selectionForPath(app, path);
 }
 
 /**
@@ -251,24 +253,4 @@ export function assemblePrompt(context: string, request: string): string {
 /** Strip attachment `<context>...</context>` preamble and optional focus hint for display/retry. */
 export function stripContextPreamble(text: string): string {
   return stripPromptPreamble(text);
-}
-
-/**
- * Best-effort slice of the active editor's visible range: a window of lines
- * around the cursor in the matching MarkdownView. Mobile-safe: public Editor API
- * only, and null when there is no editor open on this file.
- */
-export function visibleEditorRange(app: App, file: TFile): string | null {
-  const view = app.workspace.getActiveViewOfType(MarkdownView);
-  if (!view || view.file?.path !== file.path || !view.editor) return null;
-  const editor = view.editor;
-  const total = editor.lineCount();
-  if (total === 0) return null;
-  const cursor = editor.getCursor();
-  const half = 120;
-  const from = Math.max(0, cursor.line - half);
-  const to = Math.min(total - 1, cursor.line + half);
-  const lineText = editor.getLine(to);
-  const text = editor.getRange({ line: from, ch: 0 }, { line: to, ch: lineText ? lineText.length : 0 });
-  return text.trim() ? text : null;
 }
