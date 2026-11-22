@@ -2,7 +2,7 @@
 
 ## Process
 
-Five skills carry the process. They live in `.agents/skills/` (`.claude/skills`
+Six skills carry the process. They live in `.agents/skills/` (`.claude/skills`
 links there), so Claude Code, OpenCode, Codex, and other agents that read that
 convention get the same workflow.
 

@@ -25,31 +25,30 @@ non-obvious assertion protects is a decision record.
 
 ## Inventory
 
-4,775 comments were reviewed, including 84 functional directives.
+4,691 comments were classified. Another 84 are functional directives and were
+preserved without classification.
 
 | Area | Comments | Tautology | Excuse | Stale | Decision record |
 |---|---:|---:|---:|---:|---:|
-| `src/agent`, `src/llm`, `src/session`, `src/privacy` | 783 | 47 | 3 | 6 | 727 |
-| `src/ui` | 803 | 17 | 3 | 1 | 782 |
-| rest of `src/` | 1,208 | 15 | 4 | 2 | 1,187 |
-| `test/*.test.ts` | 660 | 18 | 3 | 0 | 639 |
-| `test/ui`, `test/e2e` | 575 | 10 | 0 | 2 | 563 |
-| `scripts/` | 746 | 6 | 2 | 4 | 734 |
-| **Total** | **4,775** | **113** | **15** | **15** | **4,632** |
+| `src/agent`, `src/llm`, `src/session`, `src/privacy` | 780 | 47 | 3 | 6 | 724 |
+| `src/ui` | 802 | 17 | 3 | 1 | 781 |
+| rest of `src/` | 1,202 | 15 | 4 | 2 | 1,181 |
+| `test/*.test.ts` | 658 | 18 | 3 | 0 | 637 |
+| `test/ui`, `test/e2e` | 573 | 10 | 0 | 2 | 561 |
+| `scripts/` | 676 | 6 | 2 | 4 | 664 |
+| **Total** | **4,691** | **113** | **15** | **15** | **4,548** |
 
 Most comments in this repository are decision records. That is the main finding:
 a blind deletion would remove the only record of non-obvious ordering, privacy,
 protocol, and persistence choices. The cleanup therefore deletes the noise and
-keeps local invariants, while the cross-cutting decisions move to ADRs.
+keeps local invariants, while the cross-cutting decisions move to ADRs.## This pass
 
-## This pass
-
-- 156 comments deleted or collapsed (4,691 → 4,535). 134 came from the audit
+- 154 comments deleted or collapsed (4,691 → 4,537). 134 came from the audit
   delete list; the rest were multi-line stale comments collapsed to one
   accurate line or removed.
 - 73 modified code files: `+49 / -231` lines. The new lint/skill/test files add
   351 lines; they are not part of the comment deletion.
-- The ratchet baseline is updated to 4,535.
+- The ratchet baseline is updated to 4,537.
 - 9 ADRs added (0007–0015); the index is [docs/adr](../adr/index.md).
 - 22 follow-up shortcuts are listed in
   [comment-cleanup-hacks.md](comment-cleanup-hacks.md).
@@ -65,10 +64,10 @@ Kept on purpose:
 
 ## If every comment were deleted
 
-The remaining 4,535 non-functional comments occupy **8,420 physical lines**
+The remaining 4,537 non-functional comments occupy **8,422 physical lines**
 (2,366 JSDoc, 2,169 line comments). Deleting every one would shed:
 
-- **8,420 lines** of comment text, before blank-line cleanup;
+- **8,422 lines** of comment text, before blank-line cleanup;
 - roughly **9,300–9,500 lines** after collapsing the blank lines that separate
   comment blocks from code.
 
@@ -81,7 +80,7 @@ unreviewable diff.
 
 - Extraction and counts: `npm run lint:comments -- --list`.
 - Budget comparison: `npm run lint:comments -- --json`.
-- The audit's per-area JSON is attached to the cleanup PR, not committed: it is
-  a review artifact, not a second source of truth.
+- The per-area audit JSON was the review input, not a committed second source of
+  truth. `npm run lint:comments -- --list` reproduces the current counts.
 - Test counts and lane verdict: `logs/verify/<ts>/summary.json` from the PR's
   `verify -- check` run.
