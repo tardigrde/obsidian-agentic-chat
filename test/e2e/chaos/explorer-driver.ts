@@ -624,6 +624,7 @@ async function perform(
                 return name;
               }
             } catch {
+              // Try the next window API.
             }
           }
           return "";
