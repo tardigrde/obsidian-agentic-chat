@@ -2991,20 +2991,27 @@ body.is-mobile,
   gap: var(--ac-space-0);
 }
 
-/* Mobile sign-in notice: a tidy button row with room between the two buttons. */
+/* Mobile sign-in notice. A notice sits outside .agentic-chat-view, so it maps the
+   Obsidian values it needs into --ac-* tokens itself. */
 .agentic-chat-signin-actions {
+  --ac-space-3: var(--size-4-3);
+  --ac-space-4: var(--size-4-4);
+  --ac-radius-m: var(--radius-m);
+  --ac-accent: var(--interactive-accent);
+  --ac-text-on-accent: var(--text-on-accent);
+  --ac-hit: 44px;
   display: flex;
-  gap: var(--size-4-3);
-  margin-top: var(--size-4-3);
+  gap: var(--ac-space-3);
+  margin-top: var(--ac-space-3);
 }
 .agentic-chat-signin-actions a.agentic-chat-signin-open {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-height: 44px;
-  padding: 0 var(--size-4-4);
-  border-radius: var(--radius-m);
-  background: var(--interactive-accent);
-  color: var(--text-on-accent);
+  min-height: var(--ac-hit);
+  padding: 0 var(--ac-space-4);
+  border-radius: var(--ac-radius-m);
+  background: var(--ac-accent);
+  color: var(--ac-text-on-accent);
   text-decoration: none;
 }
