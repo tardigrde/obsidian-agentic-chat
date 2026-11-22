@@ -142,7 +142,7 @@
     "tsx": "^4.23.15",
     "typescript": "^5.5.4",
     "typescript-7": "npm:typescript@7.0.2",
-    "typescript-eslint": "^8.72.2",
+    "typescript-eslint": "^8.73.0",
     "undici": "^8.12.4",
     "vitepress": "^1.6.4",
     "vitest": "^5.1.0",
