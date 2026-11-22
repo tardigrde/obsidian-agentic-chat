@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-/* eslint-disable no-console -- CLI prints the check summary and every error. */
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import path from "node:path";
 import process from "node:process";

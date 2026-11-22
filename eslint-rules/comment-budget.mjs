@@ -1,6 +1,6 @@
 import path from "node:path";
 import process from "node:process";
-import { isCodeFile, isFunctionalComment, readBaseline, relativePath } from "../scripts/lib/comments.mjs";
+import { isCodeFile, readBaseline, relativePath, scanComments } from "../scripts/lib/comments.mjs";
 
 let cachedBaseline;
 
@@ -30,13 +30,11 @@ const rule = {
     const budget = budgetFor(file);
     return {
       "Program:exit"() {
-        const comments = context.sourceCode
-          .getAllComments()
-          .filter((comment) => !isFunctionalComment(context.sourceCode.getText(comment)));
+        const comments = scanComments(context.sourceCode.text, file);
         if (comments.length <= budget) return;
         const firstNew = comments[Math.min(budget, comments.length - 1)];
         context.report({
-          loc: firstNew.loc,
+          loc: { line: firstNew.line, column: 1 },
           messageId: "overBudget",
           data: { current: comments.length, budget },
         });

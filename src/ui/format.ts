@@ -130,6 +130,7 @@ export function callPath(rawArgs: string): string {
     if (typeof parsed.path === "string") return parsed.path;
     if (typeof parsed.newPath === "string") return parsed.newPath;
   } catch {
+    // Malformed JSON: no path.
   }
   return "";
 }
