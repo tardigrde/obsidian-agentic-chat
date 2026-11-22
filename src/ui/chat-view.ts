@@ -420,6 +420,30 @@ export class ChatView extends ItemView {
     });
     this.registerDomEvent(this.contentEl, "focusin", () => window.setTimeout(update, 300));
     update();
+    // TEST BUILD ONLY: on-screen readout of what the phone reports, for a screenshot.
+    const debug = this.contentEl.createEl("pre");
+    debug.setAttribute(
+      "style",
+      "position:fixed;top:60px;left:4px;right:4px;z-index:9999;margin:0;padding:4px;font-size:11px;line-height:1.2;background:rgba(0,0,0,.85);color:#0f0;pointer-events:none;white-space:pre-wrap",
+    );
+    const show = () => {
+      const root = getComputedStyle(document.documentElement);
+      const drawer = this.contentEl.closest(".workspace-drawer");
+      const composer = this.contentEl.querySelector<HTMLElement>("textarea, [contenteditable]");
+      const r = (el: Element | null | undefined) => (el ? `${Math.round(el.getBoundingClientRect().top)}..${Math.round(el.getBoundingClientRect().bottom)}` : "none");
+      debug.setText(
+        [
+          `inner ${window.innerWidth}x${window.innerHeight} vv ${Math.round(viewport.width)}x${Math.round(viewport.height)} off ${Math.round(viewport.offsetTop)}`,
+          `--keyboard-height ${root.getPropertyValue("--keyboard-height") || "unset"}`,
+          `--view-bottom-spacing ${getComputedStyle(this.contentEl).getPropertyValue("--view-bottom-spacing") || "unset"}`,
+          `overlap ${this.contentEl.style.getPropertyValue("--ac-keyboard-overlap")}`,
+          `safe-bottom ${getComputedStyle(this.contentEl).getPropertyValue("--ac-safe-bottom")}`,
+          `body ${r(document.body)} drawer ${r(drawer)} view ${r(this.contentEl)} input ${r(composer)}`,
+          `app ${r(document.querySelector(".app-container"))} classes ${document.body.className.split(" ").filter((c) => /phone|mobile|hidden|keyboard/.test(c)).join(",")}`,
+        ].join("\n"),
+      );
+    };
+    this.registerInterval(window.setInterval(() => { update(); show(); }, 500));
   }
 
   async onOpen(): Promise<void> {
