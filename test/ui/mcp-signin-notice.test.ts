@@ -1,21 +1,35 @@
-import { describe, expect, it, vi } from "vitest";
-import { Notice } from "obsidian";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { Notice, Platform } from "obsidian";
 import { createMcpServerSettings } from "../../src/mcp/settings";
-import { endMcpOAuthProgress, handleMcpOAuthProgress, showMobileSignInButtons } from "../../src/settings-mcp-section";
+import { endMcpOAuthProgress, handleMcpOAuthProgress } from "../../src/settings-mcp-section";
 
 describe("mobile OAuth sign-in notice", () => {
   const url = "https://auth.example.com/authorize?state=abc";
+  const server = createMcpServerSettings({ id: "docs", name: "docs", url: "https://mcp.example.com/mcp" });
+  const platform = Platform as { isMobileApp: boolean };
+  const wasMobile = platform.isMobileApp;
 
-  function showButtons() {
+  afterEach(() => {
+    endMcpOAuthProgress(server);
+    platform.isMobileApp = wasMobile;
+    vi.restoreAllMocks();
+  });
+
+  /** Run the sign-in stages the way the flow does and return what the notice shows last. */
+  function runSignIn(stages: Array<"authorization-url" | "browser-open" | "callback-wait">) {
     const setMessage = vi.spyOn(Notice.prototype, "setMessage");
-    const server = createMcpServerSettings({ id: "docs", name: "docs", url: "https://mcp.example.com/mcp" });
-    showMobileSignInButtons(server, url);
-    const fragment = setMessage.mock.calls.at(-1)?.[0] as unknown as DocumentFragment;
-    return { server, fragment, setMessage };
+    handleMcpOAuthProgress(server, { stage: "discovery", message: "Discovering OAuth metadata for docs." });
+    for (const stage of stages) {
+      handleMcpOAuthProgress(server, { stage, message: `stage ${stage}`, detail: stage === "authorization-url" ? url : undefined });
+    }
+    return setMessage.mock.calls.at(-1)?.[0] as unknown;
   }
 
   it("shows a real link to the sign-in page and a Copy button, in one button row", () => {
-    const { server, fragment, setMessage } = showButtons();
+    platform.isMobileApp = true;
+    const last = runSignIn(["authorization-url"]);
+    expect(typeof last).toBe("object");
+    const fragment = last as DocumentFragment;
     const row = fragment.querySelector(".agentic-chat-signin-actions");
     expect(row).not.toBeNull();
     const link = row?.querySelector<HTMLAnchorElement>("a.agentic-chat-signin-open");
@@ -23,21 +37,18 @@ describe("mobile OAuth sign-in notice", () => {
     expect(link?.getAttribute("target")).toBe("_blank");
     expect(link?.textContent).toBe("Open sign-in page");
     expect(row?.querySelector("button")?.textContent).toBe("Copy link");
-    endMcpOAuthProgress(server);
-    setMessage.mockRestore();
   });
 
   it("keeps the buttons when later progress stages arrive", () => {
-    const { server, setMessage } = showButtons();
-    const before = setMessage.mock.calls.length;
-    handleMcpOAuthProgress(server, { stage: "callback-wait", message: "Waiting for docs OAuth browser callback." });
-    expect(setMessage.mock.calls.length).toBe(before);
-    endMcpOAuthProgress(server);
-    // After the flow ends, a new sign-in can show progress again.
-    handleMcpOAuthProgress(server, { stage: "discovery", message: "Discovering OAuth metadata for docs." });
-    handleMcpOAuthProgress(server, { stage: "registration", message: "Preparing OAuth client for docs." });
-    expect(setMessage.mock.calls.length).toBe(before + 1);
-    endMcpOAuthProgress(server);
-    setMessage.mockRestore();
+    platform.isMobileApp = true;
+    const last = runSignIn(["authorization-url", "browser-open", "callback-wait"]);
+    expect(typeof last).toBe("object");
+    expect((last as DocumentFragment).querySelector("a.agentic-chat-signin-open")).not.toBeNull();
+  });
+
+  it("does not show the buttons on desktop", () => {
+    platform.isMobileApp = false;
+    const last = runSignIn(["authorization-url", "browser-open"]);
+    expect(typeof last).toBe("string");
   });
 });

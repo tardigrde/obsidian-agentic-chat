@@ -724,7 +724,8 @@ export class McpSettingsSection {
       fetcher: createMcpFetcher(this.effectiveMcpProxySettings()),
       createCallbackReceiver: () =>
         Platform.isMobileApp ? this.host.plugin.createMcpOAuthCallbackReceiver() : undefined,
-      openUrl: Platform.isMobileApp ? (url: string) => showMobileSignInButtons(server, url) : undefined,
+      // Mobile: the sign-in notice (shown at the authorization-url stage) has the tap target; no auto-open.
+      openUrl: Platform.isMobileApp ? () => undefined : undefined,
       onProgress: (event: McpOAuthProgressEvent) => handleMcpOAuthProgress(server, event),
     };
   }
@@ -814,7 +815,7 @@ function showMcpOAuthProgress(server: McpServerSettings, message: string): void 
  * flow cannot open the browser itself. Show a notice with a real tap target instead; the
  * flow keeps waiting for the obsidian:// callback.
  */
-export function showMobileSignInButtons(server: McpServerSettings, url: string): void {
+function showMobileSignInButtons(server: McpServerSettings, url: string): void {
   oauthProgressNotices.get(server.id)?.hide();
   const notice = new Notice("", 0);
   oauthProgressNotices.set(server.id, notice);
@@ -846,6 +847,10 @@ export function endMcpOAuthProgress(server: McpServerSettings): void {
 export function handleMcpOAuthProgress(server: McpServerSettings, event: McpOAuthProgressEvent): void {
   if (event.stage === "authorization-url") {
     const authorizationUrl = event.detail ?? "";
+    if (Platform.isMobileApp && authorizationUrl) {
+      showMobileSignInButtons(server, authorizationUrl);
+      return;
+    }
     console.warn(
       `Agentic Chat MCP OAuth: authorization URL for ${server.name}; copy this into a browser if no tab opens: ${authorizationUrl}`,
     );
