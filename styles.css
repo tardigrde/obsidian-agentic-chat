@@ -2443,7 +2443,7 @@ body.is-mobile,
 
 /* Nothing typed yet: the send button rests muted, as in the design. It still
    works (an image-only message is valid); it only stops shouting. */
-.agentic-chat-field:has(.agentic-chat-input:placeholder-shown) .agentic-chat-send[data-ac-state="send"] {
+.agentic-chat-send[data-ac-state="send"].is-empty {
   background-color: var(--ac-surface-raised);
   color: var(--ac-text-faint);
 }

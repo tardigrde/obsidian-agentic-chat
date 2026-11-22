@@ -27,6 +27,13 @@ describe("css token rule", () => {
     expect(errors.filter((error) => error.includes("border:"))).toHaveLength(2);
   });
 
+  it("fails on a :has() selector (the community-plugin scan warns on it)", () => {
+    const errors = checkCssTokens(`.a:has(.b:placeholder-shown) .c { opacity: 0.5; }`);
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toMatch(/:has selector/);
+    expect(checkCssTokens(`.a.is-empty .c { opacity: 0.5; }`)).toEqual([]);
+  });
+
   it("allows raw values in --ac-* declarations, in media queries, and inside comments", () => {
     expect(
       checkCssTokens(`

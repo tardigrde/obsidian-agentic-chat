@@ -261,11 +261,12 @@ export class TabStrip {
     tabEl.addClass("is-editing");
     tabEl.removeClass("is-overflow");
     const current = this.tabs[index]?.label ?? "";
-    const input = tabEl.ownerDocument.createElement("input");
-    input.className = "agentic-chat-tab-input";
-    input.type = "text";
-    input.value = current;
-    input.placeholder = `Tab ${index + 1}`;
+    const input = tabEl.createEl("input", {
+      cls: "agentic-chat-tab-input",
+      type: "text",
+      value: current,
+      placeholder: `Tab ${index + 1}`,
+    });
     input.maxLength = 32;
     input.setAttribute("aria-label", `Name tab ${index + 1}`);
     acHook(input, "tab-input");
