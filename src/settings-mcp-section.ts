@@ -814,7 +814,7 @@ function showMcpOAuthProgress(server: McpServerSettings, message: string): void 
  * flow cannot open the browser itself. Show a notice with a real tap target instead; the
  * flow keeps waiting for the obsidian:// callback.
  */
-function showMobileSignInButtons(server: McpServerSettings, url: string): void {
+export function showMobileSignInButtons(server: McpServerSettings, url: string): void {
   oauthProgressNotices.get(server.id)?.hide();
   const notice = new Notice("", 0);
   oauthProgressNotices.set(server.id, notice);

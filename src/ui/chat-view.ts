@@ -8,6 +8,7 @@ import {
   type WorkspaceLeaf,
   setIcon,
 } from "obsidian";
+import { keyboardOverlap } from "./keyboard-overlap";
 import type { AgentEvent, AgentMessage } from "@earendil-works/pi-agent-core";
 import type { ImageContent } from "@earendil-works/pi-ai";
 import type AgenticChatPlugin from "../main";
@@ -412,7 +413,7 @@ export class ChatView extends ItemView {
     const update = () => {
       const app = doc.querySelector(".app-container");
       const appBottom = app ? app.getBoundingClientRect().bottom : Number.POSITIVE_INFINITY;
-      const overlap = Math.max(0, Math.round(this.contentEl.getBoundingClientRect().bottom - appBottom));
+      const overlap = keyboardOverlap(this.contentEl.getBoundingClientRect().bottom, appBottom);
       this.contentEl.style.setProperty("--ac-keyboard-overlap", `${overlap}px`);
     };
     const app = doc.querySelector(".app-container");
