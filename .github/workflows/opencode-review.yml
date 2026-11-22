@@ -7,8 +7,9 @@ name: OpenCode review
 # or Obsidian run happens here. The ci and e2e jobs do that.
 #
 # Secret: OPENCODE_API_KEY (OpenCode Go key). Fork, draft, and bot PRs are
-# skipped. The prompt file is read from the base commit, so a PR cannot change
-# its own review instructions.
+# skipped. This is the one model call CI allows (trust.md rule 4): advisory,
+# not a gate, never a test. The prompt file is read from the base commit, so a
+# PR cannot change its own review instructions.
 
 on:
   pull_request:
@@ -23,7 +24,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  review:
+  # Not `review`: that name is the Review report job (review.yml).
+  opencode-review:
     if: >
       github.event.pull_request.head.repo.full_name == github.repository &&
       github.event.pull_request.draft == false &&
@@ -43,7 +45,7 @@ jobs:
           node-version: "24"
 
       - name: OpenCode review (advisory)
-        uses: tardigrde/opencode-pr-review@862a3e08149841aa3f9c692b1ed7325e051c2b3b # v1
+        uses: tardigrde/opencode-pr-review@862a3e08149841aa3f9c692b1ed7325e051c2b3b # v1.1.0
         with:
           model: opencode-go/deepseek-v4.1-flash
           opencode-api-key: ${{ secrets.OPENCODE_API_KEY }}

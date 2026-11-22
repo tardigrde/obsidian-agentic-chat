@@ -18,7 +18,8 @@ npm run verify -- check --no-app   # only when CI did not run at this head
 
 ## What a reviewer runs
 
-Run only lint, typecheck, unit tests, and the witness on a unit test. Do not run
+Run only `check --no-app` (lint, typecheck, unit tests, build), `npx vitest`,
+and the witness on a unit test. Do not run
 anything that starts Obsidian or calls a model: no `verify -- app`, e2e, dogfood,
 `eval`, `explore`, or `check` without `--no-app`. The `e2e` CI job is the proof
 for the real-app tier. When the witness is an e2e spec, cite the author's red and

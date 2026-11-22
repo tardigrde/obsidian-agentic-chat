@@ -26,7 +26,9 @@ Look for these problems first:
   and private rules must stay out of model context.
 - Mobile: Node built-ins (`fs`, `path`, `http`, `net`, `child_process`,
   `Buffer`, `require`) in `src/` break Obsidian mobile. Use the Obsidian API
-  (`app.vault`, `requestUrl`) instead.
+  (`app.vault`, `requestUrl`) instead. The exception is the desktop-only files
+  in the allowlist of `scripts/verify-mobile-compat.mjs` (for example
+  `src/mcp/fetcher.ts` and `src/platform/node-runtime.ts`).
 - Obsidian API misuse: `innerHTML` or `outerHTML` with dynamic text, event
   listeners or intervals not registered for cleanup on unload, direct DOM
   styling where a CSS class exists, and vault writes outside `app.vault` or
@@ -34,13 +36,14 @@ Look for these problems first:
 - Tests: a test that mirrors the implementation, mocks the subject under test,
   or cannot fail. An `it.skip` that is not `it.skip("flaky #<issue>: ...")`. A
   new test file that is not listed in `test/manifest.json`.
-- CI and scripts: a workflow or script that calls a live model, prints a
-  secret, or makes a gate pass without running its checks.
+- CI and scripts: a gate or test that calls a live model, a workflow or
+  script that prints a secret, or a gate that passes without running its
+  checks. The advisory `OpenCode review` job is the one allowed model call.
 - Committed vault plugin data (`data.json`, `sessions/`), `.env` files, or
   generated sessions.
 
 Ignore:
 
-- Style, formatting, naming, and import order. ESLint and Prettier handle them.
+- Style, formatting, naming, and import order. ESLint handles them.
 - Missing docs or comments, unless a doc now states something false.
 - Files under `docs/`, unless the text gives a wrong command or a wrong path.

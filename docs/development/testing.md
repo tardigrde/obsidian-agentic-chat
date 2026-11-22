@@ -68,7 +68,7 @@ run headed lanes on a nested display: `npm run nested -- npm run verify -- app s
 ## Rules
 
 The eight rules are in [trust.md](trust.md#the-eight-rules): merge only on
-"merge", cite the summary and counts, never green by skipping, no model in CI,
+"merge", cite the summary and counts, never green by skipping, no model in CI (except the advisory OpenCode review),
 never scripted as live, no retries, no `no-behavior-change` for a behavior
 change, every test file in the manifest. `check` enforces the skip rule and the
 manifest.
