@@ -236,6 +236,8 @@ export class ChatChrome {
       setIcon(sendButton, state.icon);
     }
     sendButton.disabled = !state.enabled;
+    // Muted look for an empty draft (a class, because the scan rejects CSS :has).
+    sendButton.toggleClass("is-empty", state.action === "send" && !this.deps.elements.composerInput()?.value.trim());
     // One round button: Stop takes the send button's place while the draft is empty.
     const stopButton = this.deps.elements.stopButton();
     if (state.action === "stop") {

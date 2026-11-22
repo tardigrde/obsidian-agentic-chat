@@ -65,6 +65,16 @@ export default defineConfig([
       // Product UI copy intentionally keeps brand/API casing such as OpenRouter,
       // MCP, OAuth, and URL examples; sentence-case cleanup is a separate UX pass.
       "obsidianmd/ui/sentence-case": "off",
+      // The community-plugin scan flags any `x.createElement(tag)`, including
+      // `el.ownerDocument.createElement`, which the plugin rule above misses.
+      // Use `parent.createEl(tag, {...})` (or createDiv/createSpan).
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector: "CallExpression[callee.property.name=/^(createElement|createElementNS)$/]",
+          message: "Use Obsidian's createEl/createDiv/createSpan/createSvg helpers (scan rule obsidianmd/prefer-create-el).",
+        },
+      ],
     },
   },
 ]);

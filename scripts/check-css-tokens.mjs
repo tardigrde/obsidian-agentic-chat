@@ -19,6 +19,8 @@ import { pathToFileURL } from "node:url";
  *   - any `var()` that is not an `--ac-*` token (an Obsidian theme variable
  *     belongs in the token layer)
  *
+ * A selector may not use `:has()`: the community-plugin scan warns on it.
+ *
  * Media and container query preludes may use `px` (CSS variables do not work
  * there). The allowlist is empty and stays empty: fix the rule, not the list.
  */
@@ -108,6 +110,8 @@ export function checkCssTokens(css, file = "styles.css") {
     if (property.startsWith("--ac-")) continue;
     const where = `${file}:${line} ${selector.replace(/\s+/g, " ")} { ${property}: ${value} }`;
     if (ALLOWLIST.includes(where)) continue;
+    // The community-plugin scan rejects :has (broad selector invalidation).
+    if (/:has\(/.test(selector)) errors.push(`${where}: :has selector; toggle a class in code instead`);
     if (RAW_COLOUR.test(value)) errors.push(`${where}: raw colour; use an --ac-* token`);
     if (PX.test(value)) errors.push(`${where}: px length; use an --ac-* token`);
     if (NON_TOKEN_VARIABLE.test(value)) errors.push(`${where}: Obsidian variable; map it in the --ac-* layer`);
