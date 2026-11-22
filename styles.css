@@ -148,14 +148,8 @@ body:not(.is-phone) .agentic-chat-view {
   --ac-safe-bottom: max(var(--safe-area-inset-bottom, 0px), var(--size-4-8));
 }
 
-/* The sidebar drawer does not shrink when the keyboard opens, so the chat stayed
-   full height and the composer drew under the keyboard (U7 #1). Obsidian keeps
-   --keyboard-height on :root (0 when closed); the composer takes that room and
-   the transcript (flex: 1, min-height: 0) shrinks by the same amount. Scoped to
-   the drawer: in the main area the app container already shrinks. */
-.is-phone .workspace-drawer .agentic-chat-view {
-  --ac-safe-bottom: max(env(safe-area-inset-bottom, 0px), var(--keyboard-height, 0px));
-}
+/* TEST BUILD: the drawer rule that added --keyboard-height is off. On iOS the view
+   already shrinks for the keyboard, so adding the height again left a big gap. */
 
 /* Obsidian hides the navbar while the user scrolls ("auto full screen"). The
    composer takes the freed space back; the class change alone does it. */
