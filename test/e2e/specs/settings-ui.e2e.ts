@@ -12,6 +12,7 @@ import {
   readAgenticChatSettings,
   readSecret,
   readSettingSelect,
+  openMcpAdvancedFolds,
   readSettingsBodyText,
   readSettingText,
   readSettingsTabLabels,
@@ -23,7 +24,6 @@ import {
   setSettingTextByPlaceholder,
   setSettingToggle,
   waitForMcpAddRow,
-  waitForSettingButton,
   waitForAgenticChatSetting,
   waitForSetting,
 } from "../support/settings-ui";
@@ -396,13 +396,15 @@ describe("agentic-chat settings UI", function () {
     await setSettingTextByPlaceholder("Server name", "docs");
     await setSettingTextByPlaceholder("https://mcp.example.com/mcp", "https://docs.example.com/mcp");
     await clickMcpAddButton("Add MCP server");
-    await waitForSetting("Setup guide");
+    await waitForSetting("Approval");
     await setSettingSelect("Approval", "allow");
+    await openMcpAdvancedFolds();
     await setSettingSelect("Authentication", "header");
     await waitForSetting("Auth header");
     await setSettingText("Auth header", "X-E2E-Key");
     await setSettingText("Auth value", "mcp-secret");
-    await waitForSettingButton("Setup guide", "Copy config");
+    // U7 #7: the Setup guide row and Copy config are gone.
+    expect(await readSettingsBodyText()).not.toContain("Copy config");
 
     await waitForAgenticChatSetting((settings) => {
       const snapshot = settings as unknown as SettingsSnapshot;

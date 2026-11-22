@@ -53,14 +53,12 @@ function chrome() {
     send: ui.$<HTMLButtonElement>('[data-ac="send"]')?.getAttribute("data-ac-state") ?? "",
     stop: shown(ui.$(".agentic-chat-stop")),
     working: ui.$(".agentic-chat-status-line")?.classList.contains("is-running") ?? false,
-    // U3 #5: the activity line owns the spinner; the status line never adds a second one.
-    statusSpinner: shown(ui.$(".agentic-chat-working")),
     modeDisabled: ui.$(".agentic-chat-mode-toggle")?.classList.contains("is-disabled") ?? false,
   };
 }
 
-const IDLE = { send: "send", stop: false, working: false, statusSpinner: false, modeDisabled: false };
-const STREAMING = { send: "stop", stop: true, working: true, statusSpinner: false, modeDisabled: true };
+const IDLE = { send: "send", stop: false, working: false, modeDisabled: false };
+const STREAMING = { send: "stop", stop: true, working: true, modeDisabled: true };
 
 async function mount(turns: ReplayTurn[], held?: Gate, settings = {}): Promise<void> {
   ui = await mountChatView({ turns, waitForRelease: held?.wait, settings });
@@ -127,16 +125,19 @@ describe("chat view state machine", () => {
     expect(panel?.style.display).not.toBe("none");
   });
 
-  it("streaming: 'Working…' is real text in the live region (screen readers hear it), gone when idle", async () => {
+  it("streaming: no visible 'Working…' line or spinner; a hidden live-region line still announces the turn (U7 #2)", async () => {
     const held = gate();
     await mount([replayTextTurn("the answer", { hold: true })], held);
     await ui.send("hi");
     const line = ui.$('.agentic-chat-status-line');
     expect(line?.getAttribute("aria-live")).toBe("polite");
-    expect(line?.textContent).toContain("Working…");
+    // Visually hidden text keeps the turn audible to screen readers; no visible line.
+    expect(ui.$(".agentic-chat-status")?.textContent).toBe("");
+    expect(ui.$(".agentic-chat-sr-only")?.textContent).toBe("Working…");
+    expect(ui.$(".agentic-chat-working")).toBeNull();
     held.release();
     await ui.idle();
-    expect(line?.textContent).not.toContain("Working…");
+    expect(ui.$(".agentic-chat-sr-only")?.textContent).toBe("");
   });
 
   it("closing the view with the context breakdown open removes its document listeners", async () => {

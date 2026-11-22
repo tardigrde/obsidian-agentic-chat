@@ -94,7 +94,6 @@ export class ChatView extends ItemView {
   private contextRingEl!: SVGCircleElement;
   private contextPercentEl!: HTMLElement;
   private sessionCostEl!: HTMLElement;
-  private workingEl!: HTMLElement;
   /** A pointer press in this view is being handled; its click decides focus. */
   private pointerActivation = false;
   private closed = true;
@@ -218,7 +217,6 @@ export class ChatView extends ItemView {
         sendButton: () => this.sendButton,
         composerInput: () => this.inputEl,
         stopButton: () => this.stopButton,
-        workingEl: () => this.workingEl,
         statusEl: () => this.statusEl,
       },
       isAnyTabStreaming: () => this.isAnyTabStreaming(),
@@ -729,7 +727,6 @@ export class ChatView extends ItemView {
     this.contextRingEl = layout.contextRingEl;
     this.contextPercentEl = layout.contextPercentEl;
     this.sessionCostEl = layout.sessionCostEl;
-    this.workingEl = layout.workingEl;
   }
 
   /** Keep the queued-prompt chip in step with real typing, but not IME composition. */

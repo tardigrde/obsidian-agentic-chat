@@ -30,7 +30,7 @@ A plugin with only `plugin.json` is also valid. Per section 6.2, a missing compo
 
 The settings UI writes real packages:
 
-- **Advanced tab > MCP tools > Add MCP server**: enter a server name and an HTTPS (or loopback HTTP) endpoint, then click **Add MCP server**. The plugin creates a package with that server's `plugin.json` and `mcp.json`. Configure authentication, approval, and enable state in the same section. The package owns the endpoint and literal headers.
+- **Advanced tab > MCP tools > Add MCP server**: enter a server name and an HTTPS (or loopback HTTP) endpoint, then click **Add MCP server**. The plugin creates a package with that server's `plugin.json` and `mcp.json`. Approval and enable state sit on the server card; authentication, endpoint and tool filters are under its **Advanced** fold. A server in a one-server package can be removed from its card (it asks first). The package owns the endpoint and literal headers.
 - **Advanced tab > Agent plugins > New skill…**: create a single-skill package (`skills/<name>/SKILL.md`) with a template. The `create_skill` tool does the same in chat. It defaults to ask, and YOLO never auto-approves it; a per-tool allow can override the default. It replaces a same-named package only after you confirm. `/undo` cannot revert a created package.
 
 One limitation remains. Generic file tools (`read`, `ls`) fall back to disk when the vault index is stale, for example for dot-folders created outside the session. `edit`, `rename`, and `delete` use the index only. If you edit an installed skill's files, restart Obsidian to re-index first. Skill creation always works through `create_skill` or the wizard.

@@ -10,8 +10,6 @@ import {
   type McpOAuthProgressEvent,
 } from "./mcp/oauth";
 import {
-  exportMcpServerConfig,
-  mcpServerSetupSteps,
   normalizeMcpServerId,
   type McpAuthType,
   type McpServerSettings,
@@ -45,9 +43,11 @@ import {
   mcpAuthProblem,
   mcpEndpointProblem,
   mcpKnownToolLocalName,
+  isSoleServerPackage,
   mcpTestButtonState,
 } from "./settings-mcp-state";
 import type { AgenticChatSettings, NetworkSettings } from "./settings-schema";
+import { confirmWithModal } from "./ui/confirm-modal";
 import { errorMessage } from "./utils/errors";
 
 /** What the MCP section needs from the settings tab that hosts it. */
@@ -65,6 +65,8 @@ export interface McpSettingsHost {
 export class McpSettingsSection {
   private pendingMcpServerName = "";
   private pendingMcpServerUrl = "";
+  /** Servers whose Advanced fold the user opened; it stays open across a redraw. */
+  private readonly openAdvanced = new Set<string>();
 
   constructor(private readonly host: McpSettingsHost) {}
 
@@ -76,6 +78,7 @@ export class McpSettingsSection {
 
   definitions(settings: AgenticChatSettings): SettingDefinitionItem[] {
     const enabled = () => settings.mcp.enabled;
+    const proxyVisible = () => settings.mcp.enabled;
     return [
       warning(
         "⚠",
@@ -86,18 +89,6 @@ export class McpSettingsSection {
         "Enable MCP",
         { type: "toggle", key: "mcp.enabled" },
         "Discover and register tools from configured HTTPS MCP servers.",
-      ),
-      controlDef(
-        "HTTP proxy",
-        { type: "text", key: "mcp.proxyUrl", placeholder: PROXY_URL_EXAMPLE },
-        "Optional MCP-only override. Leave empty to inherit the global network proxy from the Models tab.",
-        { visible: enabled },
-      ),
-      controlDef(
-        "No proxy",
-        { type: "text", key: "mcp.noProxy", placeholder: DEFAULT_PROXY_SETTINGS.noProxy },
-        "Comma-separated hosts/domains that bypass the MCP proxy.",
-        { visible: enabled },
       ),
       block(
         (setting) => {
@@ -175,12 +166,43 @@ export class McpSettingsSection {
             });
             return;
           }
-          renderItemsInto(
-            setting.settingEl,
-            displayServers.flatMap((server) => this.mcpServerDefinitions(settings, server)),
-          );
+          for (const server of displayServers) {
+            const card = setting.settingEl.createDiv({ cls: "agentic-chat-mcp-card" });
+            const { main, advanced } = this.mcpServerDefinitions(settings, server);
+            renderItemsInto(card, main);
+            const fold = card.createEl("details", { cls: "agentic-chat-mcp-advanced" });
+            fold.open = this.openAdvanced.has(server.id);
+            fold.addEventListener("toggle", () => {
+              if (fold.open) this.openAdvanced.add(server.id);
+              else this.openAdvanced.delete(server.id);
+            });
+            fold.createEl("summary", { text: "Advanced" });
+            renderItemsInto(fold, advanced);
+          }
         },
         { name: "MCP servers", visible: enabled },
+      ),
+      // Rare and desktop-only (the proxy needs Node networking), so it sits last:
+      // a first-time user sees the add form, not a proxy question (U7 #6). It stays
+      // visible on a phone: a synced desktop value must stay clearable there.
+      row(
+        "Network (advanced)",
+        (setting) => {
+          setting.setHeading().setDesc("Desktop only. Most people leave these empty.");
+        },
+        { visible: proxyVisible },
+      ),
+      controlDef(
+        "HTTP proxy",
+        { type: "text", key: "mcp.proxyUrl", placeholder: PROXY_URL_EXAMPLE },
+        "Optional MCP-only override. Leave empty to inherit the global network proxy from the Models tab.",
+        { visible: proxyVisible },
+      ),
+      controlDef(
+        "No proxy",
+        { type: "text", key: "mcp.noProxy", placeholder: DEFAULT_PROXY_SETTINGS.noProxy },
+        "Comma-separated hosts/domains that bypass the MCP proxy.",
+        { visible: proxyVisible },
       ),
     ];
   }
@@ -188,9 +210,16 @@ export class McpSettingsSection {
   private mcpServerDefinitions(
     settings: AgenticChatSettings,
     server: McpServerSettings,
-  ): SettingDefinitionItem[] {
+  ): { main: SettingDefinitionItem[]; advanced: SettingDefinitionItem[] } {
     const pluginManaged = server.source === "plugin";
     const items: SettingDefinitionItem[] = [];
+    // A package made by "Add MCP server" holds only this server, so removing it is
+    // safe. A package with skills or other servers is removed from Advanced > Agent
+    // plugins (U7 #5).
+    const loadedPackage = pluginManaged
+      ? this.host.plugin.pluginService.getLoaded().find((plugin) => plugin.rootPath === server.pluginRoot)
+      : undefined;
+    const soleServerPackage = isSoleServerPackage(loadedPackage);
 
     items.push(
       row(server.name || server.id, (setting) => {
@@ -253,19 +282,46 @@ export class McpSettingsSection {
           );
         }
 
-        setting.addButton((button) =>
-          button
-            .setButtonText("Remove")
-            .setClass("mod-warning")
-            .setDisabled(pluginManaged)
-            .onClick(async () => {
-              clearMcpPerToolApprovals(settings.approval, server.id);
-              clearMcpSecretSlots(this.host.app, server);
-              settings.mcp.servers = settings.mcp.servers.filter((entry) => entry !== server);
-              await this.host.save();
-              this.host.redraw();
-            }),
-        );
+        // A shared package gets no Remove button (a disabled one looked broken); the
+        // note below says where to remove it.
+        if (!pluginManaged || soleServerPackage) {
+          setting.addButton((button) =>
+            button
+              .setButtonText("Remove")
+              .setClass("mod-warning")
+              .onClick(async () => {
+                if (pluginManaged && loadedPackage) {
+                  const confirmed = await confirmWithModal(this.host.app, {
+                    title: `Remove ${server.name || server.id}?`,
+                    message:
+                      `This deletes the "${loadedPackage.rootPath}" package folder, the server, its per-tool approvals ` +
+                      "and its saved sign-in. It cannot be undone. Your notes stay.",
+                    confirmText: "Remove",
+                    destructive: true,
+                  });
+                  if (!confirmed) return;
+                  try {
+                    const existed = await this.host.plugin.pluginService.removePackage(loadedPackage.name, loadedPackage.rootPath);
+                    // The saved sign-in lives in secret storage, not in the package.
+                    clearMcpSecretSlots(this.host.app, server);
+                    new Notice(existed ? `Removed ${server.name || server.id}.` : `${server.name || server.id} was already deleted on disk; settings cleaned.`);
+                  } catch (error) {
+                    new Notice(`Agentic Chat MCP: could not remove ${server.name || server.id}: ${errorMessage(error)}`);
+                    return;
+                  }
+                  this.host.invalidatePluginLoad();
+                  await this.host.save();
+                  this.host.redraw();
+                  return;
+                }
+                clearMcpPerToolApprovals(settings.approval, server.id);
+                clearMcpSecretSlots(this.host.app, server);
+                settings.mcp.servers = settings.mcp.servers.filter((entry) => entry !== server);
+                await this.host.save();
+                this.host.redraw();
+              }),
+          );
+        }
       }),
     );
 
@@ -297,19 +353,34 @@ export class McpSettingsSection {
       );
     }
 
-    if (pluginManaged) {
+    if (pluginManaged && !soleServerPackage) {
       items.push(
         block((setting) => {
           setting.settingEl.createDiv({
             cls: "setting-item-description",
-            text:
-              `This server lives in the "${server.pluginRoot}" agent plugin package. ` +
-              "Its endpoint and literal headers come from mcp.json; authentication is configured client-side " +
-              "and stays with this plugin. Remove the package folder to delete the server.",
+            text: `Part of the "${server.pluginRoot}" package, which has other servers or skills. Remove the package in Advanced > Agent plugins.`,
           });
         }),
       );
     }
+
+    items.push(
+      row("Approval", (setting) => {
+        setting.setDesc("Gate every tool call from this server.").addDropdown((dropdown) =>
+          dropdown
+            .addOption("ask", "Ask each time")
+            .addOption("allow", "Allow automatically")
+            .addOption("deny", "Deny")
+            .setValue(server.approval)
+            .onChange(async (value) => {
+              server.approval = value as ApprovalPolicy;
+              this.syncMcpServerToState(server);
+              await this.host.save();
+            }),
+        );
+      }),
+    );
+    const main = items.splice(0, items.length);
 
     items.push(
       row("Name", (setting) => {
@@ -352,37 +423,12 @@ export class McpSettingsSection {
               }),
           );
       }),
-      row("Approval", (setting) => {
-        setting.setDesc("Gate every tool call from this server.").addDropdown((dropdown) =>
-          dropdown
-            .addOption("ask", "Ask each time")
-            .addOption("allow", "Allow automatically")
-            .addOption("deny", "Deny")
-            .setValue(server.approval)
-            .onChange(async (value) => {
-              server.approval = value as ApprovalPolicy;
-              this.syncMcpServerToState(server);
-              await this.host.save();
-            }),
-        );
-      }),
-      row("Setup guide", (setting) => {
-        const description = mcpServerSetupSteps(server)
-          .map((step) => `${step.label}: ${step.status === "complete" ? "done" : step.status} - ${step.message}`)
-          .join(" ");
-        setting.setDesc(description).addButton((button) =>
-          button.setButtonText("Copy config").onClick(async () => {
-            const copied = await copyToClipboard(JSON.stringify(exportMcpServerConfig(server), null, 2));
-            new Notice(copied ? `${server.name}: MCP config copied without secrets.` : `${server.name}: could not copy MCP config.`);
-          }),
-        );
-      }),
     );
 
     items.push(...this.mcpAuthenticationDefinitions(server));
     items.push(...this.mcpToolFilterDefinitions(server));
     items.push(...this.mcpToolApprovalDefinitions(settings, server));
-    return items;
+    return { main, advanced: items };
   }
 
   private mcpToolFilterDefinitions(server: McpServerSettings): SettingDefinitionItem[] {
@@ -692,7 +738,12 @@ export class McpSettingsSection {
   }
 
   private async authenticateAndProbeMcpServer(server: McpServerSettings): Promise<void> {
-    const result = await authenticateAndProbe(server, this.adminDeps(server));
+    let result: Awaited<ReturnType<typeof authenticateAndProbe>>;
+    try {
+      result = await authenticateAndProbe(server, this.adminDeps(server));
+    } finally {
+      endMcpOAuthProgress(server);
+    }
     const sample = formatMcpToolSample(result.toolNames);
     new Notice(
       `Authenticated ${server.name}; discovered ${result.toolCount} tool${
@@ -742,6 +793,24 @@ export class McpSettingsSection {
   }
 }
 
+/** One live notice per server during sign-in: each stage rewrites it (U7 #12). */
+const oauthProgressNotices = new Map<string, Notice>();
+
+function showMcpOAuthProgress(server: McpServerSettings, message: string): void {
+  const existing = oauthProgressNotices.get(server.id);
+  if (existing) {
+    existing.setMessage(message);
+    return;
+  }
+  oauthProgressNotices.set(server.id, new Notice(message, 0));
+}
+
+/** Close the sign-in notice; the final result or error shows as its own notice. */
+export function endMcpOAuthProgress(server: McpServerSettings): void {
+  oauthProgressNotices.get(server.id)?.hide();
+  oauthProgressNotices.delete(server.id);
+}
+
 export function handleMcpOAuthProgress(server: McpServerSettings, event: McpOAuthProgressEvent): void {
   if (event.stage === "authorization-url") {
     const authorizationUrl = event.detail ?? "";
@@ -751,7 +820,8 @@ export function handleMcpOAuthProgress(server: McpServerSettings, event: McpOAut
     if (authorizationUrl) {
       void copyToClipboard(authorizationUrl).then((copied) => {
         if (copied) {
-          new Notice(`${server.name}: OAuth authorization URL copied. Use it if the browser does not open.`);
+          // The flow may have ended (browser refused at once) before the clipboard answered.
+          if (oauthProgressNotices.has(server.id)) showMcpOAuthProgress(server, "Sign-in link copied. Use it if the browser does not open.");
         } else {
           new Notice(`${server.name}: OAuth authorization URL: ${authorizationUrl}`, 0);
         }
@@ -765,7 +835,8 @@ export function handleMcpOAuthProgress(server: McpServerSettings, event: McpOAut
     event.stage === "browser-open" ||
     event.stage === "callback-wait"
   ) {
-    new Notice(`${server.name}: ${event.message}`);
+    // The message already names the server.
+    showMcpOAuthProgress(server, event.message);
   }
 }
 

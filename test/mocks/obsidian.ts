@@ -37,6 +37,13 @@ export class App {
 
 export class Notice {
   constructor(public message: string) {}
+  setMessage(message: string): this {
+    this.message = message;
+    return this;
+  }
+  hide(): void {
+    // Notices are not mounted in tests.
+  }
 }
 
 export class Component {}

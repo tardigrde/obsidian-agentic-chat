@@ -55,7 +55,7 @@ allowlist; media query preludes may use `px`.
 
 | State | Colour | Icon | Where it shows |
 |---|---|---|---|
-| `running` | accent | ring spinner, a pulsing dot on a tab | activity line, step row, tab dot, status line |
+| `running` | accent | ring spinner, a pulsing dot on a tab | activity line, step row, tab dot (screen readers: a hidden live-region line) |
 | `needs-you` | orange | hand | approval card, activity line, tab dot, overflow button |
 | `error` | red | alert circle | step row, `· N failed`, tab dot |
 | `done` | green | check circle | step row, activity line (finished) |
@@ -228,8 +228,7 @@ has text below it, or when a message's own text comes before its tool call
   ```
 
   Deferred MCP tools are not sent, so they show as a count, not tokens.
-- **Status line** above the card, only while it has news (`Working…`,
-  `Waiting for your approval`, `Restored your draft`).
+- **Status line** above the card, only while it has news (`Waiting for your approval`, `Restored your draft`).
 - **Queued follow-up:** the dashed chip in the chips row, same behaviour.
 
 ### Empty state

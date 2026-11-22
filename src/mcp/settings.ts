@@ -87,39 +87,6 @@ export interface McpKnownToolSettings {
   readOnlyHint: boolean;
 }
 
-export interface McpServerExportConfig {
-  kind: "agentic-chat.mcp-server";
-  version: 1;
-  id: string;
-  name: string;
-  url: string;
-  enabled: boolean;
-  authType: McpAuthType;
-  authHeaderName: string;
-  approval: ApprovalPolicy;
-  knownTools: Array<Pick<McpKnownToolSettings, "name" | "title" | "readOnlyHint">>;
-  oauth?: {
-    clientId: string;
-    dynamicClientRegistration: boolean;
-    registeredRedirectUri: string;
-    authorizationServer: string;
-    authorizationEndpoint: string;
-    tokenEndpoint: string;
-    registrationEndpoint: string;
-    resourceMetadataUrl: string;
-    scope: string;
-  };
-}
-
-export type McpSetupStepStatus = "complete" | "action" | "blocked";
-
-export interface McpSetupStep {
-  id: "endpoint" | "auth" | "discovery";
-  label: string;
-  status: McpSetupStepStatus;
-  message: string;
-}
-
 export interface McpOAuthSettings {
   clientId: string;
   clientSecretSecretId: string;
@@ -474,40 +441,6 @@ export function resetMcpCredentials(server: McpServerSettings): void {
   server.oauth = mcpOAuthSettingsForServer(server.id);
 }
 
-export function exportMcpServerConfig(server: McpServerSettings): McpServerExportConfig {
-  return {
-    kind: "agentic-chat.mcp-server",
-    version: 1,
-    id: server.id,
-    name: server.name,
-    url: server.url,
-    enabled: server.enabled,
-    authType: server.authType,
-    authHeaderName: server.authType === "header" ? server.authHeaderName : "",
-    approval: server.approval,
-    knownTools: server.knownTools.map((tool) => ({
-      name: tool.name,
-      title: tool.title,
-      readOnlyHint: tool.readOnlyHint,
-    })),
-    ...(server.authType === "oauth"
-      ? {
-          oauth: {
-            clientId: server.oauth.clientId,
-            dynamicClientRegistration: server.oauth.dynamicClientRegistration,
-            registeredRedirectUri: server.oauth.registeredRedirectUri,
-            authorizationServer: server.oauth.authorizationServer,
-            authorizationEndpoint: server.oauth.authorizationEndpoint,
-            tokenEndpoint: server.oauth.tokenEndpoint,
-            registrationEndpoint: server.oauth.registrationEndpoint,
-            resourceMetadataUrl: server.oauth.resourceMetadataUrl,
-            scope: server.oauth.scope,
-          },
-        }
-      : {}),
-  };
-}
-
 export function mcpServerEndpointProblem(url: string): string {
   const trimmed = url.trim();
   if (!trimmed || trimmed === "https://") return "Paste an HTTPS (or loopback HTTP) Streamable HTTP endpoint.";
@@ -531,48 +464,6 @@ export function mcpServerAuthProblem(server: McpServerSettings): string {
     }
   }
   return "";
-}
-
-export function mcpServerSetupSteps(server: McpServerSettings): McpSetupStep[] {
-  const endpointProblem = mcpServerEndpointProblem(server.url);
-  const authProblem = mcpServerAuthProblem(server);
-  const canDiscover = !endpointProblem && !authProblem;
-  return [
-    {
-      id: "endpoint",
-      label: "Endpoint",
-      status: endpointProblem ? "action" : "complete",
-      message: endpointProblem || "HTTPS endpoint is valid.",
-    },
-    {
-      id: "auth",
-      label: "Authentication",
-      status: authProblem ? "action" : "complete",
-      message: authProblem || "Authentication settings are locally valid.",
-    },
-    {
-      id: "discovery",
-      label: "Discovery",
-      status: discoveryStatus(server, canDiscover),
-      message: discoveryMessage(server, canDiscover),
-    },
-  ];
-}
-
-function discoveryStatus(server: McpServerSettings, canDiscover: boolean): McpSetupStepStatus {
-  if (server.knownTools.length > 0) return "complete";
-  if (canDiscover) return "action";
-  return "blocked";
-}
-
-function discoveryMessage(server: McpServerSettings, canDiscover: boolean): string {
-  if (server.knownTools.length > 0) {
-    return `${server.knownTools.length} tool${server.knownTools.length === 1 ? "" : "s"} discovered.`;
-  }
-  if (canDiscover) {
-    return "Run Test connection to discover tools.";
-  }
-  return "Complete endpoint and authentication before discovery.";
 }
 
 function healApproval(value: ApprovalPolicy | undefined): ApprovalPolicy {

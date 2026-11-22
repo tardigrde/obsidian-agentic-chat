@@ -115,10 +115,13 @@ export class ApprovalCard {
     if (this.isCreateSkill()) {
       this.bodyEl.createEl("p", {
         cls: "agentic-chat-approval-warning",
-        text: "This creates a persistent skill package that loads into future sessions. Review the full body below — anything pasted from the web or another skill stays active until removed.",
+        text: "Permanent: loads in every future session and /undo cannot remove it. Open the body and read it before you allow.",
       });
     }
-    this.descEl = this.bodyEl.createDiv({ cls: "agentic-chat-approval-desc", text: toolApprovalDescription(this.request.toolName) });
+    // The create_skill warning above says it all; a second paragraph repeated it (U7 #3).
+    if (!this.isCreateSkill()) {
+      this.descEl = this.bodyEl.createDiv({ cls: "agentic-chat-approval-desc", text: toolApprovalDescription(this.request.toolName) });
+    }
     const preview = this.bodyEl.createDiv({ cls: "agentic-chat-approval-preview" });
     if (this.isCreateSkill()) this.renderCreateSkillPreview(preview);
     else {
@@ -194,7 +197,9 @@ export class ApprovalCard {
     if (this.settled || event.isComposing) return;
     const target = event.target as HTMLElement | null;
     const inField = !!target && (target.tagName === "TEXTAREA" || target.tagName === "INPUT");
-    const onButton = !!target && target.tagName === "BUTTON";
+    // A button or the "Show SKILL.md" summary keeps its own Enter (activate / toggle);
+    // Enter there must never allow the call without the user reading the body.
+    const onButton = !!target && (target.tagName === "BUTTON" || target.tagName === "SUMMARY");
     if (event.key === "Enter" && !inField && !onButton) {
       event.preventDefault();
       // With the deny armed, Enter confirms the deny, never an allow.
@@ -285,7 +290,12 @@ export class ApprovalCard {
       text: `Create skill "${slug}"${slugNote} → .agentic-plugins/${slug}/skills/${slug}/SKILL.md${overwrite ? " (REPLACE existing package)" : ""}`,
     });
     if (description) container.createEl("p", { cls: "agentic-chat-approval-summary", text: `Description: ${description}` });
-    container.createDiv({ cls: "agentic-chat-approval-skill-body" }).createEl("pre", { cls: "agentic-chat-approval-args", text: body || "(empty body)" });
+    // The body is folded: Allow and Deny must stay on screen on a phone (U7 #3). The
+    // <pre> stays in the DOM, so the owner can still read every line before allowing.
+    const fold = container.createEl("details", { cls: "agentic-chat-approval-details" });
+    const lineCount = body ? body.split("\n").length : 0;
+    fold.createEl("summary", { text: `Show SKILL.md · ${lineCount} ${lineCount === 1 ? "line" : "lines"}` });
+    fold.createDiv({ cls: "agentic-chat-approval-skill-body" }).createEl("pre", { cls: "agentic-chat-approval-args", text: body || "(empty body)" });
   }
 
   /** Read the target file and render the change; the raw arguments show until then. */
