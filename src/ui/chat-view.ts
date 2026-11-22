@@ -400,50 +400,30 @@ export class ChatView extends ItemView {
   }
 
   /**
-   * Phone: measure how far the on-screen keyboard covers the bottom of this view and
-   * publish it as --ac-keyboard-overlap. Obsidian's --keyboard-height was wrong both
-   * ways (a big gap, or none); the visual viewport reports what is really covered.
+   * Phone: the app container shrinks above the on-screen keyboard but the sidebar drawer
+   * does not, so the keyboard covers the bottom of this view. Publish how far as
+   * --ac-keyboard-overlap (view bottom minus app container bottom). Obsidian's
+   * --keyboard-height is not used: it also counts the space under the view (a big gap),
+   * and the visual viewport does not change in Obsidian mobile.
    */
   private trackKeyboardOverlap(): void {
-    const viewport = window.visualViewport;
-    if (!Platform.isMobile || !viewport) return;
+    if (!Platform.isMobile) return;
+    const doc = this.contentEl.ownerDocument;
     const update = () => {
-      const bottom = this.contentEl.getBoundingClientRect().bottom;
-      const overlap = Math.max(0, Math.round(bottom - (viewport.offsetTop + viewport.height)));
+      const app = doc.querySelector(".app-container");
+      const appBottom = app ? app.getBoundingClientRect().bottom : Number.POSITIVE_INFINITY;
+      const overlap = Math.max(0, Math.round(this.contentEl.getBoundingClientRect().bottom - appBottom));
       this.contentEl.style.setProperty("--ac-keyboard-overlap", `${overlap}px`);
     };
-    viewport.addEventListener("resize", update);
-    viewport.addEventListener("scroll", update);
-    this.register(() => {
-      viewport.removeEventListener("resize", update);
-      viewport.removeEventListener("scroll", update);
-    });
+    const app = doc.querySelector(".app-container");
+    if (app && typeof ResizeObserver !== "undefined") {
+      const observer = new ResizeObserver(update);
+      observer.observe(app);
+      this.register(() => observer.disconnect());
+    }
     this.registerDomEvent(this.contentEl, "focusin", () => window.setTimeout(update, 300));
+    this.registerDomEvent(this.contentEl, "focusout", () => window.setTimeout(update, 300));
     update();
-    // TEST BUILD ONLY: on-screen readout of what the phone reports, for a screenshot.
-    const debug = this.contentEl.createEl("pre");
-    debug.setAttribute(
-      "style",
-      "position:fixed;top:60px;left:4px;right:4px;z-index:9999;margin:0;padding:4px;font-size:11px;line-height:1.2;background:rgba(0,0,0,.85);color:#0f0;pointer-events:none;white-space:pre-wrap",
-    );
-    const show = () => {
-      const root = getComputedStyle(document.documentElement);
-      const drawer = this.contentEl.closest(".workspace-drawer");
-      const composer = this.contentEl.querySelector<HTMLElement>("textarea, [contenteditable]");
-      const r = (el: Element | null | undefined) => (el ? `${Math.round(el.getBoundingClientRect().top)}..${Math.round(el.getBoundingClientRect().bottom)}` : "none");
-      debug.setText(
-        [
-          `inner ${window.innerWidth}x${window.innerHeight} vv ${Math.round(viewport.width)}x${Math.round(viewport.height)} off ${Math.round(viewport.offsetTop)}`,
-          `--keyboard-height ${root.getPropertyValue("--keyboard-height") || "unset"}`,
-          `--view-bottom-spacing ${getComputedStyle(this.contentEl).getPropertyValue("--view-bottom-spacing") || "unset"}`,
-          `overlap ${this.contentEl.style.getPropertyValue("--ac-keyboard-overlap")}`,
-          `safe-bottom ${getComputedStyle(this.contentEl).getPropertyValue("--ac-safe-bottom")}`,
-          `body ${r(document.body)} drawer ${r(drawer)} view ${r(this.contentEl)} input ${r(composer)}`,
-          `app ${r(document.querySelector(".app-container"))} classes ${document.body.className.split(" ").filter((c) => /phone|mobile|hidden|keyboard/.test(c)).join(",")}`,
-        ].join("\n"),
-      );
-    };
-    this.registerInterval(window.setInterval(() => { update(); show(); }, 500));
   }
 
   async onOpen(): Promise<void> {
