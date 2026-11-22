@@ -22,7 +22,7 @@ const PER_CHILD_SUMMARY_CHARS = 8_000;
  * How much of a long report the chat shows the user. The model gets none of
  * it, only the artifact pointer, so it never pays for the same text twice.
  */
-const REPORT_PREVIEW_CHARS = 3_500; // under the row's 4,000-char cut (subagent-tree.ts), so the note shows
+const REPORT_PREVIEW_CHARS = 3_500; // under the row's 4,000-char cut (subagent-tree.ts)
 
 /** Single line in a child's live transcript. */
 export type SubagentTranscriptEntry =
@@ -174,7 +174,6 @@ export function persistedSnapshot(statuses: SubagentChildStatus[]): SubagentDeta
   return { kind: "subagent", children: statuses.map(toPersistedChild) };
 }
 
-/** Pending error details for a toolCallId that threw are stored in this registry. */
 export interface SubagentToolDeps {
   /** The subagent roles available to dispatch right now. */
   getProfiles: () => AgentRole[];

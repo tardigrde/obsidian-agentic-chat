@@ -231,7 +231,7 @@ export function buildFocusHint(explicitRequest: string): string {
   return FOCUS_HINT;
 }
 
-/** Escape attacker-controllable `</context>` / `<context>` / `Focus:` inside attached sections so they cannot forge the wrapper or a fake hint. Each token is broken with a backslash, mirroring the tag escapes above. */
+/** Break wrapper tokens in attached text so it cannot close the context block. */
 function escapeContextSection(text: string): string {
   return text
     .replaceAll("</context>", "<\\/context>")

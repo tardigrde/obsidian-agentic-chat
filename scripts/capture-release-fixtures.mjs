@@ -67,7 +67,6 @@ try {
   try {
     git("worktree", "remove", "--force", checkout);
   } catch {
-    // Leave the temp checkout for inspection if removal fails.
   }
   rmSync(work, { recursive: true, force: true });
   rmSync(`${out}.staging`, { recursive: true, force: true });

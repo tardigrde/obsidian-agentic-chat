@@ -20,7 +20,6 @@ export interface ComposerSendInput {
   running: boolean;
   /** A draft is held to send after the turn. */
   queued: boolean;
-  /** The composer holds no text. */
   draftEmpty: boolean;
 }
 

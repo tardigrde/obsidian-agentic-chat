@@ -132,7 +132,6 @@ export function resolveModelPricingSync(
   return { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, isUnknown: true };
 }
 
-/** Synchronous check: is pricing currently unknown for this model? */
 export function isPricingUnknown(
   provider: "openrouter" | "ollama" | "openai-compatible",
   modelId: string,
@@ -173,7 +172,6 @@ export async function waitForCatalogFetchForTests(): Promise<void> {
 }
 
 function findInCache(cache: PricingCache, provider: string, modelId: string): CompactModelInfo | undefined {
-  // Exact match
   if (cache.models[modelId]) return cache.models[modelId];
 
   // For openai-compatible, try suffix match (e.g. "gpt-4o" → "openai/gpt-4o").
@@ -189,7 +187,6 @@ function findInCache(cache: PricingCache, provider: string, modelId: string): Co
 }
 
 async function getCache(): Promise<PricingCache> {
-  // Ensure memory cache is loaded first
   await loadCacheIntoMemory();
 
   if (memoryCache && memoryCache.version === CACHE_VERSION && Date.now() - memoryCache.fetchedAt < CACHE_TTL_MS) {

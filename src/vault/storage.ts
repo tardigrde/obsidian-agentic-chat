@@ -21,10 +21,6 @@ function folderSegments(folderPath: string): string[] {
   return segments.map((_, index) => segments.slice(0, index + 1).join("/"));
 }
 
-// ---------------------------------------------------------------------------
-// Raw adapter layer
-// ---------------------------------------------------------------------------
-
 /** Create every missing folder of `folderPath` through the raw adapter. */
 export async function ensureAdapterFolder(adapter: DataAdapter, folderPath: string): Promise<void> {
   for (const current of folderSegments(folderPath)) {
@@ -101,10 +97,6 @@ export async function writeFileAtomically(
     throw error;
   }
 }
-
-// ---------------------------------------------------------------------------
-// Vault API layer
-// ---------------------------------------------------------------------------
 
 /** True for the "Folder already exists" race (narrow: file collisions must not match). */
 export function isFolderCollision(error: unknown): boolean {

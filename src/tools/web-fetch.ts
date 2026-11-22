@@ -136,14 +136,8 @@ const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
 const MAX_REDIRECTS = 5;
 
 /**
- * Fetch a URL, following redirects manually so each hop's target is re-checked
- * against {@link normalizeWebUrl}. `normalizeWebUrl` only validates the initial
- * host, but a public page can 3xx to a local/private address; re-validating every
- * hop keeps redirect-based SSRF from slipping past that gate. Fetchers that
- * already follow redirects (Obsidian's `requestUrl`) return a non-3xx response,
- * so this loop is a no-op for them — allowlist/SSRF on auto-followed hops is
- * best-effort; the initial URL is still gated and manual fetchers (tests, custom
- * WebFetcher) are fully hop-validated.
+ * Fetch a URL, following redirects manually and re-checking every hop's target.
+ * Auto-following fetchers are best-effort; the initial URL is still gated.
  */
 async function fetchFollowingRedirects(
   fetcher: WebFetcher,

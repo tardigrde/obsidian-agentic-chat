@@ -108,7 +108,6 @@ async function checkNoClip(label: string): Promise<{ ok: boolean; details: strin
     testEl("field", field);
     testEl("composer", composer);
 
-    // also check that view itself is not wider than leaf
     if (viewRect.width > leafRect.width + 1.5) {
       ok = false;
       checks.push(`view width ${viewRect.width.toFixed(1)} > leaf ${leafRect.width.toFixed(1)}`);

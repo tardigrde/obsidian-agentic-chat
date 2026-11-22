@@ -646,7 +646,7 @@ describe("AgentService", () => {
       { content: [{ type: "text", text: "final answer" }], stopReason: "stop" },
     ]);
     const { service, settings, adapter } = makeService(streamFn, async () => ({ approved: true, remember: false }));
-    // Per-tool deny blocks every scripted write without a modal; the denial
+    // Per-tool deny blocks every scripted write without an approval card; the denial
     // text is identical each time, so the batches hash identically.
     settings.approval = { mutating: "allow", perTool: { write: "deny" } };
     await service.sendPrompt("Loop please");

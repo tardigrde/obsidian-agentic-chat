@@ -162,7 +162,6 @@ describe("filterMcpToolsByGlobs", () => {
 
   it("filters by disabled denylist", () => {
     expect(filterMcpToolsByGlobs(tools, [], ["*_danger", "delete_*"]).map((t) => t.name)).toEqual(["read_file", "write_file", "search"]);
-    // Explicit check
     expect(filterMcpToolsByGlobs(tools, [], ["delete_*"]).map((t) => t.name)).toEqual(["read_file", "write_file", "search", "foo_danger"]);
     expect(filterMcpToolsByGlobs(tools, [], ["*_danger"]).map((t) => t.name)).not.toContain("foo_danger");
   });

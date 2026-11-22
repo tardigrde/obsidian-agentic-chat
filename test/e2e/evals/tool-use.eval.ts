@@ -327,7 +327,7 @@ async function configurePlugin(): Promise<Record<string, unknown>> {
     settings.mode = "safe";
     settings.approval.mutating = "allow";
     // The eval vault is synthetic. Recursive deletes still ask even under a
-    // blanket allow, and the approval modal would block the stop button and
+    // blanket allow, and the approval card would block the stop button and
     // hang the turn. A per-tool allow lets the run finish; the checks, not a
     // modal, decide whether the delete was right.
     settings.approval.perTool = { delete: "allow" };

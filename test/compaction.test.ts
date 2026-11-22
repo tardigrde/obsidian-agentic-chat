@@ -49,11 +49,11 @@ describe("planCompaction", () => {
   it("splits at a user boundary, keeping recent turns within the keep budget", () => {
     // 10 messages × ~115 tokens ≈ 1150 > 800 threshold; keep budget = 300.
     const messages = [
-      user(400), assistant(400), // turn 1
-      user(400), assistant(400), // turn 2
-      user(400), assistant(400), // turn 3
-      user(400), assistant(400), // turn 4
-      user(400), assistant(400), // turn 5
+      user(400), assistant(400),
+      user(400), assistant(400),
+      user(400), assistant(400),
+      user(400), assistant(400),
+      user(400), assistant(400),
     ];
     const plan = planCompaction(messages, 1000, CONFIG);
     expect(plan).not.toBeNull();

@@ -2,6 +2,7 @@ import js from "@eslint/js";
 import tseslint from "typescript-eslint";
 import globals from "globals";
 import noUnsanitized from "eslint-plugin-no-unsanitized";
+import commentBudget from "./eslint-rules/comment-budget.mjs";
 import { fileURLToPath } from "node:url";
 
 const tsconfigRootDir = fileURLToPath(new URL(".", import.meta.url));
@@ -30,6 +31,7 @@ export default tseslint.config(
     files: ["src/**/*.ts", "test/**/*.ts", "*.ts", "*.mjs", "*.mts", "scripts/**/*.mjs"],
     plugins: {
       "no-unsanitized": noUnsanitized,
+      local: { rules: { "comment-budget": commentBudget } },
     },
     languageOptions: {
       // The plugin runs in the Obsidian renderer (DOM) on top of Node APIs.
@@ -42,6 +44,8 @@ export default tseslint.config(
         { argsIgnorePattern: "^_", varsIgnorePattern: "^_", caughtErrors: "none" },
       ],
       "no-console": ["warn", { allow: ["warn", "error"] }],
+      // Advisory ratchet: new comments warn, they do not fail. See docs/development/comments.md.
+      "local/comment-budget": "warn",
     },
   },
   {

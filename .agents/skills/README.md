@@ -11,6 +11,7 @@ and so do Codex and other harnesses that follow the same convention.
 - `verify-pr/`
 - `app/` (with the feature map in `app/features/` and explore charters in `app/charters/`)
 - `worktree/`
+- `delete-comment/`
 
 These are reviewed with the code in this repository. They are not listed in
 `skills-lock.json`, because that file records skills installed from an external

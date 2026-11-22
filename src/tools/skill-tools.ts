@@ -29,7 +29,7 @@ export interface SkillScaffolder {
 
 /**
  * Create `create_skill` harness tool: scaffolds a single-skill Agent Plugins
- * package through the same writer as the Resources tab New skill wizard
+ * package through the same writer as the settings New skill flow
  * (spec-valid plugin.json + skills/<name>/SKILL.md, dot-folder safe).
  * The model must prefer this over hand-writing files under the plugins folder
  * with `write` — the generic file tools cannot see stale dot-folder trees.

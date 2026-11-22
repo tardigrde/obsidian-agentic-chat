@@ -90,7 +90,6 @@ const MAX_CONSECUTIVE_FAILURES = 6;
 const MAX_INVALID_REPLIES = 4;
 const PROTECTED_KEY = /provider|model|baseurl|apikey/i;
 
-// ---------------------------------------------------------------------------
 // Windows
 
 let mainHandle = "";
@@ -124,7 +123,6 @@ async function focusMain(): Promise<void> {
   await switchTo(mainHandle);
 }
 
-// ---------------------------------------------------------------------------
 // Observation
 
 type RawWindow = {
@@ -429,7 +427,6 @@ async function observe(
   };
 }
 
-// ---------------------------------------------------------------------------
 // Actions
 
 async function elementFor(ref: string): Promise<WebdriverIO.Element> {
@@ -627,7 +624,6 @@ async function perform(
                 return name;
               }
             } catch {
-              // try the next way
             }
           }
           return "";
@@ -695,7 +691,6 @@ async function perform(
   }
 }
 
-// ---------------------------------------------------------------------------
 // Oracles
 
 type Guarded = Record<string, string>;
@@ -734,7 +729,6 @@ function message(error: unknown): string {
   return error instanceof Error ? error.message.split("\n")[0] : String(error);
 }
 
-// ---------------------------------------------------------------------------
 // Loop
 
 async function loadReplay(file: string): Promise<RecordedDecision[]> {

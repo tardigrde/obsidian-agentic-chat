@@ -1,7 +1,6 @@
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import type { Usage } from "@earendil-works/pi-ai";
 
-/** A zeroed usage accumulator, including a zeroed cost breakdown. */
 export function emptyUsage(): Usage {
   return {
     input: 0,

@@ -1,6 +1,5 @@
 import { applyExactEdits, resolveExactEdits, type ExactEdit, type ResolvedEdit } from "../vault/edit";
 
-/** What a pending mutating tool call would do, ready for the approval modal to render. */
 export type EditPreview =
   | { kind: "diff"; path: string; before: string; after: string; isNew: boolean; edits?: ExactEdit[] }
   | { kind: "delete"; path: string; content: string }
@@ -44,7 +43,7 @@ function asExactEdits(value: unknown): ExactEdit[] {
 
 /**
  * Describe a mutating tool call as a reviewable change, given the file's current
- * content (`null` when it doesn't exist yet). Pure: the modal supplies the
+ * content (`null` when it doesn't exist yet). Pure: the approval card supplies the
  * content it read from the vault. Returns `kind: "none"` for non-previewable
  * calls (unknown tool, or an `edit` whose `oldText` no longer matches).
  */

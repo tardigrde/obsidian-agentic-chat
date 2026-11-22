@@ -61,7 +61,7 @@ describe("captureUndo + applyUndo", () => {
     const entry = await captureUndo(app, "write", { path: "n.md", content: "new" });
     expect(entry).toMatchObject({ kind: "content", path: "n.md", before: "old" });
     expect(entry?.kind === "content" && entry.beforeSummary?.length).toBe("old".length);
-    files.set("n.md", "new"); // simulate the write running
+    files.set("n.md", "new");
     await applyUndo(app, entry!);
     expect(files.get("n.md")).toBe("old");
   });
@@ -70,7 +70,7 @@ describe("captureUndo + applyUndo", () => {
     const { app, files } = makeApp();
     const entry = await captureUndo(app, "write", { path: "n.md", content: "hi" });
     expect(entry).toEqual({ kind: "content", path: "n.md", before: null });
-    files.set("n.md", "hi"); // simulate create
+    files.set("n.md", "hi");
     await applyUndo(app, entry!);
     expect(files.has("n.md")).toBe(false);
   });
@@ -78,7 +78,7 @@ describe("captureUndo + applyUndo", () => {
   it("removes a created file and says so when the system trash leaves it in place", async () => {
     const { app, files } = makeApp();
     const entry = await captureUndo(app, "write", { path: "n.md", content: "hi" });
-    files.set("n.md", "hi"); // simulate create
+    files.set("n.md", "hi");
     // Obsidian's system trash can return without moving anything (a Linux
     // desktop with no trash service), and this vault has no .trash folder.
     const calls: string[] = [];
@@ -118,7 +118,7 @@ describe("captureUndo + applyUndo", () => {
     const entry = await captureUndo(app, "delete", { path: "n.md" });
     expect(entry).toMatchObject({ kind: "delete", path: "n.md", before: "body" });
     expect(entry?.kind === "delete" && entry.beforeSummary?.length).toBe("body".length);
-    files.delete("n.md"); // simulate delete
+    files.delete("n.md");
     await applyUndo(app, entry!);
     expect(files.get("n.md")).toBe("body");
   });
@@ -127,7 +127,7 @@ describe("captureUndo + applyUndo", () => {
     const { app, folders } = makeApp({}, ["Empty"]);
     const entry = await captureUndo(app, "delete", { path: "Empty" });
     expect(entry).toEqual({ kind: "delete_folder", path: "Empty" });
-    folders.delete("Empty"); // simulate delete
+    folders.delete("Empty");
     await applyUndo(app, entry!);
     expect(folders.has("Empty")).toBe(true);
   });

@@ -32,7 +32,6 @@ export function renderCallSection(body: HTMLElement, name: string, rawArgs: stri
     return;
   }
   if (name === "write") return; // title carries the path; success result is hidden
-  // Non-path tools: readable key:value lines.
   const text = formatCallBody(name, rawArgs);
   if (text) body.createDiv({ cls: "agentic-chat-step-call-args", text });
 }

@@ -22,7 +22,6 @@ export function isDeferredToolName(name: string): boolean {
   return name.startsWith(MCP_TOOL_PREFIX) || DEFERRED_BUILTIN_TOOL_NAMES.has(name);
 }
 
-/** Names of the deferred tools loaded in this session. */
 export class LoadedToolSet {
   private readonly names = new Set<string>();
 
@@ -30,7 +29,6 @@ export class LoadedToolSet {
     return this.names.has(name);
   }
 
-  /** Add names; returns true when at least one was new. */
   add(names: Iterable<string>): boolean {
     let changed = false;
     for (const name of names) {
@@ -88,10 +86,6 @@ export function partitionTools(
   return { active, deferred };
 }
 
-// ---------------------------------------------------------------------------
-// search_tools
-// ---------------------------------------------------------------------------
-
 const SearchToolsParameters = Type.Object({
   query: Type.String({ minLength: 1, description: "what the tool must do, or its name" }),
   limit: Type.Optional(
@@ -104,7 +98,6 @@ const SearchToolsParameters = Type.Object({
 });
 
 export interface SearchToolsOptions {
-  /** The deferred tools that are not loaded yet. */
   getDeferredTools: () => readonly AgentTool[];
   loaded: LoadedToolSet;
 }
@@ -137,10 +130,6 @@ export function createSearchToolsTool(options: SearchToolsOptions): AgentTool<ty
     },
   };
 }
-
-// ---------------------------------------------------------------------------
-// Ranking: BM25 over the name, the description, and the parameter names
-// ---------------------------------------------------------------------------
 
 const BM25_K1 = 1.2;
 const BM25_B = 0.75;
@@ -227,10 +216,6 @@ function firstSentence(text: string): string {
   const sentence = end === -1 ? trimmed : trimmed.slice(0, end + 1);
   return sentence.length > 160 ? `${sentence.slice(0, 157)}...` : sentence;
 }
-
-// ---------------------------------------------------------------------------
-// System prompt listing
-// ---------------------------------------------------------------------------
 
 /**
  * The model-visible list of deferred tools: one line per built-in deferred

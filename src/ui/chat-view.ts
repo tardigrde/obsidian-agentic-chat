@@ -795,7 +795,6 @@ export class ChatView extends ItemView {
     this.emptyStateEl = null;
   }
 
-  // --- composer controls (Safe ↔ YOLO toggle) ---
   // S4: all mode mutations (toggle, settings tab) funnel through
   // validateModeTransition + resolveModeTransition so the two surfaces stay
   // atomically in sync (Codex ThreadSettingsOverrides pattern).
@@ -824,7 +823,6 @@ export class ChatView extends ItemView {
     return this.setMode(mode);
   }
 
-  /** Whether the current tab's agent is streaming — exposed for the plugin's S4 broadcast. */
   isStreaming(): boolean {
     return this.isAnyTabStreaming();
   }
@@ -858,8 +856,6 @@ export class ChatView extends ItemView {
     this.effortKnobEl?.toggleClass("is-disabled", streaming);
   }
 
-  // --- chrome (header pill, usage, running state) ---
-
   private syncChrome(): void {
     this.chrome.syncChrome();
   }
@@ -867,8 +863,6 @@ export class ChatView extends ItemView {
   private syncEffortKnob(): void {
     this.chrome.syncEffortKnob();
   }
-
-  // --- submission + slash commands ---
 
   private async submit(source: ComposerSubmitSource): Promise<void> {
     this.cancelAutocomplete();
@@ -1012,8 +1006,6 @@ export class ChatView extends ItemView {
     renderErrorPanel(this.messagesEl, message);
     this.scrollToBottom();
   }
-
-  // --- session + model actions ---
 
   private newSession(): Promise<void> { return this.actions.newSession(); }
 

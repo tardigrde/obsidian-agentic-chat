@@ -23,7 +23,7 @@ import { FakeAdapter as MemoryAdapter } from "./support/fake-adapter";
  * First-principles tests for the approval matrix: the composition
  * resolveModePolicy × perTool overrides × MUTATING_TOOLS.
  *
- * The contract (AGENTS.md "Approval gate — non-obvious contract"):
+ * The contract (ADR 0008):
  *   precedence  : slider (yolo) > per-tool override > settings default
  *   composition : Safe honors the policy; YOLO forces the mutating default to
  *                 allow. A per-tool deny always survives, and a per-tool ask
@@ -56,7 +56,6 @@ const READ = "read";
 const WRITE = "write";
 
 const CELLS: Cell[] = [
-  // --- Safe mode: the configured policy decides. ---
   { name: "safe read, mutating ask → allow", mode: "safe", mutating: "ask", tool: READ, expected: "allow" },
   { name: "safe read, per-tool deny → deny", mode: "safe", mutating: "ask", perTool: { read: "deny" }, tool: READ, expected: "deny" },
   { name: "safe mutating, ask → ask", mode: "safe", mutating: "ask", tool: WRITE, expected: "ask" },
@@ -66,7 +65,6 @@ const CELLS: Cell[] = [
   { name: "safe per-tool deny beats mutating allow", mode: "safe", mutating: "allow", perTool: { write: "deny" }, tool: WRITE, expected: "deny" },
   { name: "safe per-tool ask beats mutating allow", mode: "safe", mutating: "allow", perTool: { write: "ask" }, tool: WRITE, expected: "ask" },
 
-  // --- YOLO mode: session-wide allow for the mutating default. ---
   { name: "yolo mutating deny → allow", mode: "yolo", mutating: "deny", tool: WRITE, expected: "allow" },
   { name: "yolo mutating ask → allow", mode: "yolo", mutating: "ask", tool: WRITE, expected: "allow" },
   { name: "yolo per-tool deny still wins", mode: "yolo", mutating: "allow", perTool: { write: "deny" }, tool: WRITE, expected: "deny" },
@@ -280,7 +278,6 @@ const WRITER: AgentRole = {
 };
 
 const GATE_CELLS: GateCell[] = [
-  // Vault tools.
   { name: "safe read allows", mode: "safe", approval: { mutating: "ask", perTool: {} }, tool: "read", expectedDecision: "auto-approved", expectedConfirmed: false, expectedBlocked: false },
   { name: "safe mutating ask confirms", mode: "safe", approval: { mutating: "ask", perTool: {} }, tool: "write", expectedDecision: "approved", expectedConfirmed: true, expectedBlocked: false },
   { name: "safe mutating deny blocks", mode: "safe", approval: { mutating: "deny", perTool: {} }, tool: "write", expectedDecision: "denied", expectedConfirmed: false, expectedBlocked: true, expectedReason: "The \"write\" tool is disabled by your approval settings." },
