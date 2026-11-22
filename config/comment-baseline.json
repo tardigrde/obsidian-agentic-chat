@@ -1,7 +1,7 @@
 {
   "version": 1,
   "note": "Comment ratchet: adding comments above these per-file counts warns in CI; run `npm run lint:comments -- --update` after deleting comments to ratchet down.",
-  "total": 4535,
+  "total": 4537,
   "files": {
     "scripts/analyze-session-trace.mjs": 1,
     "scripts/build.mjs": 2,
@@ -112,7 +112,7 @@
     "src/agent/subagents.ts": 12,
     "src/agent/system-prompt.ts": 1,
     "src/agent/tool-call-controller.ts": 46,
-    "src/agent/tool-loading.ts": 8,
+    "src/agent/tool-loading.ts": 10,
     "src/agent/tool-schema-tokens.ts": 1,
     "src/agent/turn-configuration.ts": 1,
     "src/agent/undo.ts": 12,

@@ -30,6 +30,9 @@ const rule = {
     const budget = budgetFor(file);
     return {
       "Program:exit"() {
+        const all = context.sourceCode.getAllComments();
+        // Fast path: functional directives make the raw count an upper bound.
+        if (all.length <= budget) return;
         const comments = scanComments(context.sourceCode.text, file);
         if (comments.length <= budget) return;
         const firstNew = comments[Math.min(budget, comments.length - 1)];
