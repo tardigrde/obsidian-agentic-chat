@@ -85,13 +85,12 @@ do_review() { # <pr> <worktree-name> <focus>
   OUT="logs/delegate/verdict-$PR.md"
   PROMPT="$W/logs/delegate/review-$PR.md"; LOG="$W/logs/delegate/review-$PR.log"
   rm -f "$W/$OUT"
-  # The reviewer may not call `gh api`, so fetch the OpenCode inline comments here.
+  # The reviewer may not call `gh`, so wait for the OpenCode job here and write its state
+  # and its findings for this head to one file (DELEGATE_OPENCODE_WAIT seconds, default 600).
   BOT="$W/logs/delegate/opencode-$PR.md"
-  gh api --paginate "repos/{owner}/{repo}/pulls/$PR/comments" \
-    --jq '.[] | select(.user.login == "github-actions[bot]") | "- \(.path):\(.line // .original_line) \(.body | gsub("\n"; " "))"' \
-    > "$BOT" 2> "$BOT.err" \
-    || { echo "(fetch failed; OpenCode comments were not read: $(head -c 300 "$BOT.err"))" > "$BOT"
-         echo "delegate: WARNING could not fetch OpenCode comments; see $BOT.err" >&2; }
+  (cd "$W" && node "$ROOT/scripts/delegate-opencode.mjs" "$PR" "$BOT" --head "$HEAD") \
+    || echo "OpenCode job: unknown
+The finder step crashed. The findings were NOT read. Say so in the verdict." > "$BOT"
   cat > "$PROMPT" <<EOF
 You are the reviewer agent. You did not write this change. Work in $W (head $HEAD).
 Read AGENTS.md and .agents/skills/verify-pr/SKILL.md first and follow verify-pr.
@@ -106,9 +105,9 @@ Always: prove the witness. For a src/ change it must fail ON AN ASSERTION withou
 src change, for example node scripts/verify-witness.mjs --base origin/main --test-file <t> --src <s>.
 Fast lane: if \`gh pr checks $PR\` shows ci and e2e passing at this head, cite them and do
 not re-run \`npm run verify -- check --no-app\`. Otherwise run it and report the counts.
-Read the OpenCode inline review comments in logs/delegate/opencode-$PR.md (empty if none; a
-"fetch failed" line means they were not read, so say so in the verdict) and
-confirm or reject each one in your findings.
+Read logs/delegate/opencode-$PR.md. Its first line is "OpenCode job: <state>". Only "pass"
+means the finder ran. For any other state, say in the verdict that the finder did not run;
+that is not "no findings". Confirm or reject each inline finding in your findings.
 Decide whether the change alters runtime behavior. Write "none" only for a pure
 refactor that you checked against the diff.
 

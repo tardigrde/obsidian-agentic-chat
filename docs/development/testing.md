@@ -87,8 +87,9 @@ research.
 | one worktree per PR | lead agent | `npm run worktree:new -- <name>` |
 | plan, witness, change, verify | lead agent | `npm run verify -- plan`, then what it prints |
 | open the PR | lead agent | `gh pr create` with the template: witness block, counts line, screenshot for UI |
-| agent review, after `ci` and `e2e` are green | reviewer agent | `npm run delegate -- review <pr> <name> "<focus>"` |
-| fix findings, new review at the new head | lead agent | push, then review again |
+| mark the PR ready (a draft gets no `e2e` and no OpenCode finder) | lead agent | `gh pr ready <pr>` |
+| agent review, after `ci` and `e2e` are green; waits for the OpenCode finder | reviewer agent | `npm run delegate -- review <pr> <name> "<focus>"` |
+| fix every confirmed finding, new review at the new head | lead agent | push, then review again |
 | merge | owner | only after the owner writes "merge" |
 | after a big change or 3+ merged PRs | lead agent proposes, owner decides | `npm run verify -- explore --mode explore --live` |
 | clean up | lead agent | `npm run worktree:cleanup -- --dry-run`, then `--apply` |

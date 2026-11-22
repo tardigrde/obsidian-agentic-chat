@@ -26,7 +26,9 @@ for the real-app tier. When the witness is an e2e spec, cite the author's red an
 green runs from the PR body and the `e2e` job at this head; do not re-run it.
 
 The `OpenCode review` job posts advisory inline comments on each PR. Read them
-and confirm or reject each one in your notes; they are not a verdict. Its prompt,
+(the first line of `logs/delegate/opencode-<pr>.md` is the job state: only `pass`
+means the finder ran; any other state is not "no findings", so say so) and
+confirm or reject each one in your notes; they are not a verdict. Its prompt,
 [.github/opencode-review-prompt.md](../../../.github/opencode-review-prompt.md),
 lists the bug classes for this repo; check the diff against that list too.
 

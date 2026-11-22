@@ -214,7 +214,7 @@
       "runner": "vitest",
       "globs": [
         "test/{chaos-*,check-*,verify-*}.test.ts",
-        "test/{analyze-session-trace,offline-guard,diff-coverage,delegate-config,dogfood-core,e2e-ports,feature-cut-2026-11,live-env,mobile-compat,redact-log,release-config,run-nested,script-entrypoints,witness-from-pr,worktree-script,test-manifest,logs-prune,tests-status,run-result,doc-commands,app-report,gate-report}.test.ts"
+        "test/{analyze-session-trace,offline-guard,diff-coverage,delegate-config,delegate-opencode,dogfood-core,e2e-ports,feature-cut-2026-11,live-env,mobile-compat,redact-log,release-config,run-nested,script-entrypoints,witness-from-pr,worktree-script,test-manifest,logs-prune,tests-status,run-result,doc-commands,app-report,gate-report}.test.ts"
       ],
       "triggers": [
         "scripts/**",

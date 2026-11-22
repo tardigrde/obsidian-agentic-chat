@@ -77,6 +77,12 @@ Behavior change: none | yes (<one line>)
 Notes: none | <max 5 bullets>
 ```
 
+The reviewer reads the advisory `OpenCode review` findings for the head and
+confirms or rejects each one. The job state is the first line of
+`logs/delegate/opencode-<pr>.md`: only `pass` means the finder ran, and any other
+state (`failed`, `skipped`, `pending`, `missing`) is not "no findings". A draft
+PR is skipped, so mark the PR ready before the review.
+
 A push makes the verdict stale. The `review` check (`Review report` workflow)
 only reports whether a verdict exists at the head, an open `FAIL`, and the PR
 size; it never fails (#393 D4, D7). Only owner, member, or collaborator comments
