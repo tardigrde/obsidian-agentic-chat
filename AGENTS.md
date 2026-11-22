@@ -2,7 +2,7 @@
 
 ## Process
 
-Six skills carry the process. They live in `.agents/skills/` (`.claude/skills`
+Five skills carry the process. They live in `.agents/skills/` (`.claude/skills`
 links there), so Claude Code, OpenCode, Codex, and other agents that read that
 convention get the same workflow.
 
@@ -13,7 +13,6 @@ convention get the same workflow.
 | `@verify-pr` | agent review of a PR you did not write; red/green witness proof |
 | `@app` | real Obsidian runs: specs, recorded runs, dogfood, chaos explore, the feature map |
 | `@worktree` | one task per worktree, env-linked commands, safe cleanup |
-| `@delete-comment` | one comment cleanup pass: classify, delete, file hacks, move decisions to ADRs |
 
 Renamed in #393 (this note stays for one release): `@verify-obsidian-chat`,
 `@probe-feature`, and `@chaos-monkey` are now `@app`; `@break-change` was

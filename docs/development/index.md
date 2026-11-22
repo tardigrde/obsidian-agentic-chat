@@ -68,9 +68,10 @@ behavior recommendations, use [Community plugin review](./community-review.md).
 
 ## Comments
 
-[Code comments](./comments.md) records the policy, the four cleanup categories,
-and the per-file ratchet (`npm run lint:comments`). New comments warn; deleting
-comments never fails. Cross-cutting decisions live in [ADRs](../adr/).
+[Code comments](./comments.md) records the policy, the cleanup steps, and the
+check for new comments (`npm run lint:comments`, compared with the base branch).
+New comments warn; deleting comments never fails. Cross-cutting decisions live
+in [ADRs](../adr/).
 
 ## Live dogfood
 

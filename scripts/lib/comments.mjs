@@ -1,9 +1,9 @@
+import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import ts from "typescript";
 
 export const CODE_ROOTS = ["src", "test", "scripts"];
-export const BASELINE_PATH = path.join("config", "comment-baseline.json");
 const CODE_EXTENSIONS = new Set([".ts", ".mts", ".cts", ".tsx", ".mjs", ".cjs", ".js", ".jsx"]);
 const FUNCTIONAL = [
   /^\/\/\/\s*<reference\b/,
@@ -25,7 +25,7 @@ export function isCodeFile(filePath) {
   return CODE_EXTENSIONS.has(path.extname(filePath));
 }
 
-export function scanComments(text, filePath = "input.ts") {
+function parse(text, filePath) {
   const scriptKind = /\.(?:tsx|jsx)$/.test(filePath) ? ts.ScriptKind.TSX : /\.[cm]?js$/.test(filePath) ? ts.ScriptKind.JS : ts.ScriptKind.TS;
   const source = ts.createSourceFile(filePath, text, ts.ScriptTarget.Latest, true, scriptKind);
   const full = source.getFullText();
@@ -42,8 +42,12 @@ export function scanComments(text, filePath = "input.ts") {
     }
   };
   visit(source);
-  return [...ranges.values()]
-    .sort((left, right) => left.pos - right.pos)
+  return { source, full, ranges: [...ranges.values()].sort((left, right) => left.pos - right.pos) };
+}
+
+export function scanComments(text, filePath = "input.ts") {
+  const { source, full, ranges } = parse(text, filePath);
+  return ranges
     .map((comment) => ({ comment, raw: full.slice(comment.pos, comment.end) }))
     .filter(({ raw }) => !isFunctionalComment(raw))
     .map(({ comment, raw }) => ({
@@ -52,6 +56,17 @@ export function scanComments(text, filePath = "input.ts") {
       endLine: source.getLineAndCharacterOfPosition(comment.end).line + 1,
       raw,
     }));
+}
+
+export function blankComments(text, filePath = "input.ts") {
+  const { full, ranges } = parse(text, filePath);
+  let result = "";
+  let cursor = 0;
+  for (const comment of ranges) {
+    result += full.slice(cursor, comment.pos) + full.slice(comment.pos, comment.end).replace(/[^\r\n]/g, " ");
+    cursor = comment.end;
+  }
+  return result + full.slice(cursor);
 }
 
 export function relativePath(filePath, root = process.cwd()) {
@@ -74,55 +89,103 @@ export function walkCodeFiles(root = process.cwd()) {
     const absolute = path.join(root, top);
     if (fs.existsSync(absolute)) visit(absolute);
   }
-  return files.sort();
+  return files.sort((left, right) => left.localeCompare(right));
 }
 
 export function collectComments(root = process.cwd(), files = walkCodeFiles(root)) {
   const result = new Map();
   for (const absolute of files) {
     const relative = relativePath(absolute, root);
-    const comments = scanComments(fs.readFileSync(absolute, "utf8"), relative);
-    result.set(relative, comments);
+    result.set(relative, scanComments(fs.readFileSync(absolute, "utf8"), relative));
   }
   return result;
 }
 
-export function readBaseline(baselinePath = path.join(process.cwd(), BASELINE_PATH)) {
-  if (!fs.existsSync(baselinePath)) return { version: 1, total: 0, files: {} };
-  return JSON.parse(fs.readFileSync(baselinePath, "utf8"));
+function git(cwd, args) {
+  return execFileSync("git", args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], maxBuffer: 64 * 1024 * 1024 });
 }
 
-export function compareBudget(commentsByFile, baseline) {
+function inCodeRoots(file) {
+  return isCodeFile(file) && CODE_ROOTS.some((top) => file.startsWith(`${top}/`));
+}
+
+export function resolveBase(candidates, cwd = process.cwd()) {
+  for (const ref of candidates) {
+    if (!ref) continue;
+    try {
+      const sha = git(cwd, ["merge-base", ref, "HEAD"]).trim();
+      if (sha) return { ref, sha };
+    } catch {
+      // Missing ref or no shared history: try the next candidate.
+    }
+  }
+  return null;
+}
+
+export function changedCodeFiles(sha, cwd = process.cwd()) {
+  const changed = new Map();
+  for (const line of git(cwd, ["diff", "--name-status", "-M", "--diff-filter=ACMR", sha]).split("\n")) {
+    const [status, first, second] = line.split("\t");
+    if (!status) continue;
+    const file = second ?? first;
+    if (inCodeRoots(file) && fs.existsSync(path.join(cwd, file))) changed.set(file, status.startsWith("R") ? first : file);
+  }
+  for (const file of git(cwd, ["ls-files", "--others", "--exclude-standard"]).split("\n")) {
+    if (inCodeRoots(file)) changed.set(file, file);
+  }
+  return changed;
+}
+
+function commentsAtBase(sha, file, cwd) {
+  let text;
+  try {
+    text = git(cwd, ["show", `${sha}:${file}`]);
+  } catch {
+    return [];
+  }
+  return scanComments(text, file);
+}
+
+function unmatchedComments(current, base) {
+  const pool = new Map();
+  for (const comment of base) pool.set(comment.raw.trim(), (pool.get(comment.raw.trim()) ?? 0) + 1);
+  return current.filter((comment) => {
+    const key = comment.raw.trim();
+    const left = pool.get(key) ?? 0;
+    if (left === 0) return true;
+    pool.set(key, left - 1);
+    return false;
+  });
+}
+
+export function compareToBase(currentByFile, baseByFile) {
   const additions = [];
   let currentTotal = 0;
-  let baselineTotal = 0;
-  for (const [file, comments] of commentsByFile) {
-    const budget = baseline.files?.[file] ?? 0;
-    currentTotal += comments.length;
-    baselineTotal += budget;
-    if (comments.length <= budget) continue;
+  let baseTotal = 0;
+  for (const [file, current] of currentByFile) {
+    const base = baseByFile.get(file) ?? [];
+    currentTotal += current.length;
+    baseTotal += base.length;
+    if (current.length <= base.length) continue;
     additions.push({
       file,
-      baseline: budget,
-      current: comments.length,
-      newComments: comments.slice(budget),
+      base: base.length,
+      current: current.length,
+      added: current.length - base.length,
+      newComments: unmatchedComments(current, base),
     });
   }
-  return { additions, currentTotal, baselineTotal };
+  return { additions, currentTotal, baseTotal };
 }
 
-export function baselineFrom(commentsByFile) {
-  const files = {};
-  let total = 0;
-  for (const [file, comments] of [...commentsByFile].sort(([left], [right]) => left.localeCompare(right))) {
-    if (comments.length === 0) continue;
-    files[file] = comments.length;
-    total += comments.length;
+export function compareWithBase(candidates, cwd = process.cwd()) {
+  const base = resolveBase(candidates, cwd);
+  if (!base) return null;
+  const currentByFile = new Map();
+  const baseByFile = new Map();
+  for (const [file, baseFile] of changedCodeFiles(base.sha, cwd)) {
+    currentByFile.set(file, scanComments(fs.readFileSync(path.join(cwd, file), "utf8"), file));
+    baseByFile.set(file, commentsAtBase(base.sha, baseFile, cwd));
   }
-  return {
-    version: 1,
-    note: "Comment ratchet: adding comments above these per-file counts warns in CI; run `npm run lint:comments -- --update` after deleting comments to ratchet down.",
-    total,
-    files,
-  };
+  return { base, ...compareToBase(currentByFile, baseByFile) };
 }
