@@ -724,6 +724,8 @@ export class McpSettingsSection {
       fetcher: createMcpFetcher(this.effectiveMcpProxySettings()),
       createCallbackReceiver: () =>
         Platform.isMobileApp ? this.host.plugin.createMcpOAuthCallbackReceiver() : undefined,
+      // Mobile: the sign-in notice (shown at the authorization-url stage) has the tap target; no auto-open.
+      openUrl: Platform.isMobileApp ? () => undefined : undefined,
       onProgress: (event: McpOAuthProgressEvent) => handleMcpOAuthProgress(server, event),
     };
   }
@@ -796,7 +798,10 @@ export class McpSettingsSection {
 /** One live notice per server during sign-in: each stage rewrites it (U7 #12). */
 const oauthProgressNotices = new Map<string, Notice>();
 
+const oauthStickyNotices = new Set<string>();
+
 function showMcpOAuthProgress(server: McpServerSettings, message: string): void {
+  if (oauthStickyNotices.has(server.id)) return;
   const existing = oauthProgressNotices.get(server.id);
   if (existing) {
     existing.setMessage(message);
@@ -805,15 +810,47 @@ function showMcpOAuthProgress(server: McpServerSettings, message: string): void 
   oauthProgressNotices.set(server.id, new Notice(message, 0));
 }
 
+/**
+ * Mobile: a WebView blocks a script-opened window after an await (discovery, registration), so the
+ * flow cannot open the browser itself. Show a notice with a real tap target instead; the
+ * flow keeps waiting for the obsidian:// callback.
+ */
+function showMobileSignInButtons(server: McpServerSettings, url: string): void {
+  oauthProgressNotices.get(server.id)?.hide();
+  const notice = new Notice("", 0);
+  oauthProgressNotices.set(server.id, notice);
+  oauthStickyNotices.add(server.id);
+  const box = createFragment();
+  box.createDiv({ text: `Sign in to ${server.name}. Tap the button, sign in, then return to Obsidian.` });
+  // A real anchor tap is the most reliable way to leave the WebView for the system browser.
+  const actions = box.createDiv({ cls: "agentic-chat-signin-actions" });
+  actions.createEl("a", {
+    text: "Open sign-in page",
+    href: url,
+    cls: "agentic-chat-signin-open",
+    attr: { target: "_blank", rel: "noopener" },
+  });
+  const copy = actions.createEl("button", { text: "Copy link" });
+  copy.addEventListener("click", () => {
+    void copyToClipboard(url).then((ok) => copy.setText(ok ? "Copied" : "Copy failed"));
+  });
+  notice.setMessage(box);
+}
+
 /** Close the sign-in notice; the final result or error shows as its own notice. */
 export function endMcpOAuthProgress(server: McpServerSettings): void {
   oauthProgressNotices.get(server.id)?.hide();
   oauthProgressNotices.delete(server.id);
+  oauthStickyNotices.delete(server.id);
 }
 
 export function handleMcpOAuthProgress(server: McpServerSettings, event: McpOAuthProgressEvent): void {
   if (event.stage === "authorization-url") {
     const authorizationUrl = event.detail ?? "";
+    if (Platform.isMobileApp && authorizationUrl) {
+      showMobileSignInButtons(server, authorizationUrl);
+      return;
+    }
     console.warn(
       `Agentic Chat MCP OAuth: authorization URL for ${server.name}; copy this into a browser if no tab opens: ${authorizationUrl}`,
     );

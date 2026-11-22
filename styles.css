@@ -148,13 +148,11 @@ body:not(.is-phone) .agentic-chat-view {
   --ac-safe-bottom: max(var(--safe-area-inset-bottom, 0px), var(--size-4-8));
 }
 
-/* The sidebar drawer does not shrink when the keyboard opens, so the chat stayed
-   full height and the composer drew under the keyboard (U7 #1). Obsidian keeps
-   --keyboard-height on :root (0 when closed); the composer takes that room and
-   the transcript (flex: 1, min-height: 0) shrinks by the same amount. Scoped to
-   the drawer: in the main area the app container already shrinks. */
+/* The sidebar drawer does not always shrink for the keyboard. The chat view measures
+   how much of its bottom the keyboard covers (visual viewport) and the composer takes
+   exactly that room. Obsidian's --keyboard-height is not used: it left a big gap. */
 .is-phone .workspace-drawer .agentic-chat-view {
-  --ac-safe-bottom: max(env(safe-area-inset-bottom, 0px), var(--keyboard-height, 0px));
+  --ac-safe-bottom: max(env(safe-area-inset-bottom, 0px), var(--ac-keyboard-overlap, 0px));
 }
 
 /* Obsidian hides the navbar while the user scrolls ("auto full screen"). The
@@ -2991,4 +2989,29 @@ body.is-mobile,
 
 .is-mobile .agentic-chat-toolbar {
   gap: var(--ac-space-0);
+}
+
+/* Mobile sign-in notice. A notice sits outside .agentic-chat-view, so it maps the
+   Obsidian values it needs into --ac-* tokens itself. */
+.agentic-chat-signin-actions {
+  --ac-space-3: var(--size-4-3);
+  --ac-space-4: var(--size-4-4);
+  --ac-radius-m: var(--radius-m);
+  --ac-accent: var(--interactive-accent);
+  --ac-text-on-accent: var(--text-on-accent);
+  --ac-hit: 44px;
+  display: flex;
+  gap: var(--ac-space-3);
+  margin-top: var(--ac-space-3);
+}
+.agentic-chat-signin-actions a.agentic-chat-signin-open {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--ac-hit);
+  padding: 0 var(--ac-space-4);
+  border-radius: var(--ac-radius-m);
+  background: var(--ac-accent);
+  color: var(--ac-text-on-accent);
+  text-decoration: none;
 }

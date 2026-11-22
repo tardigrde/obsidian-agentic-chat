@@ -8,6 +8,7 @@ import {
   type WorkspaceLeaf,
   setIcon,
 } from "obsidian";
+import { keyboardOverlap } from "./keyboard-overlap";
 import type { AgentEvent, AgentMessage } from "@earendil-works/pi-agent-core";
 import type { ImageContent } from "@earendil-works/pi-ai";
 import type AgenticChatPlugin from "../main";
@@ -399,9 +400,37 @@ export class ChatView extends ItemView {
     );
   }
 
+  /**
+   * Phone: the app container shrinks above the on-screen keyboard but the sidebar drawer
+   * does not, so the keyboard covers the bottom of this view. Publish how far as
+   * --ac-keyboard-overlap (view bottom minus app container bottom). Obsidian's
+   * --keyboard-height is not used: it also counts the space under the view (a big gap),
+   * and the visual viewport does not change in Obsidian mobile.
+   */
+  private trackKeyboardOverlap(): void {
+    if (!Platform.isMobile) return;
+    const doc = this.contentEl.ownerDocument;
+    const update = () => {
+      const app = doc.querySelector(".app-container");
+      const appBottom = app ? app.getBoundingClientRect().bottom : Number.POSITIVE_INFINITY;
+      const overlap = keyboardOverlap(this.contentEl.getBoundingClientRect().bottom, appBottom);
+      this.contentEl.style.setProperty("--ac-keyboard-overlap", `${overlap}px`);
+    };
+    const app = doc.querySelector(".app-container");
+    if (app && typeof ResizeObserver !== "undefined") {
+      const observer = new ResizeObserver(update);
+      observer.observe(app);
+      this.register(() => observer.disconnect());
+    }
+    this.registerDomEvent(this.contentEl, "focusin", () => window.setTimeout(update, 300));
+    this.registerDomEvent(this.contentEl, "focusout", () => window.setTimeout(update, 300));
+    update();
+  }
+
   async onOpen(): Promise<void> {
     this.closed = false;
     this.buildLayout();
+    this.trackKeyboardOverlap();
     // First tab continues the most-recent session (initialize); later tabs each
     // start a fresh session. Each tab's service has its own event subscription.
     this.chatTabs.setTabs([this.chatTabs.createTab()]);

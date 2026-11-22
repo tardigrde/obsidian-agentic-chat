@@ -20,6 +20,8 @@ export interface McpServerAdminDeps {
    * receiver stays registered until a callback consumes it.
    */
   createCallbackReceiver?: () => McpOAuthCallbackReceiver | undefined;
+  /** Opens the sign-in page. Mobile passes a tap button, since a WebView blocks an open after an await. */
+  openUrl?: (url: string) => void | Promise<void>;
   /** Progress sink for the OAuth sign-in flow. */
   onProgress?: (event: McpOAuthProgressEvent) => void;
 }
@@ -47,6 +49,7 @@ export async function authenticateAndProbe(
 ): Promise<McpServerProbeResult> {
   await authenticateMcpServer(server, deps.fetcher, {
     callbackReceiver: deps.createCallbackReceiver?.(),
+    openUrl: deps.openUrl,
     onProgress: deps.onProgress,
   });
   deps.sync(server);

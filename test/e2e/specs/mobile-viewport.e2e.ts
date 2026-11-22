@@ -380,19 +380,24 @@ describe("agentic-chat mobile viewport", function () {
   });
 
   it("lifts the composer above the keyboard in the sidebar drawer (U7 #1)", async function () {
-    // Obsidian keeps --keyboard-height on :root; the drawer did not shrink for it, so
-    // the composer drew under the iOS keyboard.
+    // On a phone the app container shrinks above the keyboard but the drawer does not.
+    // Emulate that: shrink .app-container by 300px and check the composer ends above its
+    // bottom (the keyboard top), without a big gap.
     const gap = await browser.execute(async () => {
-      document.documentElement.style.setProperty("--keyboard-height", "300px");
-      await new Promise((resolve) => setTimeout(resolve, 300));
+      const app = document.querySelector<HTMLElement>(".app-container");
+      const before = app?.style.height ?? "";
+      if (app) app.style.height = `${app.getBoundingClientRect().height - 300}px`;
+      await new Promise((resolve) => setTimeout(resolve, 600));
       const card = document.querySelector<HTMLElement>('[data-ac="composer-card"]')?.getBoundingClientRect();
+      const appBottom = app?.getBoundingClientRect().bottom ?? -1;
       const inDrawer = Boolean(document.querySelector('.workspace-drawer [data-ac="view"]'));
-      const room = card ? window.innerHeight - card.bottom : -1;
-      document.documentElement.style.removeProperty("--keyboard-height");
+      const room = card ? appBottom - card.bottom : -999;
+      if (app) app.style.height = before;
       return { room, inDrawer };
     });
     expect(gap.inDrawer).toBe(true);
-    expect(gap.room).toBeGreaterThanOrEqual(298);
+    expect(gap.room).toBeGreaterThanOrEqual(0);
+    expect(gap.room).toBeLessThanOrEqual(40);
   });
 
   it("keeps the settings tab UI usable at phone width", async function () {
