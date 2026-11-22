@@ -1,4 +1,5 @@
 import { privatePathMessage } from "../../vault/private-rules";
+import { selectionForPath } from "../../vault/editor-for-path";
 import { type App, TFolder, MarkdownView } from "obsidian";
 import { binaryKindByExtension, binaryReadError, looksBinary } from "../../vault/binary-file";
 import type { AgentTool, AgentToolResult } from "@earendil-works/pi-agent-core";
@@ -293,10 +294,7 @@ async function inspectActiveNote(
   // An ignored active note is treated as if no note were open at all.
   if (file?.extension !== "md" || isIgnored(file.path)) throw new Error("No active Markdown note.");
   const lines = [`Active note: ${file.path}`];
-  const selection =
-    params.includeSelection && view?.file?.path === file.path
-      ? view.editor.getSelection()
-      : "";
+  const selection = params.includeSelection ? selectionForPath(app, file.path) : "";
   if (params.includeSelection) lines.push("", "Selection:", selection || "(no selection)");
   if (params.includeContent) {
     const content = await app.vault.cachedRead(file);

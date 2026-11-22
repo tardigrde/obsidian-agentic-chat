@@ -1,9 +1,9 @@
-import { MarkdownView, TFile, TFolder, type App } from "obsidian";
+import { TFile, TFolder, type App } from "obsidian";
 import type { ImageContent } from "@earendil-works/pi-ai";
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import { isInstructionFilePath } from "../agent/instructions";
 import { buildAttachmentSection } from "./attachments";
-import { buildActiveNoteSection, MAX_ACTIVE_NOTE_CHARS } from "./active-note";
+import { buildActiveNotePointer, MAX_OPEN_NOTES } from "./active-note";
 import { attachmentDisplayPath, parseVaultAttachmentRef } from "./attachment-ref";
 import { FOLDER_PREFIX } from "./autocomplete";
 import { isTextContextAttachment, textContextSection, type ContextAttachment } from "./context-attachments";
@@ -11,6 +11,7 @@ import { arrayBufferToBase64, imageMimeType, isImagePath } from "./image-attachm
 import { extractNoteSlice } from "./note-slices";
 import { stripPromptPreamble } from "../session/session-title";
 import { isSummaryMessage } from "../agent/compaction";
+import { selectionForPath } from "../vault/editor-for-path";
 
 export interface PromptContextOptions {
   app: App;
@@ -20,7 +21,8 @@ export interface PromptContextOptions {
   /**
    * The user-message text the model already holds in this session
    * ({@link sentUserText}). A context section that appears in it verbatim is
-   * sent as a one-line "unchanged" stub instead of the full text again.
+   * sent as a one-line "unchanged" stub instead of the full text again. The
+   * active-note pointer is left out when it equals the latest one the model holds.
    */
   sentText?: string;
 }
@@ -41,13 +43,16 @@ export interface ImageAttachmentOptions {
  * the next message does not send the same note again before it lands.
  */
 export function sentUserText(messages: readonly AgentMessage[], pending: readonly string[] = []): string {
-  const parts: string[] = [...pending];
+  const parts: string[] = [];
   for (const message of messages) {
     if (message.role !== "user" || isSummaryMessage(message)) continue;
     const content = message.content;
     if (typeof content === "string") parts.push(content);
     else for (const part of content) if (part.type === "text") parts.push(part.text);
   }
+  // Queued steers are newer than every delivered message, so they go last: the
+  // active-note pointer reads "latest" as the last one in this text.
+  parts.push(...pending);
   return parts.join("\n");
 }
 
@@ -55,7 +60,7 @@ const CONTEXT_OPENING = "<context>\nThe user attached the following from their v
 const CONTEXT_CLOSING = "</context>";
 const SECTION_SEPARATOR = "\n\n---\n\n";
 
-const SECTION_HEAD = /^(Active note|Contents of note|Selected text from|Folder listing for) "([^"\n]+)"/;
+const SECTION_HEAD = /^(Contents of note|Selected text from|Folder listing for) "([^"\n]+)"/;
 
 /** The one-line stand-in for a section the model already holds verbatim, or null to keep it. */
 function unchangedStub(section: string): string | null {
@@ -63,13 +68,11 @@ function unchangedStub(section: string): string | null {
   if (!head) return null;
   const [, kind, path] = head;
   const stub =
-    kind === "Active note"
-      ? `Active note "${path}" is unchanged since it was already attached earlier in this session. Use the read tool to open it if you need the full content.`
-      : kind === "Contents of note"
-        ? `Note "${path}" is unchanged since it was already attached earlier in this session. Use the read tool to open it if you need the full content.`
-        : kind === "Selected text from"
-          ? `Selected text from "${path}" is the same as attached earlier in this session.`
-          : `Folder listing for "${path}" is unchanged since it was already attached earlier in this session.`;
+    kind === "Contents of note"
+      ? `Note "${path}" is unchanged since it was already attached earlier in this session. Use the read tool to open it if you need the full content.`
+      : kind === "Selected text from"
+        ? `Selected text from "${path}" is the same as attached earlier in this session.`
+        : `Folder listing for "${path}" is unchanged since it was already attached earlier in this session.`;
   return stub.length < section.length ? stub : null;
 }
 
@@ -98,10 +101,6 @@ function heldComplete(section: string, sentText: string): boolean {
 /** Build the `<context>` preamble sent before a user prompt. */
 export async function buildPromptContext(options: PromptContextOptions): Promise<string> {
   const sections: string[] = [];
-  if (options.activeNotePath && !isInstructionFilePath(options.activeNotePath)) {
-    sections.push(await loadActiveNoteSection(options, options.activeNotePath));
-  }
-
   for (const entry of options.attachments) {
     if (isTextContextAttachment(entry)) {
       sections.push(textContextSection(entry, entry.sourcePath ? options.isPathIgnored(entry.sourcePath) : false));
@@ -116,8 +115,14 @@ export async function buildPromptContext(options: PromptContextOptions): Promise
     }
   }
 
-  if (sections.length === 0) return "";
   const escapedSections = sections.map((section) => dedupeSection(escapeContextSection(section), options.sentText));
+  // The pointer goes first, at the tail of the conversation (a new user message), so
+  // it never changes the cached prefix. Sent only when it differs from the latest one.
+  if (options.activeNotePath && !isInstructionFilePath(options.activeNotePath) && !options.isPathIgnored(options.activeNotePath)) {
+    const pointer = escapeContextSection(activeNotePointer(options, options.activeNotePath));
+    if (lastHeldPointer(options.sentText) !== pointer) escapedSections.unshift(pointer);
+  }
+  if (escapedSections.length === 0) return "";
   return `${CONTEXT_OPENING}\n\n${escapedSections.join(SECTION_SEPARATOR)}\n${CONTEXT_CLOSING}`;
 }
 
@@ -164,22 +169,46 @@ async function loadAttachmentSection(options: PromptContextOptions, entry: strin
   return buildAttachmentSection({ path: displayPath, full });
 }
 
-async function loadActiveNoteSection(options: PromptContextOptions, path: string): Promise<string> {
-  if (options.isPathIgnored(path)) {
-    return buildAttachmentSection({ path, full: null, restricted: true });
-  }
+/** The pointer for the active note: its path, the selection, and the other open notes. */
+function activeNotePointer(options: PromptContextOptions, path: string): string {
+  return buildActiveNotePointer({
+    path,
+    openPaths: openNotePaths(options.app, path, options.isPathIgnored),
+    selection: activeSelection(options.app, path),
+  });
+}
 
-  const file = options.app.vault.getAbstractFileByPath(path);
-  if (!(file instanceof TFile)) return buildActiveNoteSection({ path, full: null, limit: MAX_ACTIVE_NOTE_CHARS });
+/** Other open Markdown notes, in tab order. Ignored (private) paths never appear. */
+function openNotePaths(app: App, activePath: string, isIgnored: (path: string) => boolean): string[] {
+  const paths: string[] = [];
+  const workspace = app.workspace as { iterateAllLeaves?: (callback: (leaf: { view: unknown }) => void) => void };
+  workspace.iterateAllLeaves?.((leaf) => {
+    const view = leaf.view as { file?: { path?: string; extension?: string } | null };
+    const file = view?.file;
+    if (!file?.path || file.extension?.toLowerCase() !== "md") return;
+    if (file.path === activePath || isIgnored(file.path) || isInstructionFilePath(file.path) || paths.includes(file.path)) return;
+    paths.push(file.path);
+  });
+  return paths.slice(0, MAX_OPEN_NOTES);
+}
 
-  let full: string;
-  try {
-    full = await options.app.vault.cachedRead(file);
-  } catch {
-    return buildActiveNoteSection({ path, full: null, limit: MAX_ACTIVE_NOTE_CHARS });
-  }
-  const visibleRange = full.length > MAX_ACTIVE_NOTE_CHARS ? visibleEditorRange(options.app, file) : null;
-  return buildActiveNoteSection({ path, full, visibleRange, limit: MAX_ACTIVE_NOTE_CHARS });
+function activeSelection(app: App, path: string): string {
+  return selectionForPath(app, path);
+}
+
+/**
+ * The newest active-note pointer in the text the model holds, or null. The pointer
+ * is always the first section of a context block. "Latest", not "any": after A, B,
+ * A the model's current belief is B, so A must be sent again.
+ */
+function lastHeldPointer(sentText: string | undefined): string | null {
+  if (!sentText) return null;
+  const marker = `${CONTEXT_OPENING}\n\nActive note "`;
+  const start = sentText.lastIndexOf(marker);
+  if (start < 0) return null;
+  const rest = sentText.slice(start + CONTEXT_OPENING.length + 2);
+  const ends = [rest.indexOf(SECTION_SEPARATOR), rest.indexOf(`\n${CONTEXT_CLOSING}`)].filter((index) => index >= 0);
+  return rest.slice(0, ends.length > 0 ? Math.min(...ends) : rest.length);
 }
 
 function folderListing(options: PromptContextOptions, folderPath: string): string | null {
@@ -224,24 +253,4 @@ export function assemblePrompt(context: string, request: string): string {
 /** Strip attachment `<context>...</context>` preamble and optional focus hint for display/retry. */
 export function stripContextPreamble(text: string): string {
   return stripPromptPreamble(text);
-}
-
-/**
- * Best-effort slice of the active editor's visible range: a window of lines
- * around the cursor in the matching MarkdownView. Mobile-safe: public Editor API
- * only, and null when there is no editor open on this file.
- */
-export function visibleEditorRange(app: App, file: TFile): string | null {
-  const view = app.workspace.getActiveViewOfType(MarkdownView);
-  if (!view || view.file?.path !== file.path || !view.editor) return null;
-  const editor = view.editor;
-  const total = editor.lineCount();
-  if (total === 0) return null;
-  const cursor = editor.getCursor();
-  const half = 120;
-  const from = Math.max(0, cursor.line - half);
-  const to = Math.min(total - 1, cursor.line + half);
-  const lineText = editor.getLine(to);
-  const text = editor.getRange({ line: from, ch: 0 }, { line: to, ch: lineText ? lineText.length : 0 });
-  return text.trim() ? text : null;
 }

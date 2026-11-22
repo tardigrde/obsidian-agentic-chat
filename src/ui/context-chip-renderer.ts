@@ -10,14 +10,12 @@ import { isImagePath } from "./image-attachments";
 import { acHook } from "./test-hooks";
 
 export interface ContextChipRenderState {
-  activeNotePath: string | null;
   /** A focused note that is private: a lock chip, nothing sent (U4 #11). */
   privateNotePath?: string | null;
   attachments: readonly ContextAttachment[];
 }
 
 export interface ContextChipCallbacks {
-  removeActiveNote: () => void;
   removeAttachment: (entry: ContextAttachment) => void;
 }
 
@@ -27,27 +25,24 @@ export function renderContextChips(
   callbacks: ContextChipCallbacks,
 ): void {
   parent.empty();
-  if (state.activeNotePath) {
-    renderAttachmentChip(parent, state.activeNotePath, true, callbacks.removeActiveNote);
-  } else if (state.privateNotePath) {
+  if (state.privateNotePath) {
     renderPrivateNoteChip(parent, state.privateNotePath);
   }
   for (const entry of state.attachments) {
-    renderAttachmentChip(parent, entry, false, () => callbacks.removeAttachment(entry));
+    renderAttachmentChip(parent, entry, () => callbacks.removeAttachment(entry));
   }
 }
 
 function renderAttachmentChip(
   parent: HTMLElement,
   entry: ContextAttachment,
-  active: boolean,
   onRemove: () => void,
 ): void {
   const isText = isTextContextAttachment(entry);
   const path = typeof entry === "string" ? entry : "";
   const isFolder = path.startsWith(FOLDER_PREFIX);
   const isImage = path ? isImagePath(path) : false;
-  const chip = parent.createDiv({ cls: active ? ["agentic-chat-chip", "is-active-note"] : ["agentic-chat-chip"] });
+  const chip = parent.createDiv({ cls: "agentic-chat-chip" });
   const icon = chip.createSpan({ cls: "agentic-chat-chip-icon" });
   let iconName: string;
   if (isText) iconName = "text-select";
@@ -59,10 +54,6 @@ function renderAttachmentChip(
     cls: "agentic-chat-chip-label",
     text: isFolder ? path.slice(FOLDER_PREFIX.length) : contextAttachmentLabel(entry),
   });
-  if (active) {
-    chip.createSpan({ cls: "agentic-chat-chip-tag", text: "active" });
-    chip.setAttr("title", "The active note is attached automatically — remove to stop for this session.");
-  }
   const remove = chip.createSpan({ cls: "agentic-chat-chip-remove" });
   setIcon(remove, "x");
   remove.addEventListener("click", onRemove);

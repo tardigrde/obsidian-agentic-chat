@@ -602,7 +602,7 @@ describe("agentic-chat settings UI", function () {
 });
 
 // Settings <-> composer mode sync (was settings-mode-sync.e2e.ts, #393 T13).
-/** Seed the note the chat view auto-attaches, so opening the chat has a file. */
+/** Seed the note the chat view points at, so opening the chat has an active file. */
 async function seedWelcomeNote(): Promise<void> {
   await browser.executeObsidian(async ({ app, obsidian }) => {
     const body = "# Welcome\n\nSettings mode sync fixture.";

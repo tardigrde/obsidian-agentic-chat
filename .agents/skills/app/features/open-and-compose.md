@@ -35,8 +35,8 @@ await $(".agentic-chat-send").click();
 
 - Submit through the send button, not a synthesized Enter key. The send button
   uses the same `submit()` route and avoids key-synthesis differences.
-- Active note: open a Markdown note with `browser.executeObsidian`, then wait for
-  `.agentic-chat-chip.is-active-note`.
+- Active note: open a Markdown note with `browser.executeObsidian`. There is no chip (U7 #4);
+  the model gets a pointer. Read it from `state.lastSentPrompt`.
 - Quick Ask: select editor text, run `agentic-chat:quick-ask-inline-edit`, fill
   `.agentic-chat-quick-ask-instruction`, then click
   `.agentic-chat-quick-ask-accept`.
@@ -76,7 +76,7 @@ await $(".agentic-chat-send").click();
 | Autocomplete keys | `src/ui/autocomplete-menu.ts#handleKey` | no committed check | `NONE` |
 | `@` mention autocomplete | `src/ui/autocomplete.ts#detectQuery` | `test/autocomplete.test.ts#detects a mention after whitespace mid-message` (detection only) | `partial` |
 | Drag-and-drop attach | `src/ui/chat-view.ts#handleDrop` | `test/drag-drop.test.ts#parseDroppedVaultPath` (parser only) | `partial` |
-| Active note auto-chip | `src/ui/chat-view.ts#private effectiveActiveNote()` | `test/e2e/specs/smoke.e2e.ts#attaches the active note as a chip, but not an ignored note or AGENTS.md` | `covered` |
+| Active note pointer, no chip (path, selection, open notes; text not sent) (U7 #4) | `src/ui/context-builder.ts#activeNotePointer` | `test/e2e/specs/smoke.e2e.ts#shows no active-note chip for any note (the model gets a pointer, not a chip) (U7 #4)` (chip absence; the pointer text is `test/context-builder.test.ts#points at the active note without sending its text, and attaches explicit notes in full (U7 #4)`) | `covered` |
 | Ignored active note stays out | `src/ui/active-note.ts#autoActiveNotePath` | `test/e2e/specs/runtime-behavior.e2e.ts#does not auto-attach an ignored active note` | `covered` |
 | Remove an attachment chip | `src/ui/chat-view.ts#renderChips` | `test/ui/context-chip-renderer.test.ts#wires remove callbacks to the matching chip` (unit only) | `partial` |
 | Image attachment guard: one notice per drop; image input from the OpenRouter catalog | `src/ui/composer-controller.ts#noticeNoImages`; `src/llm/models.ts#modelInput` | `test/ui/composer-drop.test.ts#U3 #8: repeated drops of an image on a text-only model show one notice, not one per drop`; `test/models.test.ts#U3 #8 / U4 #6: image input unless the catalog says text-only; unknown models allow images` (no real-app drop) | `partial` |
@@ -90,7 +90,7 @@ await $(".agentic-chat-send").click();
   in the middle of a composition event.
 - The chat view debounces autocomplete by 120 ms in `src/ui/chat-view.ts#cancelAutocomplete`.
   Wait for `.agentic-chat-autocomplete`, not for a fixed delay.
-- The plugin suppresses the active note chip for ignored notes, non-Markdown
+- The plugin names no active note for ignored notes, non-Markdown
   files, and standing-instruction files such as `AGENTS.md`.
 - A real drag uses Obsidian's internal drag manager. The parser unit test covers
   path handling only. It does not prove the drop gesture.

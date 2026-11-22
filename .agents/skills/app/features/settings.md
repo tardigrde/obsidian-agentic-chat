@@ -60,6 +60,7 @@ await closeAgenticChatSettings();
 | Approval gates: Per-tool overrides | `src/settings-tab-agent.ts#approvalDefinitions` | `test/e2e/specs/settings-ui.e2e.ts#removes the working-directory section and still saves approval controls` | `covered` |
 | Approval: working directories section removed | `src/settings-tab-agent.ts#approvalDefinitions` | `test/e2e/specs/settings-ui.e2e.ts#removes the working-directory section and still saves approval controls` | `covered` |
 | Web: enable, provider, key, results, fetch limit | `src/settings-tab-web.ts#webDefinitions` | `test/e2e/specs/settings-ui.e2e.ts#persists web access settings through the Advanced tab` | `covered` |
+| Web: download_file saves a file; asks in Safe mode (U7 #10) | `src/tools/web-download.ts#createWebDownloadTool` | `test/web-download.test.ts#saves the bytes into the vault, creating the folder, and points at import_document` (unit only) | `partial` |
 | Web: allowed hosts | `src/settings-tab-web.ts#row("Allowed hosts"` | no committed check | `NONE` |
 | MCP tools: enable and add a server | `src/settings-mcp-section.ts#definitions` | `test/e2e/specs/settings-ui.e2e.ts#generates a plugin package and persists its MCP server through the Advanced tab` | `covered` |
 | Observability with Langfuse | `src/settings-tab-web.ts#observabilityDefinitions` | `test/e2e/specs/settings-ui.e2e.ts#persists observability settings through the Advanced tab` | `covered` |

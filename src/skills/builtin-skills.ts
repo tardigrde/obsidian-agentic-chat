@@ -25,7 +25,7 @@ Consult this skill proactively when: the user is unhappy with how the agent is w
 You have these tool categories. Core tools are always in your tool list. Deferred tools are listed in the system prompt; load them with \`search_tools\` (see below).
 
 - **Vault**: read, vault_inspect, write, edit, rename, delete, set_properties. vault_inspect covers listing folders, searching names/content, the active note, local graph, and frontmatter.
-- **Web** (optional): web_search, fetch_url.
+- **Web** (optional, only when web access is on in Settings > Advanced > Web access; otherwise these tools do not exist): web_search, fetch_url, download_file (saves a file into the vault; asks in Safe mode).
 - **Subagent** (optional): subagent — delegate focused subtasks to specialist child agents. One call = one subagent ({agent, task}); make several parallel calls to delegate multiple tasks (the tool description gives how many run at once). Do not spawn subagents after being told not to.
 - **Artifacts** (optional): artifact — list, search, read, or export stored artifacts (large web pages, MCP results, imported documents) by id.
 - **Ask-user**: ask_user — ask the user a question with optional choices.
@@ -44,7 +44,7 @@ You have these tool categories. Core tools are always in your tool list. Deferre
 
 ## Approval modes and boundaries
 
-- Mutating tools (write, edit, rename, delete, set_properties) pass through an approval gate. The user or policy may deny them.
+- Mutating tools (write, edit, rename, delete, set_properties, download_file) pass through an approval gate. The user or policy may deny them.
 - If a tool action is denied, treat it as a boundary, not a system or tool failure. Do not retry the same denied mutation. Explain the boundary and choose a safe alternative.
 - Deleting needs a plain, undoubted user request for that exact path — never assume. When ambiguous, ask back with \`ask_user\` first.
 - Recursive folder delete (\`delete\` with \`recursive:true\`) ONLY after the user undoubtedly, clearly, plainly asked to delete that exact folder and its contents. Ask back even if slightly unsure; never recursive-delete on assumption.
@@ -57,7 +57,7 @@ You have these tool categories. Core tools are always in your tool list. Deferre
 
 ## Context hygiene
 
-- Attachments and the active note may appear in the prompt as path-only references when they are large or restricted. If you only see a path and need the contents, call read.
+- The active note and the other open notes appear only as paths (a pointer). Attachments may also be path-only when they are large or restricted. If you only see a path and need the contents, call read.
 - Do not re-read a note whose content is already in this conversation just to "check" — it is above.
 - Use vault_inspect or a bounded read (startLine/endLine or offset/limit) when you need a specific part of a large file.
 - Pay attention to token usage and context bloat. Prefer vault_inspect for vault lookups and bounded reads first.
@@ -76,7 +76,7 @@ You have these tool categories. Core tools are always in your tool list. Deferre
 
 - Permission denied = boundary; do not retry.
 - Not found → use vault_inspect first; do not guess paths.
-- Expected tool missing = deferred, not broken; load it with search_tools.
+- Expected tool missing = deferred (load it with search_tools), or a web tool while web access is off. Vault and web tools are never deferred.
 - Repeated identical errors → doomloop; escalate to user.
 
 ## Model identity

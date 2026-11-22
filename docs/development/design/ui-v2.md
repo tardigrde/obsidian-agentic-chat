@@ -81,7 +81,7 @@ With `prefers-reduced-motion`, spinners and pulses are static.
 ├───────────────────────────────────────────┤
 │ ◌ Waiting for your approval               │  status line (only with news)
 │ ╭───────────────────────────────────────╮ │
-│ │ (▢ Active note ×)                     │ │  chips
+│ │ (attached files, if any)              │ │  chips
 │ │ Ask about your vault…                 │ │  textarea (1-8 lines)
 │ │ ⌀ model · effort     ◔ 38%  ⛉Safe  ●  │ │  toolbar · send/stop
 │ ╰───────────────────────────────────────╯ │
@@ -195,8 +195,8 @@ has text below it, or when a message's own text comes before its tool call
 
 ### Composer
 
-- One rounded card with a soft shadow and an accent focus ring: chips (the
-  active note has a dashed outline: attached automatically, removable), an
+- One rounded card with a soft shadow and an accent focus ring: chips (explicit
+  attachments only; the active note is a pointer in the prompt, not a chip), an
   auto-growing textarea (1 to 8 lines), and the toolbar.
 - **Toolbar, left to right:** attach (opens the `@` note picker), **model ·
   effort** as one pill (the name opens the model picker; the muted effort value

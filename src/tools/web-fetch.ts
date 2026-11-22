@@ -33,6 +33,36 @@ export interface WebHttpResponse {
   headers: Record<string, string>;
 }
 
+/** A binary HTTP response, for `download_file`. */
+export interface WebBinaryResponse {
+  status: number;
+  bytes: ArrayBuffer;
+  /** Response headers, keyed by lowercased name. */
+  headers: Record<string, string>;
+  /** The error message when the request itself failed (status 0). */
+  errorText?: string;
+}
+
+/** Like {@link WebFetcher}, but returns the raw bytes. Injected so tests never hit the network. */
+export type WebBinaryFetcher = (request: WebHttpRequest, signal?: AbortSignal) => Promise<WebBinaryResponse>;
+
+/** Production binary fetcher over Obsidian's `requestUrl` (mobile-safe; no Node API). */
+export function createObsidianBinaryFetcher(): WebBinaryFetcher {
+  return async (request, signal) => {
+    throwIfAborted(signal);
+    try {
+      const response = await withAbortSignal(requestUrl({ url: request.url, method: request.method ?? "GET", headers: request.headers, throw: false }), signal);
+      throwIfAborted(signal);
+      const headers: Record<string, string> = {};
+      for (const [key, value] of Object.entries(response.headers ?? {})) headers[key.toLowerCase()] = String(value);
+      return { status: response.status, bytes: response.arrayBuffer, headers };
+    } catch (error) {
+      if (signal?.aborted || isAbortError(error)) throw error;
+      return { status: 0, bytes: new ArrayBuffer(0), headers: {}, errorText: errorMessage(error) };
+    }
+  };
+}
+
 /**
  * Issues an HTTP request for the web tools. Injected so tests never hit the
  * network; production wraps Obsidian's `requestUrl`, which is mobile-safe and
@@ -94,6 +124,8 @@ export interface WebFetchConfig {
   sourceArtifacts?: SourceArtifactDeduper;
   /** Comma-separated host suffix allowlist; empty allows all public hosts. */
   allowedHosts?: string;
+  /** True when this agent has `download_file`: a document URL then says how to read it. */
+  downloadHint?: boolean;
 }
 
 const ACCEPT_HEADER = "text/html,application/xhtml+xml,text/plain,application/json;q=0.9,*/*;q=0.8";
@@ -172,7 +204,7 @@ export function createWebFetchTool(config: WebFetchConfig): AgentTool<typeof Fet
       const limit = clampCharLimit(params.maxChars, config.charLimit);
       const offset = clampOffset(params.offset);
       const contentType = response.headers["content-type"] ?? "";
-      const rendered = renderFetched(url, response.text, contentType, limit, offset);
+      const rendered = renderFetched(url, response.text, contentType, limit, offset, Boolean(config.downloadHint));
       // A cookie or bot wall is not the page: fail, and store no artifact (U4 #15).
       const wall = detectWall(rendered.sourceText);
       if (wall) {
@@ -256,13 +288,20 @@ interface RenderedPage {
 /** Cap on raw bytes fed to the regex extractor, so a huge page can't freeze the UI. */
 const MAX_RAW_CHARS = 500_000;
 
-function renderFetched(url: string, raw: string, contentType: string, limit: number, offset: number): RenderedPage {
+function renderFetched(
+  url: string,
+  raw: string,
+  contentType: string,
+  limit: number,
+  offset: number,
+  downloadHint: boolean,
+): RenderedPage {
   const html = looksLikeHtml(raw, contentType);
   // Don't dump decoded binary (images, archives, PDFs) at the model — wasteful and unreadable.
   if (!html && contentType && !isTextContentType(contentType)) {
     return {
       title: "",
-      text: `Source: ${url}\n\n[Skipped: "${contentType}" is not text. fetch_url only returns readable text.]`,
+      text: `Source: ${url}\n\n[Skipped: "${contentType}" is not text. fetch_url only returns readable text.${downloadHint ? binaryHint(contentType) : ""}]`,
       sourceText: "",
       extractor: "plain-text",
       sourceKind: "web",
@@ -400,6 +439,13 @@ export function normalizeWebUrl(input: string): string {
     throw new Error(`Refusing to fetch a local or private address: ${parsed.hostname}`);
   }
   return parsed.toString();
+}
+
+/** For a document type, the way to read it: save it, then import it. */
+function binaryHint(contentType: string): string {
+  return /pdf|epub|officedocument/i.test(contentType)
+    ? " To read this file, save it with download_file, then use import_document."
+    : "";
 }
 
 /** Set by `scripts/build.mjs`: true only in the e2e build, never in a release. */

@@ -10,7 +10,7 @@ plugins → New skill…*, or ask the agent to create one) and call it with `/<n
 
 ## Read and summarize
 
-**Summarize the open note.** The active note is attached automatically.
+**Summarize the open note.** The agent knows which note is open and reads it with a tool.
 
 ```text
 Summarize this note in 5 bullets. End with open questions.

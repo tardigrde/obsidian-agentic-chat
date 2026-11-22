@@ -127,8 +127,8 @@ export function createSearchToolsTool(options: SearchToolsOptions): AgentTool<ty
         const available = candidates.map((tool) => tool.name);
         const text =
           available.length === 0
-            ? `No deferred tools match "${params.query}". Every deferred tool is already loaded.`
-            : `No deferred tools match "${params.query}". Try other words. Deferred tools: ${available.join(", ")}.`;
+            ? `No deferred tools match "${params.query}". Every deferred tool is already loaded. Vault and web tools are active tools, not deferred, so they are not searched here: if they are available you already have them.`
+            : `No deferred tools match "${params.query}". Try other words. Deferred tools: ${available.join(", ")}. Vault and web tools are active tools, not deferred, so they are not searched here.`;
         return toolResult(text, { query: params.query, loaded: [] });
       }
       const lines = matches.map((match) => `- ${match.tool.name}: ${firstSentence(match.tool.description ?? "")}`);

@@ -19,7 +19,7 @@ export function applyRememberedApprovalChoice(
 ): boolean {
   const policy = approvalPolicyForRememberedChoice(choice);
   if (!policy) return false;
-  if (isPersistentSkillTool(toolName) && policy === "allow") {
+  if (isNeverRememberedAllowTool(toolName) && policy === "allow") {
     // A persistent skill write (create_skill) must
     // never be silently auto-allowed: one fatigued "don't ask again" would
     // disarm the injection gate for all future calls. Remember deny, not allow.
@@ -29,7 +29,11 @@ export function applyRememberedApprovalChoice(
   return true;
 }
 
-/** Tools whose effect persists across sessions as a vault skill package. */
-function isPersistentSkillTool(toolName: string): boolean {
-  return toolName === "create_skill";
+/**
+ * Tools whose "Always allow" is never stored: a persistent skill package, and a
+ * web download (it has no row in the per-tool settings, so a remembered allow
+ * could never be seen or revoked there).
+ */
+function isNeverRememberedAllowTool(toolName: string): boolean {
+  return toolName === "create_skill" || toolName === "download_file";
 }

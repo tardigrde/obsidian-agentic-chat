@@ -23,7 +23,7 @@ version control anyway.
 Add globs to *Settings → Advanced → Ignored files*, for example `Private/`,
 `*.secret.md`, or `**/diary/**`. Matching files report as "not found" to every
 tool, so the agent cannot read, list, search, or edit them. They are never
-auto-attached. Two exceptions: the standing-instructions file (`AGENTS.md`,
+named to the model. Two exceptions: the standing-instructions file (`AGENTS.md`,
 `CLAUDE.md`, or `GEMINI.md`) is sent every turn even if it matches, and an
 image you attach yourself is sent.
 

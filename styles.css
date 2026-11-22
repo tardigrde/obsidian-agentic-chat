@@ -2007,13 +2007,6 @@ body.is-mobile,
   line-height: 1;
 }
 
-/* The active note is attached automatically: a dashed outline, removable. */
-.agentic-chat-chip.is-active-note {
-  border-style: dashed;
-  border-color: var(--ac-border);
-  background-color: transparent;
-}
-
 .agentic-chat-chip-label {
   flex: 1 1 auto;
   min-width: 0;

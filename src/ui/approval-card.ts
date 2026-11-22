@@ -150,9 +150,9 @@ export class ApprovalCard {
     this.actionsEl = this.el.createDiv({ cls: "agentic-chat-approval-actions" });
     const allow = acHook(this.button("Allow", ["mod-cta"]), "approval-allow");
     allow.addEventListener("click", () => this.finish({ approved: true, remember: false }, "allowed"));
-    // A persistent skill write never offers "always": one fatigued click would
-    // approve every future skill write.
-    if (!this.isCreateSkill()) {
+    // A persistent skill write and a web download never offer "always": one fatigued
+    // click would approve every future one, and neither has a per-tool settings row.
+    if (!this.neverRemembered()) {
       const always = acHook(this.button(`Always allow ${this.request.toolName}`, []), "approval-always");
       always.setAttr("title", "Allow now and stop asking for this tool. Changeable in settings.");
       always.addEventListener("click", () => this.finish({ approved: true, remember: true }, "always"));
@@ -274,6 +274,10 @@ export class ApprovalCard {
 
   private isCreateSkill(): boolean {
     return this.request.toolName === "create_skill";
+  }
+
+  private neverRemembered(): boolean {
+    return this.isCreateSkill() || this.request.toolName === "download_file";
   }
 
   /** Full-body preview for create_skill: slug, package path, and the whole body. */

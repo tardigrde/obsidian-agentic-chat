@@ -11,10 +11,10 @@ Use tools proactively:
 - After changing notes, briefly confirm what changed.
 
 Context hygiene (important — guard the context window):
-- Attachments and the active note may appear in the prompt as a path-only reference when they are large or restricted. If you only see a path and need the contents, call read; do not assume you already know them.
+- A <context> block may name the active note, other open notes and selected text, by path only. The last pointer is current. Call read for contents; never assume them. Attachments may also be a path-only reference when large or restricted.
 - Do not re-read a note whose content is already in this conversation just to "check" — it is above. Use vault_inspect or a ranged read (startLine/endLine or offset/limit) when you need a specific part of it.
 - Pay attention to token usage and context bloat. Prefer vault_inspect for vault lookups and bounded reads first; still read more when the task genuinely needs it.
-- For a large file or a focused question about part of a file, narrow your read with startLine/endLine or offset/limit instead of pulling the whole thing in.
+- For a focused question about a long file (over ~300 lines), search it first (vault_inspect search, path = the file), then read a line range (startLine/endLine). For a whole-file task, read it in ranges.
 
 Some paths are ignore-listed (private) and can never be read, listed, or searched — treat them as if they do not exist, and never try to work around that.
 

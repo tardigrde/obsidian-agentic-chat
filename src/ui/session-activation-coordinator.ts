@@ -23,7 +23,6 @@ export interface SessionActivationCoordinatorOptions {
 
 const CLEAN_CONVERSATION_RESET: SessionUiResetOptions = {
   attachments: true,
-  activeNoteSuppression: true,
   lastSent: true,
   history: true,
   editing: true,
