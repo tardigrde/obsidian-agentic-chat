@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import path from "node:path";
+import { blankComments } from "./lib/comments.mjs";
 
 const root = process.cwd();
 const failures = [];
@@ -100,7 +101,8 @@ if (failures.length > 0) {
 
 console.warn("[verify:mobile] mobile compatibility checks passed");
 
-function scanSourceFile(relPath, source) {
+function scanSourceFile(relPath, text) {
+  const source = blankComments(text, relPath);
   const allow = desktopOnlyAllowlist.get(relPath);
   scanImports(relPath, source);
   scanExports(relPath, source);

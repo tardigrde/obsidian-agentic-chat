@@ -2,7 +2,7 @@ import { $, browser, expect } from "@wdio/globals";
 import { after, before, describe, it } from "mocha";
 import { expectWithinWindow, waitForComposerReady } from "../support/layout";
 import { installScriptedTurns, textTurn, toolTurn } from "../support/scripted-stream";
-import { openAgenticChatSettings, closeAgenticChatSettings, selectSettingsTab, waitForSetting } from "../support/settings-ui";
+import { openAgenticChatSettings, openMcpAdvancedFolds, closeAgenticChatSettings, selectSettingsTab, waitForSetting } from "../support/settings-ui";
 
 const VIEW_TYPE_AGENT_CHAT = "agentic-chat-chat-view";
 const MOBILE_WIDTH = Number(process.env.AGENTIC_CHAT_E2E_VIEWPORT_WIDTH || 390);
@@ -11,6 +11,7 @@ const MOBILE_HEIGHT = Number(process.env.AGENTIC_CHAT_E2E_VIEWPORT_HEIGHT || 844
 const COMPOSER_PARTS = ['[data-ac="view"]', '[data-ac="composer-input"]', '[data-ac="send"]'];
 const MOBILE_WRITE_PATH = "Mobile/E2E-Mobile-Approval.md";
 const MOBILE_WRITE_BODY = "mobile approval write ok";
+const MOBILE_BIG_WRITE_PATH = "Mobile/E2E-Mobile-Big.md";
 
 async function setMobileViewport(): Promise<void> {
   const cdpBrowser = browser as typeof browser & {
@@ -352,6 +353,11 @@ describe("agentic-chat mobile viewport", function () {
         content: MOBILE_WRITE_BODY,
       }),
       textTurn("mobile approval final", "Wrote the mobile approval note."),
+      toolTurn("mobile big approval write", "mobile-big-write", "write", {
+        path: MOBILE_BIG_WRITE_PATH,
+        content: Array.from({ length: 200 }, (_, index) => `line ${index + 1} of a long note body`).join("\n"),
+      }),
+      textTurn("mobile big approval final", "Wrote the long note."),
       textTurn(
         "mobile long response",
         `MobileWrap ${Array.from({ length: 30 }, (_, index) => `long-mobile-response-token-${index + 1}`).join("-")}`,
@@ -373,6 +379,27 @@ describe("agentic-chat mobile viewport", function () {
     await expectWithinWindow(COMPOSER_PARTS);
   });
 
+  it("lifts the composer above the keyboard in the sidebar drawer (U7 #1)", async function () {
+    // On a phone the app container shrinks above the keyboard but the drawer does not.
+    // Emulate that: shrink .app-container by 300px and check the composer ends above its
+    // bottom (the keyboard top), without a big gap.
+    const gap = await browser.execute(async () => {
+      const app = document.querySelector<HTMLElement>(".app-container");
+      const before = app?.style.height ?? "";
+      if (app) app.style.height = `${app.getBoundingClientRect().height - 300}px`;
+      await new Promise((resolve) => setTimeout(resolve, 600));
+      const card = document.querySelector<HTMLElement>('[data-ac="composer-card"]')?.getBoundingClientRect();
+      const appBottom = app?.getBoundingClientRect().bottom ?? -1;
+      const inDrawer = Boolean(document.querySelector('.workspace-drawer [data-ac="view"]'));
+      const room = card ? appBottom - card.bottom : -999;
+      if (app) app.style.height = before;
+      return { room, inDrawer };
+    });
+    expect(gap.inDrawer).toBe(true);
+    expect(gap.room).toBeGreaterThanOrEqual(0);
+    expect(gap.room).toBeLessThanOrEqual(40);
+  });
+
   it("keeps the settings tab UI usable at phone width", async function () {
     await openAgenticChatSettings();
     await selectSettingsTab("Models");
@@ -381,6 +408,27 @@ describe("agentic-chat mobile viewport", function () {
     await waitForSetting("Enable MCP");
     await waitForSetting("Mobile MCP Demo");
     assertHeadingRowReadable(await measureHeadingRow("Mobile MCP Demo"), "MCP server header");
+    // U7 #8 and #6: each server is a card; its Advanced fold starts closed.
+    const card = await browser.execute(() => {
+      const el = document.querySelector<HTMLElement>(".agentic-chat-mcp-card");
+      const fold = el?.querySelector<HTMLDetailsElement>("details.agentic-chat-mcp-advanced");
+      const rect = el?.getBoundingClientRect();
+      const border = el ? getComputedStyle(el).borderTopWidth : "0px";
+      const body = document.querySelector<HTMLElement>(".agentic-chat-settings-tabbody");
+      return {
+        exists: Boolean(el),
+        foldClosed: fold ? !fold.open : false,
+        width: rect ? Math.round(rect.width) : 0,
+        right: rect ? Math.round(rect.right) : 0,
+        bodyRight: body ? Math.round(body.getBoundingClientRect().right) : 0,
+        border: Number.parseFloat(border),
+      };
+    });
+    expect(card.exists).toBe(true);
+    expect(card.foldClosed).toBe(true);
+    expect(card.border).toBeGreaterThan(0);
+    expect(card.right).toBeLessThanOrEqual(card.bodyRight + 1);
+    await openMcpAdvancedFolds();
     await waitForSetting("Tool approvals");
     assertHeadingRowReadable(await measureHeadingRow("Tool approvals"), "Tool approvals heading");
     await assertFits(".agentic-chat-settings-tabbody", "MCP settings body");
@@ -398,6 +446,17 @@ describe("agentic-chat mobile viewport", function () {
         ),
       { timeout: 10_000, timeoutMsg: "seeded agent plugin row did not render in Advanced at phone width" },
     );
+    // U7 #9: the path wrapped one letter per line because the controls took the row.
+    const meta = await browser.execute(() => {
+      // The path span is the first child of the meta line; extra lines (reports) follow it.
+      const el = document.querySelector<HTMLElement>(".agentic-chat-plugin-meta > span");
+      const rect = el?.getBoundingClientRect();
+      const style = el ? getComputedStyle(el) : null;
+      const line = Number.parseFloat(style?.lineHeight ?? "") || Number.parseFloat(style?.fontSize ?? "") * 1.4 || 16;
+      return { width: rect ? Math.round(rect.width) : 0, lines: rect ? Math.round(rect.height / line) : 99 };
+    });
+    expect(meta.width).toBeGreaterThan(200);
+    expect(meta.lines).toBeLessThanOrEqual(4);
     await assertFits(".setting-page-content", "settings tabs");
     await assertFits(".agentic-chat-settings-tabbody", "settings body");
     await closeAgenticChatSettings();
@@ -411,6 +470,31 @@ describe("agentic-chat mobile viewport", function () {
       timeout: 10_000,
       timeoutMsg: "mobile approval write did not create the note",
     });
+  });
+
+  it("keeps Allow and Deny on screen for a tall approval card (U7 #3)", async function () {
+    await sendPrompt("mobile big approval write");
+    const card = await $('[data-ac="approval"]:not(.is-resolved)');
+    await card.waitForExist({ timeout: 10_000 });
+    await expectWithinWindow(['[data-ac="approval-allow"]', '[data-ac="approval-deny"]']);
+    // expectWithinWindow checks only the horizontal axis; check the vertical one too.
+    const vertical = await browser.execute(() =>
+      ['[data-ac="approval-allow"]', '[data-ac="approval-deny"]'].map((selector) => {
+        const rect = document.querySelector<HTMLElement>(`[data-ac="approval"]:not(.is-resolved) ${selector}`)?.getBoundingClientRect();
+        return rect ? { top: rect.top, bottom: rect.bottom, inner: window.innerHeight } : null;
+      }),
+    );
+    for (const rect of vertical) {
+      expect(rect).not.toBeNull();
+      expect(rect!.top).toBeGreaterThanOrEqual(0);
+      expect(rect!.bottom).toBeLessThanOrEqual(rect!.inner);
+    }
+    const height = await browser.execute(
+      () => document.querySelector<HTMLElement>('[data-ac="approval"]:not(.is-resolved)')?.getBoundingClientRect().height ?? 0,
+    );
+    expect(height).toBeLessThanOrEqual(530);
+    await card.$('[data-ac="approval-allow"]').click();
+    await card.waitForExist({ reverse: true, timeout: 5_000 });
   });
 
   it("keeps the session history modal usable at phone width", async function () {

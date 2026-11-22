@@ -83,7 +83,7 @@ describe("chat sessions", () => {
     expect(ui.$$(".agentic-chat-user").map((el) => el.textContent)).toEqual([expect.stringContaining("first conversation")]);
     expect(ui.$(".agentic-chat-assistant .agentic-chat-text")?.textContent).toContain("first answer");
   });
-  it("U3 #14: sends the active note body to the model once per session, across another note and a history reload", async () => {
+  it("U7 #4: never sends the active note body; the pointer follows the active note and is not repeated while unchanged", async () => {
     ui = await mountChatView({
       turns: [replayTextTurn("a1"), replayTextTurn("a2"), replayTextTurn("a3"), replayTextTurn("b1"), replayTextTurn("a4")],
     });
@@ -127,8 +127,14 @@ describe("chat sessions", () => {
 
     const texts = userTexts();
     expect(texts).toHaveLength(4);
-    expect(texts.filter((text) => text.includes(body))).toHaveLength(1);
-    expect(texts[3]).toContain('Active note "Inbox/Plan.md" is unchanged');
+    // The note text never goes to the model, however many turns or reloads.
+    expect(texts.filter((text) => text.includes("PLAN-BODY-7f3a"))).toHaveLength(0);
+    expect(texts[0]).toContain('Active note "Inbox/Plan.md"');
+    expect(texts[1]).toContain('Active note "Other.md"');
+    // Back on the first note: the latest pointer the model holds is Other.md, so Plan is named again.
+    expect(texts[2]).toContain('Active note "Inbox/Plan.md"');
+    // After the history reload the latest pointer already is Plan: nothing is repeated.
+    expect(texts[3]).not.toContain("Active note");
   });
   it("U3 #13: closing the view mid-turn records the stopped turn, so the session has no turn without an end", async () => {
     ui = await mountChatView({

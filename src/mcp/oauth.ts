@@ -150,6 +150,9 @@ export async function authenticateMcpServer(
       registeredRedirectUri: client.registeredRedirectUri,
     });
     server.authType = "oauth";
+    // The sign-in answered the challenge; the "requires OAuth" banner must go.
+    server.pendingOAuthChallenge = undefined;
+    server.pendingOAuthResourceUrl = undefined;
     reportOAuthProgress(options, {
       stage: "complete",
       message: `OAuth token stored for ${server.name}.`,

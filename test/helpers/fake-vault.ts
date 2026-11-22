@@ -37,7 +37,6 @@ export class FakeVault {
   private hideFolderBranch(path: string, folder: TFolder): void {
     this.folders.delete(path);
     this.diskOnlyFolders.add(path);
-    // Remove from parent children
     const parent = folder.parent;
     if (parent) {
       parent.children = parent.children.filter((child) => child.path !== path);
@@ -54,7 +53,6 @@ export class FakeVault {
       if (!nested) continue;
       this.folders.delete(key);
       this.diskOnlyFolders.add(key);
-      // Clear nested files from tree as well but keep on disk
     }
   }
 
@@ -358,7 +356,6 @@ export class FakeVault {
   }
 
   private detachFolderFromParent(key: string): void {
-    // detach from parent children
     const parent = this.folders.get(key)?.parent;
     if (parent) parent.children = parent.children.filter((child) => child.path !== key);
   }

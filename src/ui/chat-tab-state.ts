@@ -9,7 +9,6 @@ import type { ContextAttachment } from "./context-attachments";
  */
 export interface ChatTabWorkingState {
   attachments: ContextAttachment[];
-  activeNoteSuppressed: boolean;
   /** Composer text while the tab is in the background. */
   draft: string;
   queuedPromptArmed: boolean;
@@ -29,7 +28,6 @@ export interface ChatTabWorkingState {
 export function freshChatTabState(): ChatTabWorkingState {
   return {
     attachments: [],
-    activeNoteSuppressed: false,
     draft: "",
     queuedPromptArmed: false,
     history: new ComposerHistory(),
@@ -44,7 +42,6 @@ export function freshChatTabState(): ChatTabWorkingState {
 /** Which parts of a tab's conversation state a session change discards. */
 export interface ChatTabStateReset {
   attachments?: boolean;
-  activeNoteSuppression?: boolean;
   lastSent?: boolean;
   history?: boolean;
 }
@@ -52,7 +49,6 @@ export interface ChatTabStateReset {
 /** Reset the selected parts of a tab's state in place. */
 export function resetChatTabState(state: ChatTabWorkingState, reset: ChatTabStateReset): void {
   if (reset.attachments) state.attachments = [];
-  if (reset.activeNoteSuppression) state.activeNoteSuppressed = false;
   if (reset.lastSent) {
     state.lastSentPrompt = null;
     state.lastSentDisplay = null;

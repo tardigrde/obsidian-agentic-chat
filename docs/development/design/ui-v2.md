@@ -55,7 +55,7 @@ allowlist; media query preludes may use `px`.
 
 | State | Colour | Icon | Where it shows |
 |---|---|---|---|
-| `running` | accent | ring spinner, a pulsing dot on a tab | activity line, step row, tab dot, status line |
+| `running` | accent | ring spinner, a pulsing dot on a tab | activity line, step row, tab dot (screen readers: a hidden live-region line) |
 | `needs-you` | orange | hand | approval card, activity line, tab dot, overflow button |
 | `error` | red | alert circle | step row, `· N failed`, tab dot |
 | `done` | green | check circle | step row, activity line (finished) |
@@ -81,7 +81,7 @@ With `prefers-reduced-motion`, spinners and pulses are static.
 ├───────────────────────────────────────────┤
 │ ◌ Waiting for your approval               │  status line (only with news)
 │ ╭───────────────────────────────────────╮ │
-│ │ (▢ Active note ×)                     │ │  chips
+│ │ (attached files, if any)              │ │  chips
 │ │ Ask about your vault…                 │ │  textarea (1-8 lines)
 │ │ ⌀ model · effort     ◔ 38%  ⛉Safe  ●  │ │  toolbar · send/stop
 │ ╰───────────────────────────────────────╯ │
@@ -195,8 +195,8 @@ has text below it, or when a message's own text comes before its tool call
 
 ### Composer
 
-- One rounded card with a soft shadow and an accent focus ring: chips (the
-  active note has a dashed outline: attached automatically, removable), an
+- One rounded card with a soft shadow and an accent focus ring: chips (explicit
+  attachments only; the active note is a pointer in the prompt, not a chip), an
   auto-growing textarea (1 to 8 lines), and the toolbar.
 - **Toolbar, left to right:** attach (opens the `@` note picker), **model ·
   effort** as one pill (the name opens the model picker; the muted effort value
@@ -228,8 +228,7 @@ has text below it, or when a message's own text comes before its tool call
   ```
 
   Deferred MCP tools are not sent, so they show as a count, not tokens.
-- **Status line** above the card, only while it has news (`Working…`,
-  `Waiting for your approval`, `Restored your draft`).
+- **Status line** above the card, only while it has news (`Waiting for your approval`, `Restored your draft`).
 - **Queued follow-up:** the dashed chip in the chips row, same behaviour.
 
 ### Empty state

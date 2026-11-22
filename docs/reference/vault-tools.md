@@ -35,7 +35,7 @@ These tools are always loaded:
 | `subagent` | Delegates recon to the read-only Explorer, one level deep. |
 | `skill` | Read a skill. `action=read` returns its instructions; `action=read_file` reads a file inside the skill folder. Read-only. |
 | `artifact` | Inspect large tool outputs kept out of context. `action=list`, `search`, `read`, or `export`. Read-only. |
-| `web_search` / `fetch_url` | Opt-in web tools. See [Web, MCP, and observability](../features/web-mcp-observability.md). |
+| `web_search` / `fetch_url` / `download_file` | Opt-in web tools. See [Web, MCP, and observability](../features/web-mcp-observability.md). |
 | `current_time` | Local date, time, weekday, and time zone. The system prompt has no date, so the model calls this when a task depends on today. Read-only. |
 | `search_tools` | Load deferred tools (below) by task or name. Read-only. |
 

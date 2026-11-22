@@ -6,7 +6,6 @@ export type ApprovalPolicy = "allow" | "ask" | "deny";
 export interface ApprovalSettings {
   /** Policy applied to mutating tools without an override. */
   mutating: ApprovalPolicy;
-  /** Explicit per-tool overrides, keyed by tool name. */
   perTool: Record<string, ApprovalPolicy>;
 }
 
@@ -76,7 +75,6 @@ export function healPerToolMap(raw: unknown): Record<string, ApprovalPolicy> {
 }
 
 export function clearMcpPerToolApprovals(approval: ApprovalSettings, serverId: string): Record<string, ApprovalPolicy> {
-  // Mirrors src/settings.ts:localMcpToolName prefix logic without importing mcp/tools
   const prefix = `mcp__${serverId}__`;
   const removed: Record<string, ApprovalPolicy> = {};
   for (const key of Object.keys(approval.perTool)) {

@@ -171,6 +171,16 @@ describe("loadPlugins", () => {
     });
   });
 
+  it("shows a server named like its package once, not 'name: name' (U7 #12)", async () => {
+    const app = await seed();
+    await addPlugin(app, "composio", {
+      "plugin.json": manifest("composio"),
+      "mcp.json": mcpDoc({ composio: { type: "streamable-http", url: "https://connect.composio.dev/mcp" } }),
+    });
+    const plugin = byName(await loadPlugins(app), "composio");
+    expect(plugin.mcpServers[0]?.name).toBe("composio");
+  });
+
   it("skips stdio entries as unsupported and keeps streamable-http ones", async () => {
     const app = await seed();
     await addPlugin(app, "mixed", {

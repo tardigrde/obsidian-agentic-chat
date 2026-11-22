@@ -1,13 +1,5 @@
-// Private content rules (U4 #11, owner decision 2026-11-21). The "Ignored
-// paths" setting takes mixed rules, separated by commas or new lines:
-//
-//   Private/  ·  *.secret.md  ·  private   path glob or name (gitignore syntax)
-//   #private                                tag, nested tags too (#private/x);
-//                                           frontmatter and inline
-//   private=true                            property with that value
-//   private=   or   private=*               property with any value
-//
-// A line that starts with "# " (hash, space) is a comment, as before.
+// Private content rules: path globs, #tags, and frontmatter properties, comma/newline separated.
+// A line starting with "# " is a comment.
 
 import type { IgnoreMatcher } from "./ignore";
 import { createFileSystemDenyMatcher } from "./file-system-sandbox";

@@ -12,6 +12,7 @@ import {
   readAgenticChatSettings,
   readSecret,
   readSettingSelect,
+  openMcpAdvancedFolds,
   readSettingsBodyText,
   readSettingText,
   readSettingsTabLabels,
@@ -23,7 +24,6 @@ import {
   setSettingTextByPlaceholder,
   setSettingToggle,
   waitForMcpAddRow,
-  waitForSettingButton,
   waitForAgenticChatSetting,
   waitForSetting,
 } from "../support/settings-ui";
@@ -396,13 +396,15 @@ describe("agentic-chat settings UI", function () {
     await setSettingTextByPlaceholder("Server name", "docs");
     await setSettingTextByPlaceholder("https://mcp.example.com/mcp", "https://docs.example.com/mcp");
     await clickMcpAddButton("Add MCP server");
-    await waitForSetting("Setup guide");
+    await waitForSetting("Approval");
     await setSettingSelect("Approval", "allow");
+    await openMcpAdvancedFolds();
     await setSettingSelect("Authentication", "header");
     await waitForSetting("Auth header");
     await setSettingText("Auth header", "X-E2E-Key");
     await setSettingText("Auth value", "mcp-secret");
-    await waitForSettingButton("Setup guide", "Copy config");
+    // U7 #7: the Setup guide row and Copy config are gone.
+    expect(await readSettingsBodyText()).not.toContain("Copy config");
 
     await waitForAgenticChatSetting((settings) => {
       const snapshot = settings as unknown as SettingsSnapshot;
@@ -600,7 +602,7 @@ describe("agentic-chat settings UI", function () {
 });
 
 // Settings <-> composer mode sync (was settings-mode-sync.e2e.ts, #393 T13).
-/** Seed the note the chat view auto-attaches, so opening the chat has a file. */
+/** Seed the note the chat view points at, so opening the chat has an active file. */
 async function seedWelcomeNote(): Promise<void> {
   await browser.executeObsidian(async ({ app, obsidian }) => {
     const body = "# Welcome\n\nSettings mode sync fixture.";

@@ -22,7 +22,6 @@ export function isDeferredToolName(name: string): boolean {
   return name.startsWith(MCP_TOOL_PREFIX) || DEFERRED_BUILTIN_TOOL_NAMES.has(name);
 }
 
-/** Names of the deferred tools loaded in this session. */
 export class LoadedToolSet {
   private readonly names = new Set<string>();
 
@@ -88,10 +87,6 @@ export function partitionTools(
   return { active, deferred };
 }
 
-// ---------------------------------------------------------------------------
-// search_tools
-// ---------------------------------------------------------------------------
-
 const SearchToolsParameters = Type.Object({
   query: Type.String({ minLength: 1, description: "what the tool must do, or its name" }),
   limit: Type.Optional(
@@ -127,8 +122,8 @@ export function createSearchToolsTool(options: SearchToolsOptions): AgentTool<ty
         const available = candidates.map((tool) => tool.name);
         const text =
           available.length === 0
-            ? `No deferred tools match "${params.query}". Every deferred tool is already loaded.`
-            : `No deferred tools match "${params.query}". Try other words. Deferred tools: ${available.join(", ")}.`;
+            ? `No deferred tools match "${params.query}". Every deferred tool is already loaded. Vault and web tools are active tools, not deferred, so they are not searched here: if they are available you already have them.`
+            : `No deferred tools match "${params.query}". Try other words. Deferred tools: ${available.join(", ")}. Vault and web tools are active tools, not deferred, so they are not searched here.`;
         return toolResult(text, { query: params.query, loaded: [] });
       }
       const lines = matches.map((match) => `- ${match.tool.name}: ${firstSentence(match.tool.description ?? "")}`);
@@ -137,10 +132,6 @@ export function createSearchToolsTool(options: SearchToolsOptions): AgentTool<ty
     },
   };
 }
-
-// ---------------------------------------------------------------------------
-// Ranking: BM25 over the name, the description, and the parameter names
-// ---------------------------------------------------------------------------
 
 const BM25_K1 = 1.2;
 const BM25_B = 0.75;
@@ -227,10 +218,6 @@ function firstSentence(text: string): string {
   const sentence = end === -1 ? trimmed : trimmed.slice(0, end + 1);
   return sentence.length > 160 ? `${sentence.slice(0, 157)}...` : sentence;
 }
-
-// ---------------------------------------------------------------------------
-// System prompt listing
-// ---------------------------------------------------------------------------
 
 /**
  * The model-visible list of deferred tools: one line per built-in deferred

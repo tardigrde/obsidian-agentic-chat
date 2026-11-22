@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { App } from "obsidian";
 import { FOLDER_PREFIX } from "../src/ui/autocomplete";
-import { MAX_ACTIVE_NOTE_CHARS } from "../src/ui/active-note";
-import { buildPromptContext, loadImageAttachments, sentUserText, visibleEditorRange } from "../src/ui/context-builder";
+import { MAX_POINTER_SELECTION_CHARS } from "../src/ui/active-note";
+import { buildPromptContext, loadImageAttachments, sentUserText } from "../src/ui/context-builder";
 import { createTextContextAttachment, MAX_TEXT_CONTEXT_CHARS } from "../src/ui/context-attachments";
 import { FakeApp } from "./helpers/fake-vault";
 
@@ -11,7 +11,7 @@ function app(): FakeApp & App {
 }
 
 describe("buildPromptContext", () => {
-  it("serializes active note and explicit note attachments while skipping image text context", async () => {
+  it("points at the active note without sending its text, and attaches explicit notes in full (U7 #4)", async () => {
     const fake = app();
     await fake.vault.create("Active.md", "active body");
     await fake.vault.create("Other.md", "other body");
@@ -25,13 +25,14 @@ describe("buildPromptContext", () => {
     });
 
     expect(context).toContain('Active note "Active.md"');
-    expect(context).toContain("active body");
+    // The witness: the active note's text is no longer sent (a 200k-token note would cost real money).
+    expect(context).not.toContain("active body");
     expect(context).toContain('Contents of note "Other.md"');
     expect(context).toContain("other body");
     expect(context).not.toContain("PNG bytes should not be text context");
   });
 
-  it("withholds ignored active-note and attachment contents", async () => {
+  it("never names an ignored active note, and withholds an ignored attachment's contents", async () => {
     const fake = app();
     await fake.vault.createFolder("Private");
     await fake.vault.create("Private/Secret.md", "TOP SECRET");
@@ -43,7 +44,7 @@ describe("buildPromptContext", () => {
       isPathIgnored: (path) => path.startsWith("Private/"),
     });
 
-    expect(context).toContain("Private/Secret.md");
+    expect(context).not.toContain("Active note");
     expect(context).toContain("contents are withheld");
     expect(context).not.toContain("TOP SECRET");
   });
@@ -220,53 +221,152 @@ describe("buildPromptContext", () => {
     expect(context).not.toContain("x".repeat(MAX_TEXT_CONTEXT_CHARS + 1));
   });
 
-  it("uses the visible editor range for oversized active notes", async () => {
+  it("includes the selection and the other open notes in the pointer", async () => {
     const fake = app();
-    const file = await fake.vault.create("Long.md", "x".repeat(MAX_ACTIVE_NOTE_CHARS + 1));
+    const file = await fake.vault.create("Active.md", "body");
+    const leaf = (path: string, extension = "md", selection = "") => ({
+      view: { file: { path, extension }, editor: { getSelection: () => selection } },
+    });
+    // The chat view has focus when a prompt is sent: getActiveViewOfType(MarkdownView) is null.
     fake.workspace = {
       getActiveFile: () => file,
-      getActiveViewOfType: <T,>() =>
-        ({
-          file,
-          editor: {
-            lineCount: () => 300,
-            getCursor: () => ({ line: 150, ch: 0 }),
-            getLine: () => "visible slice",
-            getRange: () => "visible slice",
-          },
-        }) as T,
+      getActiveViewOfType: () => null,
+      iterateAllLeaves: (callback: (l: { view: unknown }) => void) => {
+        for (const l of [
+          leaf("Active.md", "md", "chosen words"),
+          leaf("B.md"),
+          leaf("B.md"),
+          leaf("Private/P.md"),
+          leaf("pic.png", "png"),
+          leaf("AGENTS.md"),
+          leaf("C.md"),
+        ]) callback(l);
+      },
     } as unknown as typeof fake.workspace;
 
     const context = await buildPromptContext({
       app: fake,
-      activeNotePath: "Long.md",
+      activeNotePath: "Active.md",
       attachments: [],
-      isPathIgnored: () => false,
+      isPathIgnored: (path) => path.startsWith("Private/"),
     });
 
-    expect(context).toContain("visible in the editor");
-    expect(context).toContain("visible slice");
-    expect(context).not.toContain("x".repeat(MAX_ACTIVE_NOTE_CHARS + 1));
+    expect(context).toContain("Selected text in it:\nchosen words");
+    expect(context).toContain('Other open notes: "B.md", "C.md"');
+    expect(context).not.toContain("Private/P.md");
+    expect(context).not.toContain("pic.png");
+    // A root standing-instructions file is implicit context already; it is not named.
+    expect(context).not.toContain("AGENTS.md");
   });
 
-  it("sends a stub for an active note whose exact text the model already holds", async () => {
+  it("names a long selection by size instead of quoting it", async () => {
     const fake = app();
-    await fake.vault.create("Iac.md", `stable body\n${"line of a long note\n".repeat(20)}`);
+    const file = await fake.vault.create("Active.md", "body");
+    const long = "w".repeat(MAX_POINTER_SELECTION_CHARS + 1);
+    fake.workspace = {
+      getActiveFile: () => file,
+      getActiveViewOfType: () => null,
+      iterateAllLeaves: (callback: (l: { view: unknown }) => void) =>
+        callback({ view: { file: { path: "Active.md", extension: "md" }, editor: { getSelection: () => long } } }),
+    } as unknown as typeof fake.workspace;
+    const context = await buildPromptContext({ app: fake, activeNotePath: "Active.md", attachments: [], isPathIgnored: () => false });
+    expect(context).not.toContain(long);
+    expect(context).toContain("characters are selected");
+  });
+
+  it("leaves the pointer out when the latest one the model holds is the same (prompt-cache safe)", async () => {
+    const fake = app();
+    await fake.vault.create("Iac.md", "stable body");
     const options = { app: fake, activeNotePath: "Iac.md", attachments: [], isPathIgnored: () => false };
 
     const first = await buildPromptContext(options);
     const second = await buildPromptContext({ ...options, sentText: `${first}\n\nhello` });
 
-    expect(first).toContain("stable body");
-    expect(second).toContain('Active note "Iac.md" is unchanged');
-    expect(second).not.toContain("stable body");
+    expect(first).toContain('Active note "Iac.md"');
+    expect(second).toBe("");
   });
 
+  it("sends the pointer again when the active note changes, and when it changes back", async () => {
+    const fake = app();
+    await fake.vault.create("A.md", "a");
+    await fake.vault.create("B.md", "b");
+    const at = (path: string, sentText?: string) =>
+      buildPromptContext({ app: fake, activeNotePath: path, attachments: [], isPathIgnored: () => false, sentText });
+
+    const first = await at("A.md");
+    const second = await at("B.md", `${first}\n\none`);
+    expect(second).toContain('Active note "B.md"');
+    // A held earlier is not "latest": the model now believes B is active.
+    const third = await at("A.md", `${first}\n\none\n${second}\n\ntwo`);
+    expect(third).toContain('Active note "A.md"');
+  });
+
+  it("an earlier turn's text is never edited: the pointer is added at the tail only", async () => {
+    const fake = app();
+    await fake.vault.create("A.md", "a");
+    const options = { app: fake, activeNotePath: "A.md", attachments: [], isPathIgnored: () => false };
+    const first = await buildPromptContext(options);
+    const again = await buildPromptContext(options);
+    // Deterministic: the same inputs give byte-identical text, so a held prefix never changes.
+    expect(again).toBe(first);
+  });
+
+  it("a selection that spans a markdown rule does not defeat the dedupe", async () => {
+    const fake = app();
+    const file = await fake.vault.create("A.md", "body");
+    fake.workspace = {
+      getActiveFile: () => file,
+      getActiveViewOfType: () => null,
+      iterateAllLeaves: (callback: (l: { view: unknown }) => void) =>
+        callback({ view: { file: { path: "A.md", extension: "md" }, editor: { getSelection: () => "above\n\n---\n\nbelow" } } }),
+    } as unknown as typeof fake.workspace;
+    const options = { app: fake, activeNotePath: "A.md", attachments: [], isPathIgnored: () => false };
+    const first = await buildPromptContext(options);
+    expect(first).toContain("below");
+    expect(await buildPromptContext({ ...options, sentText: `${first}\n\nhello` })).toBe("");
+  });
+
+  it("a queued steer is the newest pointer: going back to the earlier note names it again", async () => {
+    const fake = app();
+    await fake.vault.create("A.md", "a");
+    await fake.vault.create("B.md", "b");
+    const at = (path: string, sentText?: string) =>
+      buildPromptContext({ app: fake, activeNotePath: path, attachments: [], isPathIgnored: () => false, sentText });
+    const first = await at("A.md");
+    const steer = await at("B.md", `${first}\n\none`);
+    // A was delivered, B is queued (not delivered yet): the latest the model will hold is B.
+    const sent = sentUserText([{ role: "user", content: first, timestamp: 1 } as never], [steer]);
+    expect(await at("A.md", sent)).toContain('Active note "A.md"');
+    // Staying on B does not repeat it.
+    expect(await at("B.md", sent)).toBe("");
+  });
+
+  it("after a compaction the pointer is sent again, even when the summary quotes it", async () => {
+    const fake = app();
+    await fake.vault.create("A.md", "a");
+    const options = { app: fake, activeNotePath: "A.md", attachments: [], isPathIgnored: () => false };
+    const first = await buildPromptContext(options);
+    const summary = { role: "user", content: [{ type: "text", text: `<conversation-summary>\n${first}\n</conversation-summary>` }], timestamp: 1 };
+    expect(await buildPromptContext({ ...options, sentText: sentUserText([summary as never]) })).toContain('Active note "A.md"');
+  });
+
+  it("sends a stub for an attached note whose exact text the model already holds", async () => {
+    const fake = app();
+    await fake.vault.create("Iac.md", `stable body\n${"line of a long note\n".repeat(20)}`);
+    const options = { app: fake, activeNotePath: null, attachments: ["Iac.md"], isPathIgnored: () => false };
+
+    const first = await buildPromptContext(options);
+    const second = await buildPromptContext({ ...options, sentText: `${first}\n\nhello` });
+
+    expect(first).toContain("stable body");
+    expect(second).toContain('Note "Iac.md" is unchanged');
+    expect(second).not.toContain("stable body");
+  });
   it("re-inlines a shortened note: a prefix of the held section is not the same section", async () => {
     const fake = app();
     const long = `${"Kept line of the plan.\n".repeat(20)}LAST-PARAGRAPH that the user deletes.`;
     const file = await fake.vault.create("Plan.md", long);
-    const options = { app: fake, activeNotePath: "Plan.md", attachments: [], isPathIgnored: () => false };
+    const options = { app: fake, activeNotePath: null, attachments: ["Plan.md"], isPathIgnored: () => false };
     const first = await buildPromptContext(options);
     await fake.vault.modify(file, "Kept line of the plan.\n".repeat(20).trimEnd());
     const shortened = await buildPromptContext({ ...options, sentText: `${first}\n\nturn one` });
@@ -276,10 +376,10 @@ describe("buildPromptContext", () => {
     expect(shortened).not.toContain("LAST-PARAGRAPH");
   });
 
-  it("re-inlines an active note after its content changes", async () => {
+  it("re-inlines an attached note after its content changes", async () => {
     const fake = app();
     const file = await fake.vault.create("Iac.md", "version one");
-    const options = { app: fake, activeNotePath: "Iac.md", attachments: [], isPathIgnored: () => false };
+    const options = { app: fake, activeNotePath: null, attachments: ["Iac.md"], isPathIgnored: () => false };
 
     const first = await buildPromptContext(options);
     await fake.vault.modify(file, "version two");
@@ -311,7 +411,7 @@ describe("buildPromptContext", () => {
   it("keeps a section that is shorter than its stub", async () => {
     const fake = app();
     await fake.vault.create("S.md", "x");
-    const options = { app: fake, activeNotePath: "S.md", attachments: [], isPathIgnored: () => false };
+    const options = { app: fake, activeNotePath: null, attachments: ["S.md"], isPathIgnored: () => false };
     const first = await buildPromptContext(options);
     expect(await buildPromptContext({ ...options, sentText: first })).toBe(first);
   });
@@ -351,19 +451,6 @@ describe("loadImageAttachments", () => {
   });
 });
 
-describe("visibleEditorRange", () => {
-  it("returns null when no matching Markdown editor is active", async () => {
-    const fake = app();
-    const file = await fake.vault.create("A.md", "body");
-    fake.workspace = {
-      getActiveFile: () => null,
-      getActiveViewOfType: () => null,
-    } as unknown as typeof fake.workspace;
-
-    expect(visibleEditorRange(fake, file)).toBeNull();
-  });
-});
-
 describe("sentUserText", () => {
   it("joins the text of user messages only", () => {
     const text = sentUserText([
@@ -381,7 +468,7 @@ describe("note dedupe edges (U4)", () => {
   async function activeNoteContext(sentText?: string): Promise<string> {
     const fake = app();
     await fake.vault.create("Plan.md", `# Plan\n\nThe full plan body. ${"Step and detail. ".repeat(30)}`);
-    return await buildPromptContext({ app: fake, activeNotePath: "Plan.md", attachments: [], isPathIgnored: () => false, sentText });
+    return await buildPromptContext({ app: fake, activeNotePath: null, attachments: ["Plan.md"], isPathIgnored: () => false, sentText });
   }
 
   it("after a compaction the note goes out in full once, even when the summary quotes it", async () => {
@@ -392,14 +479,14 @@ describe("note dedupe edges (U4)", () => {
     expect(afterCompaction).toContain("The full plan body");
     // Once sent again, the next message stubs it.
     const next = await activeNoteContext(sentUserText([summary as never, { role: "user", content: afterCompaction, timestamp: 2 }]));
-    expect(next).toContain('Active note "Plan.md" is unchanged');
+    expect(next).toContain('Note "Plan.md" is unchanged');
   });
 
   it("a steer queued into the running turn marks the note as sent at once", async () => {
     const steered = await activeNoteContext();
     // The steer is not in the messages yet; it waits in the agent's queue.
     const next = await activeNoteContext(sentUserText([], [steered]));
-    expect(next).toContain('Active note "Plan.md" is unchanged');
+    expect(next).toContain('Note "Plan.md" is unchanged');
     expect(next).not.toContain("The full plan body");
   });
 });

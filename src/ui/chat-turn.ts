@@ -248,9 +248,8 @@ export class ChatTurn {
       tab.state.lastSentPrompt = prepared.prompt;
       tab.state.lastSentDisplay = text;
       if (kind === "send") {
-        // Show the auto-attached active note alongside explicit attachments in the user bubble.
-        const shown = [...(staged.autoPath ? [staged.autoPath] : []), ...staged.attachments];
-        this.deps.renderOutgoingUserMessage(text, shown, prepared.images);
+        // Only what the user attached shows in the bubble; the active-note pointer is not an attachment.
+        this.deps.renderOutgoingUserMessage(text, staged.attachments, prepared.images);
         await service.sendPrompt(prepared.prompt, prepared.images, prepared.sessionToken);
       } else {
         this.deps.statusEl().setText("Queued for the active turn.");

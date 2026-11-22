@@ -134,5 +134,10 @@ describe("declarative settings definitions", () => {
     expect(mcp?.items?.map((item) => item.name)).toEqual(
       expect.arrayContaining(["Enable MCP", "HTTP proxy", "No proxy", "Add MCP server", "MCP servers"]),
     );
+    // U7 #6: a first-time user sees the add form first; the proxy rows come last.
+    const order = mcp?.items?.map((item) => item.name) ?? [];
+    expect(order.indexOf("Add MCP server")).toBeLessThan(order.indexOf("MCP servers"));
+    expect(order.indexOf("MCP servers")).toBeLessThan(order.indexOf("HTTP proxy"));
+    expect(order.indexOf("HTTP proxy")).toBeLessThan(order.indexOf("No proxy"));
   });
 });

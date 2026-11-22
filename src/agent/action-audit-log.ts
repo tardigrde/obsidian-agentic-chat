@@ -342,7 +342,7 @@ function diffSummaryForRename(raw: Record<string, unknown>, path: string | undef
 
 function egressForTool(toolName: string, args: unknown): ActionAuditEgress | undefined {
   if (toolName === "web_search") return { kind: "web", target: stringField(args, "query") };
-  if (toolName === "fetch_url") return { kind: "web", target: stringField(args, "url") };
+  if (toolName === "fetch_url" || toolName === "download_file") return { kind: "web", target: stringField(args, "url") };
   if (toolName.startsWith("mcp__")) return { kind: "mcp", target: toolName.split("__")[1] };
   return undefined;
 }

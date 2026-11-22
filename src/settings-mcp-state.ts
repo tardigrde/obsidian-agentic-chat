@@ -14,6 +14,33 @@ export interface McpTestButtonState {
   needsOAuthSignIn: boolean;
 }
 
+/** The loaded-package facts the Remove decision needs. */
+export interface McpPackageFacts {
+  mcpServers: readonly unknown[];
+  skills: readonly unknown[];
+  skillReports: readonly unknown[];
+  reports: readonly unknown[];
+  manifestProblem: string | null;
+  mcpValidation: { servers: readonly unknown[] } | null;
+}
+
+/**
+ * True when removing the package removes only this one server: one valid server,
+ * no valid skill, and nothing skipped (a skill that failed to parse or an
+ * unsupported server entry is still the user's file). Folder removal is permanent.
+ */
+export function isSoleServerPackage(plugin: McpPackageFacts | undefined): boolean {
+  if (!plugin) return false;
+  return (
+    plugin.mcpServers.length === 1 &&
+    (plugin.mcpValidation?.servers.length ?? 0) === 1 &&
+    plugin.skills.length === 0 &&
+    plugin.skillReports.length === 0 &&
+    plugin.reports.length === 0 &&
+    !plugin.manifestProblem
+  );
+}
+
 export function formatMcpToolApprovalDescription(localName: string, tool: McpKnownToolSettings): string {
   return `${localName}${tool.readOnlyHint ? " · read-only hint" : ""}`;
 }

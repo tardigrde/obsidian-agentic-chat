@@ -2,9 +2,11 @@ import { browser, expect } from "@wdio/globals";
 import { after, before, describe, it } from "mocha";
 import { createServer, type Server } from "node:http";
 import {
+  clickConfirmModalButton,
   clickMcpAddButton,
   closeAgenticChatSettings,
   openAgenticChatSettings,
+  openMcpAdvancedFolds,
   readAgenticChatSettings,
   selectSettingsTab,
   setSettingTextByPlaceholder,
@@ -125,7 +127,7 @@ describe("settings MCP dynamic rows", function () {
     await setSettingTextByPlaceholder("https://mcp.example.com/mcp", url);
     await clickMcpAddButton("Add MCP server");
 
-    await waitForSetting("Setup guide");
+    await waitForSetting("Approval");
     await waitForAgenticChatSetting((settings) => {
       const snapshot = settings as unknown as SettingsSnapshot;
       return Object.keys(snapshot.plugins.mcpState ?? {}).some((id) => id.includes("e2e_local"));
@@ -148,19 +150,31 @@ describe("settings MCP dynamic rows", function () {
         state.knownTools?.some((tool) => tool.name === "echo"),
       );
     }, "Test connection did not cache the discovered MCP tool");
+    await openMcpAdvancedFolds();
     await waitForSetting("Tool approvals");
 
-    const removed = await browser.execute((packageName) => {
-      const rows = Array.from(document.querySelectorAll<HTMLElement>(".agentic-chat-plugin-row"));
-      const row = rows.find((candidate) => candidate.textContent?.includes(packageName));
-      const button = Array.from(row?.querySelectorAll<HTMLButtonElement>("button") ?? []).find(
+    // U7 #5: the server's own Remove button is enabled for a package that holds only
+    // this server, asks first, then removes the package (it was disabled and silent).
+    const removeEnabled = await browser.execute(() => {
+      const header = document.querySelector<HTMLElement>(".agentic-chat-mcp-server-header");
+      const button = Array.from(header?.querySelectorAll<HTMLButtonElement>("button") ?? []).find(
         (candidate) => candidate.innerText.trim() === "Remove",
       );
-      if (!button) return false;
+      if (!button || button.disabled) return false;
       button.click();
       return true;
-    }, PACKAGE_NAME);
-    expect(removed).toBe(true);
+    });
+    expect(removeEnabled).toBe(true);
+    // Cancelling keeps the server.
+    await clickConfirmModalButton("Cancel");
+    expect(Object.keys((await readAgenticChatSettings<SettingsSnapshot>()).plugins.mcpState ?? {}).some((id) => id.includes("e2e_local"))).toBe(true);
+    await browser.execute(() => {
+      const header = document.querySelector<HTMLElement>(".agentic-chat-mcp-server-header");
+      Array.from(header?.querySelectorAll<HTMLButtonElement>("button") ?? [])
+        .find((candidate) => candidate.innerText.trim() === "Remove")
+        ?.click();
+    });
+    await clickConfirmModalButton("Remove");
 
     await browser.waitUntil(
       async () => {

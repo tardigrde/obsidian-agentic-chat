@@ -49,12 +49,13 @@ function parentTools(withScaffolder: boolean): AgentTool[] {
 }
 
 describe("tool schema token ceiling", () => {
-  it("keeps the active parent tool set under 2400 model-visible schema tokens", () => {
+  it("keeps the active parent tool set under 2500 model-visible schema tokens", () => {
     const tokens = estimateToolDefinitionTokens(parentTools(false));
-    // 15 always-loaded tools, measured at 3.5 chars/token (about 2284 on
-    // 2026-11-16, down from 2663 for the 20 tools before tool consolidation).
-    // This ceiling guards against prose creeping back into descriptions.
-    expect(tokens).toBeLessThan(2400);
+    // 16 always-loaded tools with web access on, measured at 3.5 chars/token (about
+    // 2284 on 2026-11-16 for 15 tools, down from 2663 for the 20 tools before tool
+    // consolidation). download_file (U7 #10) adds about 115 tokens, and only while
+    // web access is on. This ceiling guards against prose creeping back into descriptions.
+    expect(tokens).toBeLessThan(2500);
   });
 
   it("uses pi-ai's text ratio, so the context bar sums one unit", () => {

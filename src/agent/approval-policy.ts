@@ -61,17 +61,12 @@ function resolveVaultPolicy(query: VaultPolicyQuery): ApprovalPolicyDecision {
   if (modeDecision.policy === "deny" && modeDecision.reason) {
     return { policy: "deny", reason: modeDecision.reason };
   }
-  // create_skill persists a new vault package — default to ask, so an indirect
-  // prompt injection (fetch_url -> create_skill evil) cannot plant a skill.
-  // Respects perTool override so user can set allow/deny explicitly.
+  // create_skill defaults to ask: an indirect prompt injection must not plant a skill.
   const isPersistentSkillTool = query.toolName === "create_skill";
   const policy = isPersistentSkillTool
     ? (getPerToolApproval(query.approval, query.toolName) ?? "ask")
     : modeDecision.policy;
-  // Recursive folder delete always asks, even when the mode would
-  // auto-approve: bulk destruction needs a plain per-path confirmation.
-  // An explicit per-tool "allow" for delete still counts as standing
-  // consent; anything else (YOLO blanket allow included) routes to ask.
+  // Recursive delete always asks unless that tool has an explicit per-tool allow.
   const effectivePolicy =
     isRecursiveDeleteArgs(query.args) &&
     policy === "allow" &&

@@ -202,7 +202,7 @@ describe("agentic-chat runtime behavior", function () {
     }, PRIVATE_NOTE_PATH);
 
     await browser.waitUntil(
-      async () => await browser.execute(() => document.querySelector(".agentic-chat-chip.is-active-note") == null),
+      async () => await browser.execute(() => document.querySelector('[data-ac="chips"] .agentic-chat-chip:not(.is-private)') == null),
       { timeout: 5_000, timeoutMsg: "ignored active note still rendered an automatic context chip" },
     );
 

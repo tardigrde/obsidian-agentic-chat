@@ -8,6 +8,7 @@ import {
   type WorkspaceLeaf,
   setIcon,
 } from "obsidian";
+import { keyboardOverlap } from "./keyboard-overlap";
 import type { AgentEvent, AgentMessage } from "@earendil-works/pi-agent-core";
 import type { ImageContent } from "@earendil-works/pi-ai";
 import type AgenticChatPlugin from "../main";
@@ -94,7 +95,6 @@ export class ChatView extends ItemView {
   private contextRingEl!: SVGCircleElement;
   private contextPercentEl!: HTMLElement;
   private sessionCostEl!: HTMLElement;
-  private workingEl!: HTMLElement;
   /** A pointer press in this view is being handled; its click decides focus. */
   private pointerActivation = false;
   private closed = true;
@@ -218,7 +218,6 @@ export class ChatView extends ItemView {
         sendButton: () => this.sendButton,
         composerInput: () => this.inputEl,
         stopButton: () => this.stopButton,
-        workingEl: () => this.workingEl,
         statusEl: () => this.statusEl,
       },
       isAnyTabStreaming: () => this.isAnyTabStreaming(),
@@ -401,9 +400,37 @@ export class ChatView extends ItemView {
     );
   }
 
+  /**
+   * Phone: the app container shrinks above the on-screen keyboard but the sidebar drawer
+   * does not, so the keyboard covers the bottom of this view. Publish how far as
+   * --ac-keyboard-overlap (view bottom minus app container bottom). Obsidian's
+   * --keyboard-height is not used: it also counts the space under the view (a big gap),
+   * and the visual viewport does not change in Obsidian mobile.
+   */
+  private trackKeyboardOverlap(): void {
+    if (!Platform.isMobile) return;
+    const doc = this.contentEl.ownerDocument;
+    const update = () => {
+      const app = doc.querySelector(".app-container");
+      const appBottom = app ? app.getBoundingClientRect().bottom : Number.POSITIVE_INFINITY;
+      const overlap = keyboardOverlap(this.contentEl.getBoundingClientRect().bottom, appBottom);
+      this.contentEl.style.setProperty("--ac-keyboard-overlap", `${overlap}px`);
+    };
+    const app = doc.querySelector(".app-container");
+    if (app && typeof ResizeObserver !== "undefined") {
+      const observer = new ResizeObserver(update);
+      observer.observe(app);
+      this.register(() => observer.disconnect());
+    }
+    this.registerDomEvent(this.contentEl, "focusin", () => window.setTimeout(update, 300));
+    this.registerDomEvent(this.contentEl, "focusout", () => window.setTimeout(update, 300));
+    update();
+  }
+
   async onOpen(): Promise<void> {
     this.closed = false;
     this.buildLayout();
+    this.trackKeyboardOverlap();
     // First tab continues the most-recent session (initialize); later tabs each
     // start a fresh session. Each tab's service has its own event subscription.
     this.chatTabs.setTabs([this.chatTabs.createTab()]);
@@ -415,7 +442,7 @@ export class ChatView extends ItemView {
     this.registerEvent(this.app.vault.on("delete", invalidate));
     this.registerEvent(this.app.vault.on("rename", invalidate));
     this.registerEvent(this.app.vault.on("modify", invalidate));
-    // Keep the auto-attached active note in sync as the focused leaf/file changes.
+    // Keep the active-note pointer target in sync as the focused leaf/file changes.
     this.registerEvent(
       this.app.workspace.on("active-leaf-change", (leaf) => {
         this.syncActiveNote();
@@ -729,7 +756,6 @@ export class ChatView extends ItemView {
     this.contextRingEl = layout.contextRingEl;
     this.contextPercentEl = layout.contextPercentEl;
     this.sessionCostEl = layout.sessionCostEl;
-    this.workingEl = layout.workingEl;
   }
 
   /** Keep the queued-prompt chip in step with real typing, but not IME composition. */
@@ -769,7 +795,6 @@ export class ChatView extends ItemView {
     this.emptyStateEl = null;
   }
 
-  // --- composer controls (Safe ↔ YOLO toggle) ---
   // S4: all mode mutations (toggle, settings tab) funnel through
   // validateModeTransition + resolveModeTransition so the two surfaces stay
   // atomically in sync (Codex ThreadSettingsOverrides pattern).
@@ -798,7 +823,6 @@ export class ChatView extends ItemView {
     return this.setMode(mode);
   }
 
-  /** Whether the current tab's agent is streaming — exposed for the plugin's S4 broadcast. */
   isStreaming(): boolean {
     return this.isAnyTabStreaming();
   }
@@ -832,8 +856,6 @@ export class ChatView extends ItemView {
     this.effortKnobEl?.toggleClass("is-disabled", streaming);
   }
 
-  // --- chrome (header pill, usage, running state) ---
-
   private syncChrome(): void {
     this.chrome.syncChrome();
   }
@@ -841,8 +863,6 @@ export class ChatView extends ItemView {
   private syncEffortKnob(): void {
     this.chrome.syncEffortKnob();
   }
-
-  // --- submission + slash commands ---
 
   private async submit(source: ComposerSubmitSource): Promise<void> {
     this.cancelAutocomplete();
@@ -986,8 +1006,6 @@ export class ChatView extends ItemView {
     renderErrorPanel(this.messagesEl, message);
     this.scrollToBottom();
   }
-
-  // --- session + model actions ---
 
   private newSession(): Promise<void> { return this.actions.newSession(); }
 

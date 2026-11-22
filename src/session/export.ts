@@ -70,7 +70,6 @@ export function hasExportableTurns(messages: AgentMessage[]): boolean {
   return messages.some((message) => message.role === "user" || message.role === "assistant");
 }
 
-/** Double-quote a YAML scalar, escaping backslashes, quotes, and control whitespace. */
 function yamlString(value: string): string {
   const escaped = value
     .replaceAll("\\", String.raw`\\`)
@@ -81,7 +80,6 @@ function yamlString(value: string): string {
   return `"${escaped}"`;
 }
 
-/** Drop characters illegal in vault file names, collapse whitespace, and cap length. */
 function sanitizeFileName(name: string): string {
   const cleaned = name
     .replace(/[\\/:*?"<>|#^[\]]/g, " ")

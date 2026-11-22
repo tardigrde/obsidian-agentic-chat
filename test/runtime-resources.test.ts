@@ -129,6 +129,35 @@ describe("agent runtime resources", () => {
     expect(prompt).toContain("deep-research");
   });
 
+  it("says web tools are off, and how to turn them on, only while web access is off (U7 #10)", async () => {
+    const resources = await loadAgentRuntimeResources(await seededApp(), settings());
+    const off = settings();
+    off.web.enabled = false;
+    const on = settings();
+    on.web.enabled = true;
+    const offPrompt = composeAgentSystemPrompt(off, resources, "");
+    expect(offPrompt).toContain("Web access is off");
+    expect(offPrompt).toContain("download_file");
+    expect(offPrompt).toContain("Settings > Advanced > Web access");
+    expect(composeAgentSystemPrompt(on, resources, "")).not.toContain("Web access is off");
+  });
+
+  it("registers download_file with the web tools, from the injected binary fetcher", async () => {
+    const on = settings();
+    on.web.enabled = true;
+    const resources = await loadAgentRuntimeResources(await seededApp(), on);
+    const tools = buildAgentParentTools({
+      app: (await seededApp()),
+      settings: on,
+      resources,
+      readMemo: new ReadMemo(),
+      webFetch: async () => ({ status: 200, text: "", headers: {} }),
+      webDownload: async () => ({ status: 200, bytes: new ArrayBuffer(1), headers: {} }),
+      artifactStore: noopArtifactStore,
+    });
+    expect(tools.active.map((tool) => tool.name)).toEqual(expect.arrayContaining(["fetch_url", "web_search", "download_file"]));
+  });
+
   it("marks plugin-contributed skill bodies as untrusted in the system prompt", async () => {
     const resources = await loadAgentRuntimeResources(await seededApp(), settings());
     const prompt = composeAgentSystemPrompt(settings(), resources, "");
@@ -197,6 +226,7 @@ describe("agent runtime resources", () => {
       "set_properties",
       "web_search",
       "fetch_url",
+      "download_file",
       "ask_user",
       "subagent",
       "skill",

@@ -9,7 +9,6 @@ export interface PackageWriter {
   writeFile(path: string, content: string | Uint8Array): Promise<void>;
   /** Recursively remove a folder. Returns true when a folder existed and was removed. */
   removeFolder(path: string): Promise<boolean>;
-  /** True when the folder exists. */
   folderExists(path: string): Promise<boolean>;
   /** Move a folder, replacing any existing target. */
   renameFolder(from: string, to: string): Promise<void>;

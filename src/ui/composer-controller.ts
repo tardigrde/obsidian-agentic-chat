@@ -85,8 +85,6 @@ export class ChatComposer {
     this.mentionCache = null;
   }
 
-  // --- autocomplete (slash commands, skills, @-mentions) ---
-
   /**
    * Debounced recompute for typing/caret events, so a fast typist (or a large
    * vault's mention scan) doesn't re-filter on every keystroke. Picking an item
@@ -159,8 +157,6 @@ export class ChatComposer {
     this.mentionCache = candidates;
     return candidates;
   }
-
-  // --- prompt editing (rewrite a sent user turn) ---
 
   /** Load a sent prompt back into the composer for rewriting. */
   beginEdit(index: number, displayText: string, el: HTMLElement): void {
@@ -235,8 +231,6 @@ export class ChatComposer {
     this.editingEl = null;
   }
 
-  // --- command history (shell-style up/down recall) ---
-
   /** Record a submitted message, skipping consecutive duplicates, then reset navigation. */
   pushHistory(text: string): void {
     this.deps.state().history.record(text);
@@ -265,8 +259,6 @@ export class ChatComposer {
     return true;
   }
 
-  // --- attachments + chips ---
-
   addAttachment(entry: ContextAttachment): void {
     // Image attachments only make sense for a vision-capable model.
     if (typeof entry === "string" && isImagePath(entry) && !this.deps.service().supportsImages()) {
@@ -289,16 +281,12 @@ export class ChatComposer {
   }
 
   /**
-   * Recompute the auto-attached active note from the focused leaf, honoring suppression.
+   * Recompute the active-note pointer target from the focused leaf.
    * Limited to Markdown notes — the active leaf can be an image/PDF/canvas, which would
    * be read as garbage UTF-8 and injected into the prompt.
    */
   syncActiveNote(): void {
-    const state = this.deps.state();
-    const options = {
-      suppressed: state.activeNoteSuppressed,
-      isIgnored: (path: string) => this.deps.service().isPathIgnored(path),
-    };
+    const options = { isIgnored: (path: string) => this.deps.service().isPathIgnored(path) };
     const file = this.deps.app.workspace.getActiveFile();
     this.privateNotePath = privateActiveNotePath(file, options);
     this.deps.setActiveNotePath(autoActiveNotePath(file, options));
@@ -308,7 +296,7 @@ export class ChatComposer {
   /** The focused note when it is private: shown as a chip, never sent (U4 #11). */
   private privateNotePath: string | null = null;
 
-  /** The active note auto-attached this turn, or null (suppressed / none / already explicit). */
+  /** The active note the pointer names this turn, or null (none / already explicit / instruction file). */
   effectiveActiveNote(): string | null {
     const active = computeEffectiveActiveNote(this.activeNoteState());
     return active && isInstructionFilePath(active) ? null : active;
@@ -318,7 +306,6 @@ export class ChatComposer {
     const state = this.deps.state();
     return {
       activePath: this.deps.activeNotePath(),
-      suppressed: state.activeNoteSuppressed,
       explicit: state.attachments
         .filter((entry): entry is string => typeof entry === "string")
         .map((entry) => attachmentBasePath(entry)),
@@ -334,16 +321,10 @@ export class ChatComposer {
     renderContextChips(
       this.deps.chipsEl(),
       {
-        activeNotePath: this.effectiveActiveNote(),
         privateNotePath: this.privateNotePath,
         attachments: state.attachments,
       },
       {
-        removeActiveNote: () => {
-          state.activeNoteSuppressed = true;
-          this.deps.setActiveNotePath(null);
-          this.renderChips();
-        },
         removeAttachment: (entry) => {
           const key = contextAttachmentKey(entry);
           state.attachments = state.attachments.filter((a) => contextAttachmentKey(a) !== key);
@@ -361,8 +342,6 @@ export class ChatComposer {
       this.pendingChipPreviewValue = null;
     }
   }
-
-  // --- drop handling ---
 
   /**
    * Turn dropped notes/folders into context attachments instead of opening them.
@@ -428,8 +407,6 @@ export class ChatComposer {
     const file = this.deps.app.vault.getAbstractFileByPath(path);
     return file instanceof TFile || file instanceof TFolder ? [file] : [];
   }
-
-  // --- queued prompt ---
 
   queueComposerPrompt(): void {
     this.deps.state().queuedPromptArmed = true;

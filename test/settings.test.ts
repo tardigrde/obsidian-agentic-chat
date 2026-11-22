@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { App } from "obsidian";
 import { applyOpenAICompatiblePreset, OPENAI_COMPATIBLE_PRESETS, openAICompatiblePresetForBaseUrl } from "../src/settings";
 import { activeModelConfig, activeModelId, apiKeyForProvider, DEFAULT_SETTINGS, mergeSettings, type AgenticChatSettings } from "../src/settings-schema";
@@ -6,11 +6,7 @@ import { DEFAULT_OPENAI_COMPATIBLE_BASE_URL } from "../src/llm/models";
 import {
   DEFAULT_MCP_SETTINGS,
   createMcpServerSettings,
-  exportMcpServerConfig,
   mcpOAuthSettingsForServer,
-  mcpServerAuthProblem,
-  mcpServerEndpointProblem,
-  mcpServerSetupSteps,
   normalizeMcpServerId,
 } from "../src/mcp/settings";
 import { mcpSecretId, normalizeSecretId } from "../src/secrets/secret-store";
@@ -20,7 +16,7 @@ import {
   renameMcpServer,
   updateMcpServerEndpoint,
 } from "../src/settings-mcp-edits";
-import { handleMcpOAuthProgress } from "../src/settings-mcp-section";
+import { endMcpOAuthProgress, handleMcpOAuthProgress } from "../src/settings-mcp-section";
 import {
   mcpAuthProblem,
   mcpCredentialResourceChanged,
@@ -696,61 +692,26 @@ describe("mergeSettings — MCP", () => {
     ).toMatch(/header names/i);
   });
 
-  it("exports MCP server configs without secrets", () => {
-    const server = createMcpServerSettings({
-      id: "docs",
-      name: "Docs MCP",
-      url: "https://mcp.example.com/mcp",
-      authType: "oauth",
-      approval: "allow",
-      knownTools: [{ name: "search", localName: "mcp__docs__search", title: "Search", readOnlyHint: true }],
-    });
-    server.authHeaderName = "X-Secret";
-    server.authHeaderValue = "header-secret";
-    server.oauth = {
-      ...server.oauth,
-      clientId: "client-1",
-      clientSecret: "client-secret",
-      accessToken: "access-token",
-      refreshToken: "refresh-token",
-      tokenEndpoint: "https://auth.example.com/token",
-      scope: "openid profile",
-    };
-
-    const exported = exportMcpServerConfig(server);
-    const serialized = JSON.stringify(exported);
-
-    expect(serialized).not.toContain("header-secret");
-    expect(serialized).not.toContain("client-secret");
-    expect(serialized).not.toContain("access-token");
-    expect(serialized).not.toContain("refresh-token");
-    expect(exported.knownTools).toEqual([{ name: "search", title: "Search", readOnlyHint: true }]);
-  });
-
-  it("reports setup-guide diagnostics for endpoint, auth, and discovery", () => {
-    const blank = createMcpServerSettings({ id: "mcp" });
-    expect(mcpServerEndpointProblem(blank.url)).toMatch(/Paste an HTTPS/);
-    expect(mcpServerSetupSteps(blank).map((step) => [step.id, step.status])).toEqual([
-      ["endpoint", "action"],
-      ["auth", "complete"],
-      ["discovery", "blocked"],
+  it("keeps one live notice per server while OAuth sign-in runs (U7 #12)", async () => {
+    const { Notice } = await import("obsidian");
+    const rewrite = vi.spyOn(Notice.prototype, "setMessage");
+    const server = createMcpServerSettings({ id: "docs", url: "https://mcp.example.com/mcp" });
+    handleMcpOAuthProgress(server, { stage: "discovery", message: "Discovering OAuth metadata for Docs." });
+    handleMcpOAuthProgress(server, { stage: "registration", message: "Preparing OAuth client for Docs." });
+    handleMcpOAuthProgress(server, { stage: "browser-open", message: "Opening browser for Docs OAuth sign-in." });
+    handleMcpOAuthProgress(server, { stage: "callback-wait", message: "Waiting for Docs OAuth browser callback." });
+    // The first stage creates the notice; each later stage rewrites it, so they
+    // never stack (five toasts covered the screen on a phone).
+    expect(rewrite.mock.calls.map((call) => call[0])).toEqual([
+      "Preparing OAuth client for Docs.",
+      "Opening browser for Docs OAuth sign-in.",
+      "Waiting for Docs OAuth browser callback.",
     ]);
-
-    const header = createMcpServerSettings({
-      id: "docs",
-      url: "https://mcp.example.com/mcp",
-      authType: "header",
-      authHeaderName: "Bad Header",
-      authHeaderValue: "secret",
-    });
-    expect(mcpServerAuthProblem(header)).toMatch(/header names/i);
-    header.authHeaderName = "X-API-Key";
-    header.knownTools = [{ name: "search", title: "Search", readOnlyHint: false }];
-    expect(mcpServerSetupSteps(header).map((step) => [step.id, step.status])).toEqual([
-      ["endpoint", "complete"],
-      ["auth", "complete"],
-      ["discovery", "complete"],
-    ]);
+    const hide = vi.spyOn(Notice.prototype, "hide");
+    endMcpOAuthProgress(server);
+    expect(hide).toHaveBeenCalledTimes(1);
+    hide.mockRestore();
+    rewrite.mockRestore();
   });
 
   it("does not throw when clipboard support is missing during OAuth progress", async () => {

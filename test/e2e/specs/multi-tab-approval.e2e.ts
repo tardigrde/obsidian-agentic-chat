@@ -88,7 +88,6 @@ describe("multi-tab background approval (effort + notify+label)", function () {
   });
 
   it("keeps a background tab's approval in that tab with an orange dot (no auto-switch)", async function () {
-    // Ensure we have 2 tabs
     await browser.execute(() => document.querySelector<HTMLElement>('[data-ac="tab-add"]')?.click());
     await browser.waitUntil(
       async () => {

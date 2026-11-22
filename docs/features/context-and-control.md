@@ -4,11 +4,11 @@ Agentic Chat gives the model context through explicit attachments and vault tool
 
 ## Context attachments
 
-The active note is attached as a removable chip. You can add note, heading, block, folder, drag-and-drop, and selected-text attachments.
+The active note is not attached. The agent gets a short pointer instead: the active note's path, any selected text, and the other open notes (paths only). It reads the text with `read` (line ranges) or `vault_inspect` (search). You can add note, heading, block, folder, drag-and-drop, and selected-text attachments.
 
-The ignore list always wins. Ignored notes are invisible to the agent and are skipped by auto-attachment.
+The ignore list always wins. Ignored notes are invisible to the agent and are never named in the pointer.
 
-Root standing-instruction files (`AGENTS.md`, `CLAUDE.md`, and `GEMINI.md`) are also skipped by auto-attachment. They are implicit context whenever present, so they do not need a removable active-note chip.
+Root standing-instruction files (`AGENTS.md`, `CLAUDE.md`, and `GEMINI.md`) are also left out of the pointer. They are implicit context whenever present.
 
 ## Approval gates
 

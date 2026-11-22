@@ -63,7 +63,8 @@ describe("private content (U4 #11)", () => {
     await settle();
     const chip = ui.$('[data-ac="private-chip"]');
     expect(chip?.textContent).toContain("private, not sent");
-    expect(ui.$$(".agentic-chat-chip.is-active-note")).toHaveLength(0);
+    // Only the lock chip: no chip names the note, private or not.
+    expect(ui.$$(".agentic-chat-chip:not(.is-private)")).toHaveLength(0);
     await ui.send("summarize this");
     await ui.idle();
     const view = ui.view as unknown as { service: { getMessages: () => unknown[] } };

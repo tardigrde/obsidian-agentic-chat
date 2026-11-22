@@ -7,7 +7,6 @@ export interface ConfirmModalOptions {
   confirmText?: string;
   /** Cancel button label. Defaults to "Cancel". */
   cancelText?: string;
-  /** Style the confirm button as a destructive action. */
   destructive?: boolean;
 }
 

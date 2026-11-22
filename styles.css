@@ -123,6 +123,7 @@ body,
   --ac-scroll-s: 200px;
   --ac-scroll-m: 240px;
   --ac-scroll-l: 360px;
+  --ac-approval-max: min(70vh, 520px);
   --ac-user-max: 85%;
 
   --ac-safe-bottom: env(safe-area-inset-bottom, 0px);
@@ -145,6 +146,13 @@ body,
    itself. Only a phone (no status bar) gets the tight 12 px gap. */
 body:not(.is-phone) .agentic-chat-view {
   --ac-safe-bottom: max(var(--safe-area-inset-bottom, 0px), var(--size-4-8));
+}
+
+/* The sidebar drawer does not always shrink for the keyboard. The chat view measures
+   how much of its bottom the keyboard covers (visual viewport) and the composer takes
+   exactly that room. Obsidian's --keyboard-height is not used: it left a big gap. */
+.is-phone .workspace-drawer .agentic-chat-view {
+  --ac-safe-bottom: max(env(safe-area-inset-bottom, 0px), var(--ac-keyboard-overlap, 0px));
 }
 
 /* Obsidian hides the navbar while the user scrolls ("auto full screen"). The
@@ -717,7 +725,6 @@ body.is-mobile,
 /* Users with OS-level reduced motion get no spinners, pulses, or pop-ins. */
 @media (prefers-reduced-motion: reduce) {
   .agentic-chat-spinner,
-  .agentic-chat-working,
   .agentic-chat-dot.is-running,
   .agentic-chat-subagent-status,
   .agentic-chat-activity-chevron,
@@ -1160,6 +1167,10 @@ body.is-mobile,
   background-color: var(--ac-tint-needs-you);
   overflow: hidden;
   outline: none;
+  /* A tall card keeps its head and its buttons on screen; only the body scrolls (U7 #3). */
+  display: flex;
+  flex-direction: column;
+  max-height: var(--ac-approval-max);
 }
 
 .agentic-chat-approval:focus-visible {
@@ -1192,6 +1203,21 @@ body.is-mobile,
   gap: var(--ac-space-1h);
   padding: 0 var(--ac-space-3);
   min-width: 0;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.agentic-chat-approval-head,
+.agentic-chat-approval-actions {
+  flex: 0 0 auto;
+}
+
+.agentic-chat-approval-details > summary {
+  cursor: pointer;
+  color: var(--ac-link);
+  font-size: var(--ac-font-small);
+  min-height: var(--ac-hit-s, 0);
 }
 
 .agentic-chat-approval-desc,
@@ -1646,16 +1672,17 @@ body.is-mobile,
   white-space: nowrap;
 }
 
+.agentic-chat-sr-only {
+  position: absolute;
+  width: var(--ac-line);
+  height: var(--ac-line);
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
 .agentic-chat-status:empty {
   display: none;
-}
-
-.agentic-chat-working-text {
-  display: none;
-}
-
-.agentic-chat-status-line.is-running .agentic-chat-status:empty + .agentic-chat-working-text {
-  display: inline;
 }
 
 /* --- Header: tabs · overflow · new tab · history --- */
@@ -1928,13 +1955,6 @@ body.is-mobile,
   background-color: var(--ac-border);
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .agentic-chat-dot.is-running,
-  .agentic-chat-working {
-    animation: none;
-  }
-}
-
 /* --- The composer card: chips, textarea, and toolbar in one rounded card --- */
 
 .agentic-chat-field {
@@ -1983,13 +2003,6 @@ body.is-mobile,
   color: var(--ac-text-muted);
   font-size: var(--ac-font-small);
   line-height: 1;
-}
-
-/* The active note is attached automatically: a dashed outline, removable. */
-.agentic-chat-chip.is-active-note {
-  border-style: dashed;
-  border-color: var(--ac-border);
-  background-color: transparent;
 }
 
 .agentic-chat-chip-label {
@@ -2465,17 +2478,6 @@ body.is-mobile,
   fill: currentColor;
 }
 
-/* Working: a ring spinner in the status line while a turn runs. */
-.agentic-chat-working {
-  flex: 0 0 auto;
-  width: var(--ac-spinner);
-  height: var(--ac-spinner);
-  border: var(--ac-line-strong) solid var(--ac-tint-running);
-  border-top-color: var(--ac-status-running);
-  border-radius: 50%;
-  animation: agentic-chat-spin 0.8s linear infinite;
-}
-
 /* --- Session list modal --- */
 
 .agentic-chat-session-list {
@@ -2695,6 +2697,40 @@ body.is-mobile,
   opacity: 1;
 }
 
+/* One card per MCP server (U7 #8): servers no longer run together, and every row
+   inside may shrink so a long URL or tool name wraps instead of running under the
+   toggle and buttons. */
+.agentic-chat-mcp-card {
+  margin: var(--ac-space-3) 0;
+  padding: var(--ac-space-2) var(--ac-space-3);
+  border: var(--ac-line) solid var(--ac-border);
+  border-radius: var(--ac-radius-m);
+  min-width: 0;
+}
+
+.agentic-chat-mcp-card .setting-item-info {
+  min-width: 0;
+}
+
+.agentic-chat-mcp-card .setting-item-name,
+.agentic-chat-mcp-card .setting-item-description {
+  overflow-wrap: anywhere;
+}
+
+.agentic-chat-mcp-card .setting-item-control {
+  min-width: 0;
+  max-width: 100%;
+  flex-wrap: wrap;
+}
+
+.agentic-chat-mcp-advanced > summary {
+  cursor: pointer;
+  padding: var(--ac-space-1h) 0;
+  color: var(--ac-text-muted);
+  font-size: var(--ac-font-small);
+  min-height: var(--ac-hit-s, 0);
+}
+
 /* Installed-plugin rows: the title takes the remaining free width (no more
    hostile "b…" truncation), the meta line wraps cleanly, and the toggle plus
    buttons stay vertically centred on a touch-friendly row. */
@@ -2724,7 +2760,17 @@ body.is-mobile,
   margin-top: var(--ac-space-0);
   font-size: var(--ac-font-small);
   color: var(--ac-text-muted);
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
+}
+
+/* On a phone the toggle and buttons would take the whole row and squeeze the path
+   to one letter per line (U7 #9): put the controls under the text. */
+.is-phone .agentic-chat-plugin-row {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.is-phone .agentic-chat-plugin-controls {
+  justify-content: flex-start;
 }
 
 .agentic-chat-plugin-meta-extra {
@@ -2943,4 +2989,29 @@ body.is-mobile,
 
 .is-mobile .agentic-chat-toolbar {
   gap: var(--ac-space-0);
+}
+
+/* Mobile sign-in notice. A notice sits outside .agentic-chat-view, so it maps the
+   Obsidian values it needs into --ac-* tokens itself. */
+.agentic-chat-signin-actions {
+  --ac-space-3: var(--size-4-3);
+  --ac-space-4: var(--size-4-4);
+  --ac-radius-m: var(--radius-m);
+  --ac-accent: var(--interactive-accent);
+  --ac-text-on-accent: var(--text-on-accent);
+  --ac-hit: 44px;
+  display: flex;
+  gap: var(--ac-space-3);
+  margin-top: var(--ac-space-3);
+}
+.agentic-chat-signin-actions a.agentic-chat-signin-open {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--ac-hit);
+  padding: 0 var(--ac-space-4);
+  border-radius: var(--ac-radius-m);
+  background: var(--ac-accent);
+  color: var(--ac-text-on-accent);
+  text-decoration: none;
 }

@@ -151,9 +151,13 @@ const CONTRACT_BY_NAME = new Map<string, BuiltinToolContract>(
   BUILTIN_TOOL_CONTRACTS.map((contract) => [contract.name, contract]),
 );
 
-export const MUTATING_TOOLS: ReadonlySet<string> = new Set(
-  BUILTIN_TOOL_CONTRACTS.filter((contract) => contract.mutating).map((contract) => contract.name),
-);
+/** Mutating tools that are not vault tools: `download_file` writes a file into the vault. */
+const EXTRA_MUTATING_TOOLS: readonly string[] = ["download_file"];
+
+export const MUTATING_TOOLS: ReadonlySet<string> = new Set([
+  ...BUILTIN_TOOL_CONTRACTS.filter((contract) => contract.mutating).map((contract) => contract.name),
+  ...EXTRA_MUTATING_TOOLS,
+]);
 
 export const UNDOABLE_TOOLS: ReadonlySet<string> = new Set(
   BUILTIN_TOOL_CONTRACTS.filter((contract) => contract.undoable).map((contract) => contract.name),
@@ -190,6 +194,9 @@ export function toolApprovalDescription(name: string): string {
       "under the plugins folder). The package persists across sessions and cannot be undone with /undo. " +
       "YOLO does not auto-approve this — review the full body before allowing it."
     );
+  }
+  if (name === "download_file") {
+    return "The agent wants to download a file from the web into your vault. Check the address and the path before allowing it. /undo cannot remove it.";
   }
   return `The agent wants to run the ${name} tool. Review the arguments before allowing it.`;
 }

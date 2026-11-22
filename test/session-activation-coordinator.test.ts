@@ -109,7 +109,6 @@ describe("SessionActivationCoordinator", () => {
     expect(ctx.events).toEqual(["reset", "usage:false", "render:0", "active-note", "tabs", "chrome"]);
     expect(ctx.resets[0]).toMatchObject({
       attachments: true,
-      activeNoteSuppression: true,
       lastSent: true,
       history: true,
       editing: true,

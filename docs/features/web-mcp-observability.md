@@ -21,6 +21,7 @@ The setting shows an egress warning. When enabled, the agent receives:
 | --- | --- |
 | `web_search` | Search through Tavily, Brave, or SearXNG. Returns ranked title, URL, and snippet results (default 5, max 10). |
 | `fetch_url` | Fetch readable text from an HTTP(S) URL. Scripts and markup are stripped. Long pages are paged with `offset` / `nextOffset` (default 10,000 characters per page). |
+| `download_file` | Save a file (PDF, EPUB, Word, PowerPoint, Excel, CSV, text, JSON, or an image, up to 25 MB) from an HTTP(S) URL into the vault. It asks first in Safe mode, never overwrites, and never writes into a hidden folder. Then `import_document` reads a PDF or Office file. |
 | `/deep-research` | Built-in skill: parallel Explorer subagents, an adversarial review, then a sourced note with a `## Sources` list. Offered only while web access is on. |
 
 Guardrails:
@@ -47,7 +48,7 @@ binary rendering are not supported.
 2. **Add MCP server**: name plus an HTTPS endpoint (or `http://localhost…` for a
    local server). This writes an [agent plugin](./agent-plugins.md) package
    (`plugin.json` + `mcp.json`) that owns the endpoint.
-3. Choose auth, then **Test connection** or **Authenticate & test**.
+3. **Test connection** or **Authenticate & test**. The plugin detects OAuth by itself when the server asks for it; the manual choice is under the server's **Advanced** fold.
 4. Set the server's approval policy (default **ask**) and enable it.
 
 New installs have no servers or presets. Imported plugin packages bring their

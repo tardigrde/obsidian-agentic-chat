@@ -6,7 +6,6 @@ describe("freshChatTabState", () => {
     const state = freshChatTabState();
     expect(state).toMatchObject({
       attachments: [],
-      activeNoteSuppressed: false,
       draft: "",
       queuedPromptArmed: false,
       notifiedCost: false,
@@ -35,7 +34,6 @@ describe("resetChatTabState", () => {
   it("resets only the selected parts and keeps the sent history", () => {
     const state = freshChatTabState();
     state.attachments.push("A.md");
-    state.activeNoteSuppressed = true;
     state.lastSentPrompt = "context\n\nhello";
     state.lastSentDisplay = "hello";
     state.history.record("hello");
@@ -45,7 +43,6 @@ describe("resetChatTabState", () => {
     expect(state.attachments).toEqual([]);
     expect(state.lastSentPrompt).toBeNull();
     expect(state.lastSentDisplay).toBeNull();
-    expect(state.activeNoteSuppressed).toBe(true);
     expect(state.history.entries()).toEqual(["hello"]);
   });
 });

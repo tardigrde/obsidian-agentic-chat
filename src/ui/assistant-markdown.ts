@@ -314,7 +314,7 @@ export interface EditPair {
 
 /**
  * Render a compact oldText(−)/newText(+) diff for an edit step. The step keeps
- * its own line class: the approval modal and Quick Ask use a diff-table style
+ * its own line class: the approval card and Quick Ask use a diff-table style
  * that must not leak into this flex marker layout.
  */
 export function renderStepEditDiff(call: HTMLElement, edits: EditPair[], maxLines = 24): void {
