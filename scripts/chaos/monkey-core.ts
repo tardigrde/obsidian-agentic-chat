@@ -135,7 +135,6 @@ export function parseCaps(
   };
 }
 
-/** Select the mode. Focused mode needs a named target. */
 export function selectMode(modeValue: string | undefined, targetValue: string | undefined): ChaosSelection {
   const raw = (modeValue ?? "smoke").trim().toLowerCase();
   if (raw === "focused" || raw === "generic") {
@@ -205,7 +204,6 @@ export type ChaosPlan = {
   startedAt: number;
   outDir: string;
   cancelFile: string;
-  /** Deterministic choice stream for generic mode. */
   seed: number;
   model: string;
   baseUrl: string;

@@ -53,7 +53,6 @@ export function normalizeAgentName(name: string): string {
   return name.trim().toLowerCase();
 }
 
-/** Case-insensitive role lookup (trims the request). */
 export function findAgentRole(roles: Pick<AgentRole, "name">[], name: string): AgentRole | undefined {
   const wanted = normalizeAgentName(name);
   return (roles as AgentRole[]).find((candidate) => candidate.name.trim().toLowerCase() === wanted);
@@ -73,7 +72,6 @@ function sanitizeRoleText(value: string, maxLength: number): string {
   return value.replace(/[\r\n]+/g, " ").replace(/\s+/g, " ").trim().slice(0, maxLength);
 }
 
-/** Format the model-visible block advertising the available subagents. */
 export function formatAgentRolesForSystemPrompt(roles: AgentRole[]): string {
   if (roles.length === 0) return "";
   const lines = roles.map(

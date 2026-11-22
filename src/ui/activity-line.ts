@@ -447,7 +447,6 @@ export class ActivityLine {
   }
 }
 
-/** One icon per status: spinner, hand, check, alert. */
 export function renderStatusIcon(el: HTMLElement, state: ActivityState | StepStatus): void {
   el.empty();
   el.removeClasses(["is-running", "is-needs-you", "is-done", "is-error"]);

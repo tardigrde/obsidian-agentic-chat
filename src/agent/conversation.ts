@@ -60,10 +60,6 @@ export class AgentConversation {
     this.createAgent = options.createAgent ?? createParentAgent;
   }
 
-  // ---------------------------------------------------------------------------
-  // The parent agent
-  // ---------------------------------------------------------------------------
-
   get currentAgent(): Agent | null {
     return this.agent;
   }
@@ -151,10 +147,6 @@ export class AgentConversation {
     return agent;
   }
 
-  // ---------------------------------------------------------------------------
-  // Session activation
-  // ---------------------------------------------------------------------------
-
   /**
    * Reload vault-backed resources without touching the live agent or any
    * session-local state. A failed reload therefore leaves the previous session
@@ -173,10 +165,6 @@ export class AgentConversation {
     this.options.runtimeResources.clearSessionState(messages);
     this.replaceAgent(messages);
   }
-
-  // ---------------------------------------------------------------------------
-  // The session file
-  // ---------------------------------------------------------------------------
 
   get info(): SessionInfo | undefined {
     return this.sessionInfo;

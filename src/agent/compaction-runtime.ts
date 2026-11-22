@@ -471,8 +471,6 @@ async function generateSummaryWithStream(
   // Summarization only wants the dialogue: the transcript also carries pi's
   // system message, which holds the full system prompt and every tool schema
   // and would duplicate the `SUMMARIZATION_SYSTEM_PROMPT` sent alongside it.
-  // `serializeMessage` returns undefined for that role, so the filter is
-  // belt-and-braces rather than load-bearing.
   const conversationText = serializeConversation(currentMessages);
   let promptText = `<conversation>\n${conversationText}\n</conversation>\n\n`;
   if (previousSummary) {

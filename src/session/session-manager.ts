@@ -310,7 +310,6 @@ export class ObsidianSessionManager {
     });
   }
 
-  /** Set or clear (empty) the active session's tab label. */
   async appendTabLabel(label: string | undefined): Promise<string> {
     return this.appendEntry<TabLabelSessionEntry>({
       type: "tab_label",
@@ -691,7 +690,6 @@ export class ObsidianSessionManager {
     }
   }
 
-  /** A history row for a session file that cannot be read. */
   private async unreadableSessionInfo(path: string): Promise<SessionFileInfo> {
     let modifiedTime = 0;
     try {

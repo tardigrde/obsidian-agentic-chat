@@ -33,10 +33,7 @@ export interface WebSearchConfig {
 export const SEARCH_RETRY_DELAYS_MS: readonly number[] = [1_000, 3_000, 8_000];
 const MAX_RETRY_AFTER_MS = 30_000;
 
-/**
- * One search at a time per provider (U4 #14): three parallel Brave calls in
- * 41 ms drew an HTTP 429. Calls queue behind each other instead.
- */
+/** One search at a time per provider; parallel Brave calls drew HTTP 429. */
 const providerQueues = new Map<WebSearchProvider, Promise<unknown>>();
 
 function serialized<T>(provider: WebSearchProvider, run: () => Promise<T>): Promise<T> {

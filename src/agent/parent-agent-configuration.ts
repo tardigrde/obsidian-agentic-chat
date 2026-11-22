@@ -55,7 +55,6 @@ export class AgentParentConfigurationRuntime {
       // `finishTurn` also receives the run's abort signal; the guard does not
       // need it, so it is intentionally left unbound. A stopped approval always
       // ends the turn, even when pi replaced the denial with an abort result.
-      // There is no turn cap (U4): Stop, the loop guard, and the spend cap guard a run.
       finishTurn: (turn) => {
         if (this.options.toolCalls.consumeStopRequested()) return { action: "end" as const };
         return this.options.loopGuard.finishTurn(turn);

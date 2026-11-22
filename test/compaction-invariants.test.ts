@@ -13,7 +13,7 @@ import {
 /**
  * First-principles tests for compaction + context rebuild (src/agent/compaction.ts).
  *
- * Contract (AGENTS.md + compaction.ts JSDoc): compaction is the loop's memory.
+ * Contract (ADR 0012 and compaction.ts JSDoc): compaction is the loop's memory.
  * Across a compaction boundary nothing may be lost or hallucinated, message order
  * is preserved, and assistant/tool-result pairs are never orphaned — the cut point
  * is always a user-message boundary, so the retained slice stays a valid model
@@ -24,7 +24,7 @@ import {
 const CONFIG: CompactionConfig = { enabled: true, thresholdFraction: 0.8, keepFraction: 0.3 };
 // estimateMessageTokens ≈ chars/3.5 for text at the current pi-ai ratio.
 const WINDOW = 1000;
-const KEEP_BUDGET = WINDOW * CONFIG.keepFraction; // 300
+const KEEP_BUDGET = WINDOW * CONFIG.keepFraction;
 
 function user(chars: number): AgentMessage {
   return { role: "user", content: [{ type: "text", text: "u".repeat(chars) }], timestamp: 0 } as AgentMessage;

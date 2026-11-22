@@ -59,6 +59,8 @@ export default defineConfig({
         items: [
           { text: "Development guide", link: "/development/" },
           { text: "Testing", link: "/development/testing" },
+          { text: "Code comments", link: "/development/comments" },
+          { text: "Decision records", link: "/adr/" },
           { text: "Verification", link: "/development/verification" },
           { text: "Evals", link: "/development/evals" },
           { text: "UI v2 design", link: "/development/design/ui-v2" },

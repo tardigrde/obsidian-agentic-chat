@@ -75,6 +75,7 @@ export function staticSteps() {
     step("e2e typecheck", NODE, [TSC7, "-p", "tsconfig.e2e.json", "--noEmit"]),
     step("scripts typecheck", NODE, [TSC7, "-p", "config/tsconfig.eslint.json", "--noEmit"]),
     step("lint", bin("eslint"), ["."]),
+    step("comment budget (warn)", NODE, ["scripts/comment-budget.mjs"]),
     step("lint:obsidian", bin("eslint"), ["-c", "config/eslint.obsidian.mjs", "--max-warnings", "0", "src"]),
     step("feature map", NODE, ["scripts/check-feature-map.mjs"]),
     step("test manifest", NODE, ["scripts/check-test-manifest.mjs"]),

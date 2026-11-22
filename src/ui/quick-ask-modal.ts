@@ -77,7 +77,7 @@ function buildQuickAskTargetText(target: QuickAskTarget): string {
   return `${kindLabel} in ${target.path}`;
 }
 
-/** Quick Ask diff preview, with its own scoped line class (not the approval table). */
+/** Quick Ask diff preview, with its own scoped line class (not the approval card). */
 export function renderQuickAskDiff(container: HTMLElement, before: string, after: string): void {
   if (diffTooLarge(before, after)) {
     const beforeLines = before ? before.split("\n").length : 0;

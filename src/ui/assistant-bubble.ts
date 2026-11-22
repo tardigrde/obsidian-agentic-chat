@@ -55,8 +55,7 @@ export class AssistantBubble {
   private reasoning: ReasoningEntry | null = null;
   private reasoningPhaseValue: ReasoningPillPhase = "none";
   private markdown = "";
-  // Streaming deltas are buffered and flushed once per animation frame, so a fast
-  // token stream causes one DOM mutation/reflow per frame instead of one per token.
+  // Buffer deltas per animation frame: one DOM mutation/reflow per frame, not per token.
   private pendingText = "";
   private pendingReasoning = "";
   private flushHandle: number | null = null;
@@ -106,7 +105,7 @@ export class AssistantBubble {
   }
 
   appendText(delta: string): void {
-    // Late deltas after the final render must not append raw text over it.
+    // A late delta after the final render must not append raw text over it.
     if (this.markdown) return;
     this.pendingText += delta;
     // The answer has started, so the reasoning is done.

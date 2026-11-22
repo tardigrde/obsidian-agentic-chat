@@ -18,7 +18,6 @@ export interface ContextLoadInput {
   systemPrompt?: string;
   /** Tools the model can currently call (loaded tools only; deferred tools are not sent). */
   tools?: readonly AgentTool[];
-  /** Tokens held back for the model's response. */
   reserveTokens?: number;
   /** Parts of the system prompt and tool catalog, for the breakdown. */
   parts?: ContextLoadParts;
@@ -50,13 +49,10 @@ export interface ContextBreakdown {
 
 /** Section-by-section token accounting for the context the next request will send. */
 export interface ContextLoadEstimate {
-  /** Estimated tokens in the conversation transcript. */
   transcriptTokens: number;
   /** Estimated tokens in the composed system prompt, including loaded skill bodies. */
   systemPromptTokens: number;
-  /** Estimated tokens in the active tool schemas. */
   toolSchemaTokens: number;
-  /** Tokens held back for the model's response. */
   reserveTokens: number;
   /** Input tokens for the next request: transcript + system prompt + tool schemas. */
   inputTokens: number;
@@ -73,7 +69,6 @@ export interface ContextReadout {
   load: ContextLoadEstimate;
 }
 
-/** Expected output tokens for the next request: the configured max, else a fixed reserve. */
 export function expectedOutputTokens(settings: Pick<AgenticChatSettings, "maxTokens">): number {
   return settings.maxTokens > 0 ? settings.maxTokens : DEFAULT_EXPECTED_OUTPUT_TOKENS;
 }

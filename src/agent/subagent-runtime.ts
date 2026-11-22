@@ -126,8 +126,8 @@ export function childModelConfig(settings: AgenticChatSettings, modelOverride?: 
  * gates still govern execution.
  */
 export function filterChildTools(tools: AgentTool[], allowlist: string[]): AgentTool[] {
-  // Allowlist entries come from vault frontmatter — normalize case/whitespace
-  // so "Read, search" does not silently lobotomise the child to zero tools.
+  // Allowlist entries come from vault frontmatter: normalize case and whitespace
+  // so "Read, search" does not silently reduce the child to zero tools.
   const normalized = allowlist.map((name) => name.trim().toLowerCase()).filter(Boolean);
   let allowed =
     normalized.length > 0

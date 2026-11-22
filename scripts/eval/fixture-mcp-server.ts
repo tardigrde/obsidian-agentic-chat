@@ -69,7 +69,6 @@ const body: SchemaProperty = { type: "string", description: "Text body." };
  * out of a realistic list instead of an obvious single match.
  */
 const TOOL_SPECS: ToolSpec[] = [
-  // Search
   {
     name: "search_documents",
     description: "Search workspace documents by title or body text.",
@@ -108,7 +107,6 @@ const TOOL_SPECS: ToolSpec[] = [
     },
     required: ["query"],
   },
-  // Documents
   {
     name: "get_document",
     description: "Fetch one document by id.",
@@ -149,7 +147,6 @@ const TOOL_SPECS: ToolSpec[] = [
     },
     required: ["documentId", "format"],
   },
-  // Tickets
   {
     name: "list_tickets",
     description: "List tickets by status and assignee.",
@@ -192,7 +189,6 @@ const TOOL_SPECS: ToolSpec[] = [
     properties: { ticketId, comment: { type: "string", description: "Comment text." } },
     required: ["ticketId", "comment"],
   },
-  // Calendar
   {
     name: "list_calendar_events",
     description: "List calendar events in a date range.",
@@ -242,7 +238,6 @@ const TOOL_SPECS: ToolSpec[] = [
     },
     required: ["attendees", "durationMinutes"],
   },
-  // Files
   {
     name: "list_files",
     description: "List files in a workspace folder.",
@@ -283,7 +278,6 @@ const TOOL_SPECS: ToolSpec[] = [
     properties: { filePath },
     required: ["filePath"],
   },
-  // Admin
   {
     name: "list_users",
     description: "List workspace users and their roles.",

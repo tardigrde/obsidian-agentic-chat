@@ -375,8 +375,6 @@ const RETIRED_SETTING_KEYS = [
   "outputStyle",
   "embeddings",
   "toolBudget",
-  // U4 (owner, 2026-11-21): no turn caps and no subagent timeout. Stop, the
-  // loop guard, and the spend cap are the guards.
   "maxTurnsPerPrompt",
   "subagentTimeoutSeconds",
 ] as const;

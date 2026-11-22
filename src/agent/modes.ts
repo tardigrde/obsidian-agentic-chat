@@ -17,7 +17,6 @@ export const DEFAULT_MODE: AgentMode = "safe";
 /** Display order for menus and pickers (default first). */
 export const MODE_ORDER: AgentMode[] = ["safe", "yolo"];
 
-/** The two postures exposed as the composer toggle (Safe ↔ YOLO). Kept as toggle contract; dropdown uses MODE_ORDER. */
 export const TOGGLE_MODES: AgentMode[] = ["safe", "yolo"];
 
 export interface ModeDefinition {

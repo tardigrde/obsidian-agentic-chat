@@ -44,7 +44,6 @@ export interface CompactionManifest {
   artifacts: CompactionArtifactReference[];
 }
 
-/** Estimated context tokens the transcript currently occupies. */
 export function estimateContextUsage(messages: AgentMessage[]): number {
   return messages.reduce((total, message) => total + estimateMessageTokens(message), 0);
 }
@@ -77,7 +76,6 @@ export type CompactionDueReason = "due" | "disabled" | "no_window" | "below_thre
 
 export interface CompactionDueCheck {
   reason: CompactionDueReason;
-  /** Estimated transcript tokens. */
   transcriptTokens: number;
   /** Transcript plus request overhead: the same total the context bar shows. */
   loadTokens: number;

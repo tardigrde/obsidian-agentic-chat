@@ -22,7 +22,7 @@ describe("diff renderer class names", () => {
     expect(classes(root)).not.toContain("agentic-chat-quick-ask-diff-line");
   });
 
-  it("the approval modal uses only the approval diff line class", () => {
+  it("the approval card uses only the approval diff line class", () => {
     const root = container();
     renderApprovalDiffLines(root, [
       { op: "add", text: "new" },

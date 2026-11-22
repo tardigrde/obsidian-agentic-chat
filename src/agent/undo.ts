@@ -30,7 +30,6 @@ function fnv1a(body: string): string {
   return fnv1a32(body, { codePoints: true }).toString(36);
 }
 
-/** Compute a body summary (hash + length) for log storage. */
 export function summarizeFileBody(body: string): FileBodySummary {
   return { hash: fnv1a(body), length: body.length };
 }

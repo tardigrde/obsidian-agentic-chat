@@ -242,7 +242,6 @@ export class AgenticChatSettingTab extends PluginSettingTab {
     } as SettingDefinitionGroup & { id: string };
   }
 
-  /** Built on first use: unit tests create the tab from its prototype without a constructor. */
   private get mcpSection(): McpSettingsSection {
     this.mcpSectionInstance ??= new McpSettingsSection({
       app: this.app,
@@ -297,7 +296,7 @@ export class AgenticChatSettingTab extends PluginSettingTab {
   private ensurePluginsLoaded(): void {
     if (this.pluginsLoadedOnce && this.plugin.pluginService.hasCache()) {
       // Dot-folders deleted externally don't fire vault.delete; poll the adapter so
-      // Resources doesn't show a stale cache until the user clicks Remove.
+      // Agent plugins doesn't show a stale cache until the user clicks Remove.
       const now = Date.now();
       if (this.externalDeleteCheckRunning) return;
       if (now - this.lastExternalDeleteCheck < 2000) return;
