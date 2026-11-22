@@ -29,6 +29,7 @@ export class LoadedToolSet {
     return this.names.has(name);
   }
 
+  /** Add names; returns true when at least one was new. */
   add(names: Iterable<string>): boolean {
     let changed = false;
     for (const name of names) {
@@ -98,6 +99,7 @@ const SearchToolsParameters = Type.Object({
 });
 
 export interface SearchToolsOptions {
+  /** The deferred tools that are not loaded yet. */
   getDeferredTools: () => readonly AgentTool[];
   loaded: LoadedToolSet;
 }

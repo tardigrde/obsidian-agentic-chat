@@ -44,11 +44,12 @@ keeps local invariants, while the cross-cutting decisions move to ADRs.
 
 ## This pass
 
-- 160 comments deleted or collapsed. 134 came from the audit delete list; 26
-  were multi-line stale comments collapsed to one accurate line or removed.
-- 78 tracked code files changed: `+59 / -230` lines.
-- The comment count is **4,691 → 4,531**. The ratchet baseline is updated to
-  4,531.
+- 156 comments deleted or collapsed (4,691 → 4,535). 134 came from the audit
+  delete list; the rest were multi-line stale comments collapsed to one
+  accurate line or removed.
+- 73 modified code files: `+49 / -231` lines. The new lint/skill/test files add
+  351 lines; they are not part of the comment deletion.
+- The ratchet baseline is updated to 4,535.
 - 9 ADRs added (0007–0015); the index is [docs/adr](../adr/index.md).
 - 22 follow-up shortcuts are listed in
   [comment-cleanup-hacks.md](comment-cleanup-hacks.md).
@@ -64,10 +65,10 @@ Kept on purpose:
 
 ## If every comment were deleted
 
-The remaining 4,531 non-functional comments occupy **8,416 physical lines**
-(2,366 JSDoc, 2,165 line comments). Deleting every one would shed:
+The remaining 4,535 non-functional comments occupy **8,420 physical lines**
+(2,366 JSDoc, 2,169 line comments). Deleting every one would shed:
 
-- **8,416 lines** of comment text, before blank-line cleanup;
+- **8,420 lines** of comment text, before blank-line cleanup;
 - roughly **9,300–9,500 lines** after collapsing the blank lines that separate
   comment blocks from code.
 
