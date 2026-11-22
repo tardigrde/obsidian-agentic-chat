@@ -388,6 +388,18 @@ describe("fetch_url tool", () => {
     const { text } = await run(tool, { url: "https://example.com/logo.png" });
     expect(text).toContain("not text");
     expect(text).not.toContain("PNG");
+    // An image is not something import_document reads: no hint.
+    expect(text).not.toContain("download_file");
+  });
+
+  it("tells the model how to read a PDF: save it, then import it (U7 #10)", async () => {
+    const tool = createWebFetchTool({
+      fetcher: stubFetcher({ text: "%PDF-1.4 binary", headers: { "content-type": "application/pdf" } }),
+      charLimit: 10_000,
+    });
+    const { text } = await run(tool, { url: "https://example.com/paper.pdf" });
+    expect(text).toContain("download_file");
+    expect(text).toContain("import_document");
   });
 
   it("clips an oversized page before extracting and flags truncation", async () => {

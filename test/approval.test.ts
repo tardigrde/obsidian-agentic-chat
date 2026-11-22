@@ -17,6 +17,13 @@ describe("resolvePolicy", () => {
     expect(resolvePolicy({ mutating: "deny", perTool: {} }, "write")).toBe("deny");
   });
 
+  it("treats download_file as mutating: it asks in Safe, and YOLO allows it", () => {
+    expect(MUTATING_TOOLS.has("download_file")).toBe(true);
+    expect(resolvePolicy(base, "download_file")).toBe("ask");
+    expect(resolvePolicy({ mutating: "allow", perTool: {} }, "download_file")).toBe("allow");
+    expect(resolvePolicy({ mutating: "ask", perTool: { download_file: "deny" } }, "download_file")).toBe("deny");
+  });
+
   it("honors explicit per-tool overrides for either direction", () => {
     expect(resolvePolicy({ mutating: "ask", perTool: { write: "allow" } }, "write")).toBe("allow");
     expect(resolvePolicy({ mutating: "ask", perTool: { read: "deny" } }, "read")).toBe("deny");

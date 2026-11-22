@@ -29,7 +29,7 @@ export function webDefinitions(settings: AgenticChatSettings, host: SettingsTabH
     controlDef(
       "Enable web search & fetch",
       { type: "toggle", key: "web.enabled" },
-      "Give the agent web_search and fetch_url tools. When off, the agent cannot reach the network at all.",
+      "Give the agent web_search, fetch_url and download_file tools. When off, the agent cannot reach the network at all.",
     ),
   ];
 

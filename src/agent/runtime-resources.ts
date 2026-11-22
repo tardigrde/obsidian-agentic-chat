@@ -11,7 +11,7 @@ import {
 import { createVaultTools } from "../tools/vault-tools";
 import { createWebTools } from "../tools/web-tools";
 import { createDocumentTools } from "../tools/document-tools";
-import type { WebFetcher } from "../tools/web-fetch";
+import { createObsidianBinaryFetcher, type WebBinaryFetcher, type WebFetcher } from "../tools/web-fetch";
 import { createAskUserTool, type AskUserHandler } from "../tools/ask-user-tool";
 import { createSkillTool } from "../tools/skill-tool";
 import { createCreateSkillTool, type SkillScaffolder } from "../tools/skill-tools";
@@ -147,8 +147,23 @@ export function composeAgentSystemPrompt(
     formatAgentRolesForSystemPrompt(resources.profiles),
     pluginSkillTrustBoundary(resources.plugins, settings.plugins.folder),
     formatDeferredToolsOverlay(deferredTools, resources.mcpDiagnostics),
+    webToolsOffNotice(settings),
   ];
   return buildSystemPrompt(settings.systemPrompt, resources.skills, overlays);
+}
+
+/**
+ * The model could not tell "web tools are off" from "web tools were cut" and
+ * invented a "tool budget" (the PDF chat, 2026-11-22). When web access is off,
+ * say so, and say how to turn it on.
+ */
+export function webToolsOffNotice(settings: AgenticChatSettings): string {
+  if (settings.web.enabled) return "";
+  return (
+    "Web access is turned off in the plugin settings, so fetch_url, web_search and download_file are not available " +
+    "(they are not hidden or cut: they do not exist while it is off). If the user asks for something that needs the web, " +
+    "say so and tell them to turn on Settings > Advanced > Web access."
+  );
 }
 
 /**
@@ -193,6 +208,8 @@ export interface BuildAgentParentToolsOptions {
   resources: AgentRuntimeResources;
   readMemo: ReadMemo;
   webFetch: WebFetcher;
+  /** Binary fetcher for `download_file`; production uses Obsidian's `requestUrl`. Tests inject one. */
+  webDownload?: WebBinaryFetcher;
   artifactStore?: ToolArtifactStoreLike;
   askUser?: AskUserHandler;
   subagentTool?: AgentTool;
@@ -218,7 +235,11 @@ export function buildAgentParentTools(options: BuildAgentParentToolsOptions): Ag
   const artifactTool = createArtifactTool(options.artifactStore);
   const all = [
     ...createVaultTools(options.app, options.resources.ignoreMatcher, options.readMemo),
-    ...createWebTools(options.settings.web, options.webFetch, options.artifactStore),
+    ...createWebTools(options.settings.web, options.webFetch, options.artifactStore, {
+      app: options.app,
+      isIgnored: options.resources.ignoreMatcher,
+      fetcher: options.webDownload ?? createObsidianBinaryFetcher(),
+    }),
     ...(options.askUser ? [createAskUserTool(options.askUser)] : []),
     ...(options.subagentTool ? [options.subagentTool] : []),
     createSkillTool(options.app, options.resources.skills),

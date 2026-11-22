@@ -175,38 +175,20 @@ describe("agentic-chat smoke", function () {
     expect(await scriptedCallLabels()).toEqual(["init answer"]);
   });
 
-  it("attaches the active note as a chip, but not an ignored note or AGENTS.md", async function () {
+  it("shows no active-note chip for any note (the model gets a pointer, not a chip) (U7 #4)", async function () {
     try {
+      // Before U7 #4 this opened as a dashed "ACTIVE" chip that ate a composer row on a phone.
       await openNote("Welcome.md", "# Welcome\nSmoke context.");
-      await browser.waitUntil(async () => /Welcome/.test((await activeChipText()) ?? ""), {
-        timeout: 5_000,
-        timeoutMsg: "the active note did not render as a context chip",
-      });
+      await browser.pause(600);
+      expect(await activeChipText()).toBeNull();
 
       await openNote(PRIVATE_NOTE, "# Secret\nNever attach.");
-      await browser.waitUntil(async () => (await activeChipText()) === null, {
-        timeout: 5_000,
-        timeoutMsg: "an ignored note rendered as an active-note chip",
-      });
+      await browser.pause(300);
+      expect(await activeChipText()).toBeNull();
 
       await openNote("AGENTS.md", "# Standing Instructions\nLoaded implicitly.");
-      await browser.waitUntil(async () => (await activeChipText()) === null, {
-        timeout: 5_000,
-        timeoutMsg: "the standing-instructions file rendered as an active-note chip",
-      });
-
-      // Last, because the × suppresses the active note for this tab: a real
-      // click removes the chip (a chaos run of 2026-11-20 reported it did not).
-      await openNote("Welcome.md", "# Welcome\nSmoke context.");
-      await browser.waitUntil(async () => /Welcome/.test((await activeChipText()) ?? ""), {
-        timeout: 5_000,
-        timeoutMsg: "the active note did not come back as a chip",
-      });
-      await $(".agentic-chat-chip.is-active-note .agentic-chat-chip-remove").click();
-      await browser.waitUntil(async () => (await activeChipText()) === null, {
-        timeout: 5_000,
-        timeoutMsg: "clicking the active-note chip's x did not remove the chip",
-      });
+      await browser.pause(300);
+      expect(await activeChipText()).toBeNull();
     } finally {
       await trashPaths([PRIVATE_NOTE, "Private", "AGENTS.md"]);
     }

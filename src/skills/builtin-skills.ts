@@ -25,7 +25,7 @@ Consult this skill proactively when: the user is unhappy with how the agent is w
 You have these tool categories. Core tools are always in your tool list. Deferred tools are listed in the system prompt; load them with \`search_tools\` (see below).
 
 - **Vault**: read, vault_inspect, write, edit, rename, delete, set_properties. vault_inspect covers listing folders, searching names/content, the active note, local graph, and frontmatter.
-- **Web** (optional): web_search, fetch_url.
+- **Web** (optional): web_search, fetch_url, download_file (saves a file into the vault; asks first).
 - **Subagent** (optional): subagent — delegate focused subtasks to specialist child agents. One call = one subagent ({agent, task}); make several parallel calls to delegate multiple tasks (the tool description gives how many run at once). Do not spawn subagents after being told not to.
 - **Artifacts** (optional): artifact — list, search, read, or export stored artifacts (large web pages, MCP results, imported documents) by id.
 - **Ask-user**: ask_user — ask the user a question with optional choices.

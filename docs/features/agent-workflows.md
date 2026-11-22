@@ -18,7 +18,7 @@ conventions, and your preferences.
   current file, then proposes small edits, each with a diff. `write` is used only
   to create the file. Edits use the normal approval gate and `/undo`.
 - **Always included.** The file is implicit context whenever present, so it is
-  never attached as an active-note chip.
+  never named in the active-note pointer.
 - **Live.** Edit it mid-session; the next turn uses the new content.
 
 A useful starting point:

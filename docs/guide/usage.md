@@ -6,7 +6,7 @@ Open Agentic Chat from the ribbon icon or the **Agentic Chat: Open chat** comman
 
 Type a message and press Enter. Use Shift+Enter for a newline.
 
-The active note is attached automatically unless it is ignored, is a root standing-instruction file (`AGENTS.md`, `CLAUDE.md`, or `GEMINI.md`), or you dismissed the chip for the current session. Standing-instruction files are implicit context whenever present. Add more context with:
+The agent is told which note is active, any text you selected in it, and which other notes are open. It gets paths only, not the note text: it reads what it needs with line ranges or a search, so a very long note does not cost you tokens on every turn. Ignored notes and root standing-instruction files (`AGENTS.md`, `CLAUDE.md`, `GEMINI.md`) are never named. Attach the whole text yourself when you want it in context:
 
 - `@note`
 - `@note#heading`

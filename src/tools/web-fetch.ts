@@ -33,6 +33,36 @@ export interface WebHttpResponse {
   headers: Record<string, string>;
 }
 
+/** A binary HTTP response, for `download_file`. */
+export interface WebBinaryResponse {
+  status: number;
+  bytes: ArrayBuffer;
+  /** Response headers, keyed by lowercased name. */
+  headers: Record<string, string>;
+  /** The error message when the request itself failed (status 0). */
+  errorText?: string;
+}
+
+/** Like {@link WebFetcher}, but returns the raw bytes. Injected so tests never hit the network. */
+export type WebBinaryFetcher = (request: WebHttpRequest, signal?: AbortSignal) => Promise<WebBinaryResponse>;
+
+/** Production binary fetcher over Obsidian's `requestUrl` (mobile-safe; no Node API). */
+export function createObsidianBinaryFetcher(): WebBinaryFetcher {
+  return async (request, signal) => {
+    throwIfAborted(signal);
+    try {
+      const response = await withAbortSignal(requestUrl({ url: request.url, method: request.method ?? "GET", headers: request.headers, throw: false }), signal);
+      throwIfAborted(signal);
+      const headers: Record<string, string> = {};
+      for (const [key, value] of Object.entries(response.headers ?? {})) headers[key.toLowerCase()] = String(value);
+      return { status: response.status, bytes: response.arrayBuffer, headers };
+    } catch (error) {
+      if (signal?.aborted || isAbortError(error)) throw error;
+      return { status: 0, bytes: new ArrayBuffer(0), headers: {}, errorText: errorMessage(error) };
+    }
+  };
+}
+
 /**
  * Issues an HTTP request for the web tools. Injected so tests never hit the
  * network; production wraps Obsidian's `requestUrl`, which is mobile-safe and
@@ -262,7 +292,7 @@ function renderFetched(url: string, raw: string, contentType: string, limit: num
   if (!html && contentType && !isTextContentType(contentType)) {
     return {
       title: "",
-      text: `Source: ${url}\n\n[Skipped: "${contentType}" is not text. fetch_url only returns readable text.]`,
+      text: `Source: ${url}\n\n[Skipped: "${contentType}" is not text. fetch_url only returns readable text.${binaryHint(contentType)}]`,
       sourceText: "",
       extractor: "plain-text",
       sourceKind: "web",
@@ -386,6 +416,13 @@ function normalizeTranscriptText(raw: string): string {
  * The e2e build (and only that build) can allow one loopback origin for the
  * eval fixture server; see `evalFixtureOrigin`.
  */
+/** For a document type, the way to read it: save it, then import it. */
+function binaryHint(contentType: string): string {
+  return /pdf|epub|officedocument|msword|ms-excel|ms-powerpoint/i.test(contentType)
+    ? " To read this file, save it with download_file, then use import_document."
+    : "";
+}
+
 export function normalizeWebUrl(input: string): string {
   let parsed: URL;
   try {

@@ -289,16 +289,12 @@ export class ChatComposer {
   }
 
   /**
-   * Recompute the auto-attached active note from the focused leaf, honoring suppression.
+   * Recompute the active-note pointer target from the focused leaf.
    * Limited to Markdown notes — the active leaf can be an image/PDF/canvas, which would
    * be read as garbage UTF-8 and injected into the prompt.
    */
   syncActiveNote(): void {
-    const state = this.deps.state();
-    const options = {
-      suppressed: state.activeNoteSuppressed,
-      isIgnored: (path: string) => this.deps.service().isPathIgnored(path),
-    };
+    const options = { isIgnored: (path: string) => this.deps.service().isPathIgnored(path) };
     const file = this.deps.app.workspace.getActiveFile();
     this.privateNotePath = privateActiveNotePath(file, options);
     this.deps.setActiveNotePath(autoActiveNotePath(file, options));
@@ -318,7 +314,6 @@ export class ChatComposer {
     const state = this.deps.state();
     return {
       activePath: this.deps.activeNotePath(),
-      suppressed: state.activeNoteSuppressed,
       explicit: state.attachments
         .filter((entry): entry is string => typeof entry === "string")
         .map((entry) => attachmentBasePath(entry)),
@@ -334,16 +329,10 @@ export class ChatComposer {
     renderContextChips(
       this.deps.chipsEl(),
       {
-        activeNotePath: this.effectiveActiveNote(),
         privateNotePath: this.privateNotePath,
         attachments: state.attachments,
       },
       {
-        removeActiveNote: () => {
-          state.activeNoteSuppressed = true;
-          this.deps.setActiveNotePath(null);
-          this.renderChips();
-        },
         removeAttachment: (entry) => {
           const key = contextAttachmentKey(entry);
           state.attachments = state.attachments.filter((a) => contextAttachmentKey(a) !== key);

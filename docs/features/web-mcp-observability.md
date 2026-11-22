@@ -21,6 +21,7 @@ The setting shows an egress warning. When enabled, the agent receives:
 | --- | --- |
 | `web_search` | Search through Tavily, Brave, or SearXNG. Returns ranked title, URL, and snippet results (default 5, max 10). |
 | `fetch_url` | Fetch readable text from an HTTP(S) URL. Scripts and markup are stripped. Long pages are paged with `offset` / `nextOffset` (default 10,000 characters per page). |
+| `download_file` | Save a file (PDF, EPUB, Word, PowerPoint, Excel, CSV, text, JSON, or an image, up to 25 MB) from an HTTP(S) URL into the vault. It asks first in Safe mode, never overwrites, and never writes into a hidden folder. Then `import_document` reads a PDF or Office file. |
 | `/deep-research` | Built-in skill: parallel Explorer subagents, an adversarial review, then a sourced note with a `## Sources` list. Offered only while web access is on. |
 
 Guardrails:

@@ -20,7 +20,7 @@ function keydown(el: HTMLElement, key: string): void {
 }
 
 describe("context chip renderer", () => {
-  it("renders the active note and explicit attachments in a stable order", () => {
+  it("renders explicit attachments in a stable order, and no chip for the active note (U7 #4)", () => {
     const parent = root();
     const selection: ContextAttachment = {
       type: "text",
@@ -30,22 +30,18 @@ describe("context chip renderer", () => {
     };
 
     renderContextChips(parent, {
-      activeNotePath: "Daily.md",
       attachments: [`${FOLDER_PREFIX}Projects`, "Images/photo.png", selection],
     }, {
-      removeActiveNote: () => {},
       removeAttachment: () => {},
     });
 
     const chips = all(parent, "agentic-chat-chip");
     expect(chips.map(chipTextParts)).toEqual([
-      ["Daily.md", "active"],
       ["Projects"],
       ["Images/photo.png"],
       ["Selection"],
     ]);
-    expect(chips[0].className).toContain("is-active-note");
-    expect(chips[0].getAttribute("title")).toBe("The active note is attached automatically — remove to stop for this session.");
+    expect(chips.some((chip) => chip.className.includes("is-active-note"))).toBe(false);
     expect(chips.some((chip) => chip.className.includes("is-scope"))).toBe(false);
   });
 
@@ -55,16 +51,14 @@ describe("context chip renderer", () => {
     const attachment = `${FOLDER_PREFIX}Projects`;
 
     renderContextChips(parent, {
-      activeNotePath: "Daily.md",
       attachments: [attachment],
     }, {
-      removeActiveNote: () => events.push("active"),
       removeAttachment: (entry) => events.push(`attachment:${entry}`),
     });
 
     for (const remove of all(parent, "agentic-chat-chip-remove")) remove.click();
 
-    expect(events).toEqual(["active", `attachment:${attachment}`]);
+    expect(events).toEqual([`attachment:${attachment}`]);
   });
 
   it("renders the queued prompt as a pending chip with a preview", () => {
