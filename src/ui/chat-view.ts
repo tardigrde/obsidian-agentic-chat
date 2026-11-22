@@ -399,9 +399,33 @@ export class ChatView extends ItemView {
     );
   }
 
+  /**
+   * Phone: measure how far the on-screen keyboard covers the bottom of this view and
+   * publish it as --ac-keyboard-overlap. Obsidian's --keyboard-height was wrong both
+   * ways (a big gap, or none); the visual viewport reports what is really covered.
+   */
+  private trackKeyboardOverlap(): void {
+    const viewport = window.visualViewport;
+    if (!Platform.isMobile || !viewport) return;
+    const update = () => {
+      const bottom = this.contentEl.getBoundingClientRect().bottom;
+      const overlap = Math.max(0, Math.round(bottom - (viewport.offsetTop + viewport.height)));
+      this.contentEl.style.setProperty("--ac-keyboard-overlap", `${overlap}px`);
+    };
+    viewport.addEventListener("resize", update);
+    viewport.addEventListener("scroll", update);
+    this.register(() => {
+      viewport.removeEventListener("resize", update);
+      viewport.removeEventListener("scroll", update);
+    });
+    this.registerDomEvent(this.contentEl, "focusin", () => window.setTimeout(update, 300));
+    update();
+  }
+
   async onOpen(): Promise<void> {
     this.closed = false;
     this.buildLayout();
+    this.trackKeyboardOverlap();
     // First tab continues the most-recent session (initialize); later tabs each
     // start a fresh session. Each tab's service has its own event subscription.
     this.chatTabs.setTabs([this.chatTabs.createTab()]);

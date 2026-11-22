@@ -148,8 +148,12 @@ body:not(.is-phone) .agentic-chat-view {
   --ac-safe-bottom: max(var(--safe-area-inset-bottom, 0px), var(--size-4-8));
 }
 
-/* TEST BUILD: the drawer rule that added --keyboard-height is off. On iOS the view
-   already shrinks for the keyboard, so adding the height again left a big gap. */
+/* The sidebar drawer does not always shrink for the keyboard. The chat view measures
+   how much of its bottom the keyboard covers (visual viewport) and the composer takes
+   exactly that room. Obsidian's --keyboard-height is not used: it left a big gap. */
+.is-phone .workspace-drawer .agentic-chat-view {
+  --ac-safe-bottom: max(env(safe-area-inset-bottom, 0px), var(--ac-keyboard-overlap, 0px));
+}
 
 /* Obsidian hides the navbar while the user scrolls ("auto full screen"). The
    composer takes the freed space back; the class change alone does it. */
@@ -2985,4 +2989,22 @@ body.is-mobile,
 
 .is-mobile .agentic-chat-toolbar {
   gap: var(--ac-space-0);
+}
+
+/* Mobile sign-in notice: a tidy button row with room between the two buttons. */
+.agentic-chat-signin-actions {
+  display: flex;
+  gap: var(--size-4-3);
+  margin-top: var(--size-4-3);
+}
+.agentic-chat-signin-actions a.agentic-chat-signin-open {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  padding: 0 var(--size-4-4);
+  border-radius: var(--radius-m);
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  text-decoration: none;
 }

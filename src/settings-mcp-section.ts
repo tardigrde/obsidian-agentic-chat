@@ -822,8 +822,14 @@ function showMobileSignInButtons(server: McpServerSettings, url: string): void {
   const box = document.createDocumentFragment();
   box.createEl("div", { text: `Sign in to ${server.name}. Tap the button, sign in, then return to Obsidian.` });
   // A real anchor tap is the most reliable way to leave the WebView for the system browser.
-  box.createEl("a", { text: "Open sign-in page", href: url, cls: "mod-cta", attr: { target: "_blank", rel: "noopener" } });
-  const copy = box.createEl("button", { text: "Copy link" });
+  const actions = box.createEl("div", { cls: "agentic-chat-signin-actions" });
+  actions.createEl("a", {
+    text: "Open sign-in page",
+    href: url,
+    cls: "agentic-chat-signin-open",
+    attr: { target: "_blank", rel: "noopener" },
+  });
+  const copy = actions.createEl("button", { text: "Copy link" });
   copy.addEventListener("click", () => {
     void copyToClipboard(url).then((ok) => copy.setText(ok ? "Copied" : "Copy failed"));
   });
