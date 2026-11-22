@@ -25,9 +25,14 @@ export function isCodeFile(filePath) {
   return CODE_EXTENSIONS.has(path.extname(filePath));
 }
 
+function scriptKindFor(filePath) {
+  if (/\.(?:tsx|jsx)$/.test(filePath)) return ts.ScriptKind.TSX;
+  if (/\.[cm]?js$/.test(filePath)) return ts.ScriptKind.JS;
+  return ts.ScriptKind.TS;
+}
+
 function parse(text, filePath) {
-  const scriptKind = /\.(?:tsx|jsx)$/.test(filePath) ? ts.ScriptKind.TSX : /\.[cm]?js$/.test(filePath) ? ts.ScriptKind.JS : ts.ScriptKind.TS;
-  const source = ts.createSourceFile(filePath, text, ts.ScriptTarget.Latest, true, scriptKind);
+  const source = ts.createSourceFile(filePath, text, ts.ScriptTarget.Latest, true, scriptKindFor(filePath));
   const full = source.getFullText();
   const ranges = new Map();
   const remember = (comment) => {
@@ -102,7 +107,7 @@ export function collectComments(root = process.cwd(), files = walkCodeFiles(root
 }
 
 function git(cwd, args) {
-  return execFileSync("git", args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], maxBuffer: 64 * 1024 * 1024 });
+  return execFileSync("git", args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], maxBuffer: 64 * 1024 * 1024 }); // NOSONAR:S4036 -- git from PATH.
 }
 
 function inCodeRoots(file) {

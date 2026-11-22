@@ -19,11 +19,11 @@ Only a net increase in a file warns. Deleting or rewording a comment is free.
 }
 
 function escapeData(value) {
-  return String(value).replace(/%/g, "%25").replace(/\r/g, "%0D").replace(/\n/g, "%0A");
+  return String(value).replaceAll("%", "%25").replaceAll("\r", "%0D").replaceAll("\n", "%0A");
 }
 
 function escapeProperty(value) {
-  return escapeData(value).replace(/:/g, "%3A").replace(/,/g, "%2C");
+  return escapeData(value).replaceAll(":", "%3A").replaceAll(",", "%2C");
 }
 
 function annotation(file, line, message) {
