@@ -10,7 +10,7 @@ Approval is an inline card in its own turn, not a modal; once it settles, the ac
 the durable record. Stop, abort, or a closed tab settles a pending card as stopped.
 
 One resolver owns every ladder: YOLO turns a mutating default into `allow`, but an explicit per-tool
-`deny` wins. `create_skill` always asks and never remembers an allow. A private path is denied before a
+`deny` wins. `create_skill` asks by default; an explicit per-tool `allow` still applies, but an allow is never remembered silently. A private path is denied before a
 card or a checkpoint.
 
 ## Why

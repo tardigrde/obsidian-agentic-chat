@@ -131,6 +131,17 @@ describe("compareWithBase in a git repository", () => {
     expect(result?.additions.map((entry) => [entry.file, entry.added])).toEqual([["src/new.ts", 2]]);
   });
 
+  it("compares a renamed file with its old path, not as all-new comments", () => {
+    const dir = repo();
+    run(dir, "checkout", "-q", "-b", "topic");
+    run(dir, "mv", "src/a.ts", "src/renamed.ts");
+    const renamed = compareWithBase(["main"], dir);
+    expect(renamed?.additions).toEqual([]);
+    fs.appendFileSync(path.join(dir, "src", "renamed.ts"), "// added after the rename\n");
+    const grown = compareWithBase(["main"], dir);
+    expect(grown?.additions.map((entry) => [entry.file, entry.added])).toEqual([["src/renamed.ts", 1]]);
+  });
+
   it("returns null when no candidate ref exists", () => {
     expect(compareWithBase(["origin/nope", undefined], repo())).toBeNull();
   });
