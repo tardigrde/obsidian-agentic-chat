@@ -13,8 +13,21 @@ comment format: [trust.md](../../../docs/development/trust.md).
 ```bash
 npm run verify:witness -- --base origin/main --test-file <test> --src <path> [--src <path>]
 gh pr checks <pr>              # ci and e2e green at the head? cite them
-npm run verify -- check        # only when CI did not run at this head
+npm run verify -- check --no-app   # only when CI did not run at this head
 ```
+
+## What a reviewer runs
+
+Run only lint, typecheck, unit tests, and the witness on a unit test. Do not run
+anything that starts Obsidian or calls a model: no `verify -- app`, e2e, dogfood,
+`eval`, `explore`, or `check` without `--no-app`. The `e2e` CI job is the proof
+for the real-app tier. When the witness is an e2e spec, cite the author's red and
+green runs from the PR body and the `e2e` job at this head; do not re-run it.
+
+The `OpenCode review` job posts advisory inline comments on each PR. Read them
+and confirm or reject each one in your notes; they are not a verdict. Its prompt,
+[.github/opencode-review-prompt.md](../../../.github/opencode-review-prompt.md),
+lists the bug classes for this repo; check the diff against that list too.
 
 ## Inputs
 
@@ -30,8 +43,8 @@ refactor; a behavior change with that label is `FAIL`.
 3. Prove it is real with `verify:witness`: the source diff reverted, the test
    fails on an assertion; restored, it passes. It writes
    `logs/witness/<ts>/report.md`.
-4. Cite CI (`ci` and `e2e` green at this head), or run `check` and read the
-   counts. Zero tests or all skipped is a failure.
+4. Cite CI (`ci` and `e2e` green at this head), or run `check --no-app` and
+   read the counts. Zero tests or all skipped is a failure.
 5. Look for new module-level mutable state:
    `git diff origin/main...HEAD -- '*.ts' | rg '^(\+.*)(new Map|new Set|= \[\]|= \{\})'`.
    A new global registry needs an owner comment and an isolation test, or the

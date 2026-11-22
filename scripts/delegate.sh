@@ -85,17 +85,26 @@ do_review() { # <pr> <worktree-name> <focus>
   OUT="logs/delegate/verdict-$PR.md"
   PROMPT="$W/logs/delegate/review-$PR.md"; LOG="$W/logs/delegate/review-$PR.log"
   rm -f "$W/$OUT"
+  # The reviewer may not call `gh api`, so fetch the OpenCode inline comments here.
+  BOT="$W/logs/delegate/opencode-$PR.md"
+  gh api --paginate "repos/{owner}/{repo}/pulls/$PR/comments" \
+    --jq '.[] | select(.user.login == "github-actions[bot]") | "- \(.path):\(.line // .original_line) \(.body | gsub("\n"; " "))"' \
+    > "$BOT" 2> /dev/null || : > "$BOT"
   cat > "$PROMPT" <<EOF
 You are the reviewer agent. You did not write this change. Work in $W (head $HEAD).
 Read AGENTS.md and .agents/skills/verify-pr/SKILL.md first and follow verify-pr.
 Do not edit any repo file. Do not run live chaos, opencode, or any live model call.
+Do not start Obsidian: no e2e, \`verify -- app\`, dogfood, eval, or explore. Lint,
+typecheck, unit tests, and a unit-test witness are allowed.
 
 Review PR #$PR (gh pr view $PR; git diff origin/main...HEAD).
 Focus: $3
 Always: prove the witness. For a src/ change it must fail ON AN ASSERTION without the
 src change, for example node scripts/verify-witness.mjs --base origin/main --test-file <t> --src <s>.
 Fast lane: if \`gh pr checks $PR\` shows ci and e2e passing at this head, cite them and do
-not re-run \`npm run verify -- check\`. Otherwise run it and report the counts.
+not re-run \`npm run verify -- check --no-app\`. Otherwise run it and report the counts.
+Read the OpenCode inline review comments in logs/delegate/opencode-$PR.md (empty if none) and
+confirm or reject each one in your findings.
 Decide whether the change alters runtime behavior. Write "none" only for a pure
 refactor that you checked against the diff.
 
@@ -104,7 +113,7 @@ Write the verdict to $OUT (relative to the worktree) with the edit tool, first l
 Verdict: PASS | PASS+NOTES | FAIL
 Head: $HEAD
 Reviewer: $REVIEWER
-Fast lane: PASS (<n> passed unit; smoke e2e <n> passed) | CI (ci + e2e green at this head)
+Fast lane: PASS (<n> passed unit, check --no-app) | CI (ci + e2e green at this head)
 Behavior change: none | yes (<one line>)
 Then findings with file:line. A FAIL needs a concrete failure scenario.
 EOF
