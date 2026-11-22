@@ -707,7 +707,10 @@ describe("mergeSettings — MCP", () => {
       "Opening browser for Docs OAuth sign-in.",
       "Waiting for Docs OAuth browser callback.",
     ]);
+    const hide = vi.spyOn(Notice.prototype, "hide");
     endMcpOAuthProgress(server);
+    expect(hide).toHaveBeenCalledTimes(1);
+    hide.mockRestore();
     rewrite.mockRestore();
   });
 

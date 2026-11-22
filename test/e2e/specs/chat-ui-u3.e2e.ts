@@ -118,10 +118,17 @@ describe("chat view U3-B", function () {
     );
     expect(spinners).toBe(1);
     // U7 #2: no "Working…" line either; the tab dot and the activity line show the turn.
-    const statusText = await browser.execute(
-      () => document.querySelector('[data-ac="view"] .agentic-chat-status-line')?.textContent ?? "",
-    );
-    expect(statusText).not.toContain("Working");
+    const status = await browser.execute(() => {
+      const view = document.querySelector('[data-ac="view"]');
+      const hidden = view?.querySelector<HTMLElement>(".agentic-chat-sr-only")?.getBoundingClientRect();
+      return {
+        visibleText: view?.querySelector(".agentic-chat-status")?.textContent ?? "x",
+        hiddenWidth: hidden ? Math.round(hidden.width) : -1,
+      };
+    });
+    // The only "Working…" is the 1px screen-reader line.
+    expect(status.visibleText).toBe("");
+    expect(status.hiddenWidth).toBeLessThanOrEqual(1);
     expect(await browser.execute(() => document.querySelectorAll(".agentic-chat-tab .agentic-chat-dot.is-running").length)).toBeGreaterThanOrEqual(1);
     await releaseScriptedTurns();
     await waitForTranscript("Done. The folder is");

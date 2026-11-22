@@ -43,6 +43,7 @@ import {
   mcpAuthProblem,
   mcpEndpointProblem,
   mcpKnownToolLocalName,
+  isSoleServerPackage,
   mcpTestButtonState,
 } from "./settings-mcp-state";
 import type { AgenticChatSettings, NetworkSettings } from "./settings-schema";
@@ -77,7 +78,7 @@ export class McpSettingsSection {
 
   definitions(settings: AgenticChatSettings): SettingDefinitionItem[] {
     const enabled = () => settings.mcp.enabled;
-    const proxyVisible = () => settings.mcp.enabled && !Platform.isMobile;
+    const proxyVisible = () => settings.mcp.enabled;
     return [
       warning(
         "⚠",
@@ -182,11 +183,12 @@ export class McpSettingsSection {
         { name: "MCP servers", visible: enabled },
       ),
       // Rare and desktop-only (the proxy needs Node networking), so it sits last:
-      // a first-time user sees the add form, not a proxy question (U7 #6).
+      // a first-time user sees the add form, not a proxy question (U7 #6). It stays
+      // visible on a phone: a synced desktop value must stay clearable there.
       row(
         "Network (advanced)",
         (setting) => {
-          setting.setHeading().setDesc("Most people leave these empty.");
+          setting.setHeading().setDesc("Desktop only. Most people leave these empty.");
         },
         { visible: proxyVisible },
       ),
@@ -217,7 +219,7 @@ export class McpSettingsSection {
     const loadedPackage = pluginManaged
       ? this.host.plugin.pluginService.getLoaded().find((plugin) => plugin.rootPath === server.pluginRoot)
       : undefined;
-    const soleServerPackage = Boolean(loadedPackage && loadedPackage.mcpServers.length === 1 && loadedPackage.skills.length === 0);
+    const soleServerPackage = isSoleServerPackage(loadedPackage);
 
     items.push(
       row(server.name || server.id, (setting) => {
@@ -293,13 +295,20 @@ export class McpSettingsSection {
                     title: `Remove ${server.name || server.id}?`,
                     message:
                       `This deletes the "${loadedPackage.rootPath}" package folder, the server, its per-tool approvals ` +
-                      "and its saved sign-in. Your notes stay.",
+                      "and its saved sign-in. It cannot be undone. Your notes stay.",
                     confirmText: "Remove",
                     destructive: true,
                   });
                   if (!confirmed) return;
-                  await this.host.plugin.pluginService.removePackage(loadedPackage.name, loadedPackage.rootPath);
-                  new Notice(`Removed ${server.name || server.id}.`);
+                  try {
+                    const existed = await this.host.plugin.pluginService.removePackage(loadedPackage.name, loadedPackage.rootPath);
+                    // The saved sign-in lives in secret storage, not in the package.
+                    clearMcpSecretSlots(this.host.app, server);
+                    new Notice(existed ? `Removed ${server.name || server.id}.` : `${server.name || server.id} was already deleted on disk; settings cleaned.`);
+                  } catch (error) {
+                    new Notice(`Agentic Chat MCP: could not remove ${server.name || server.id}: ${errorMessage(error)}`);
+                    return;
+                  }
                   this.host.invalidatePluginLoad();
                   await this.host.save();
                   this.host.redraw();
@@ -811,7 +820,8 @@ export function handleMcpOAuthProgress(server: McpServerSettings, event: McpOAut
     if (authorizationUrl) {
       void copyToClipboard(authorizationUrl).then((copied) => {
         if (copied) {
-          showMcpOAuthProgress(server, "Sign-in link copied. Use it if the browser does not open.");
+          // The flow may have ended (browser refused at once) before the clipboard answered.
+          if (oauthProgressNotices.has(server.id)) showMcpOAuthProgress(server, "Sign-in link copied. Use it if the browser does not open.");
         } else {
           new Notice(`${server.name}: OAuth authorization URL: ${authorizationUrl}`, 0);
         }

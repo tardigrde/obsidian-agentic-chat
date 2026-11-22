@@ -55,7 +55,7 @@ allowlist; media query preludes may use `px`.
 
 | State | Colour | Icon | Where it shows |
 |---|---|---|---|
-| `running` | accent | ring spinner, a pulsing dot on a tab | activity line, step row, tab dot, status line |
+| `running` | accent | ring spinner, a pulsing dot on a tab | activity line, step row, tab dot (screen readers: a hidden live-region line) |
 | `needs-you` | orange | hand | approval card, activity line, tab dot, overflow button |
 | `error` | red | alert circle | step row, `· N failed`, tab dot |
 | `done` | green | check circle | step row, activity line (finished) |

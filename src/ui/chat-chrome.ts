@@ -213,7 +213,10 @@ export class ChatChrome {
     this.syncSendAvailability();
     // No "Working…" line (U7 #2): the tab dot pulses and the activity line shows
     // the step. The status line keeps only news that needs the user.
-    this.deps.elements.statusEl().parentElement?.toggleClass("is-running", running);
+    const line = this.deps.elements.statusEl().parentElement;
+    line?.toggleClass("is-running", running);
+    const announce = line?.querySelector(".agentic-chat-sr-only");
+    if (announce && announce.textContent !== (running ? "Working…" : "")) announce.textContent = running ? "Working…" : "";
     if (!running) this.deps.elements.statusEl().setText("");
   }
 

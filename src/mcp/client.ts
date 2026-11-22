@@ -448,14 +448,14 @@ export class McpHttpClient {
     maxRetries: number,
     httpErrorMessage: (response: WebHttpResponse) => string,
   ): Promise<void> {
-    await this.throwForAuthChallenge(response);
+    await this.throwForAuthChallenge(response, signal);
     const classified = classifyHttpResponse(response.status, response.headers, response.text);
     if (!classified.retryable || attempt >= maxRetries) throw new Error(httpErrorMessage(response));
     await sleepWithAbort(backoffDelayMs(attempt, classified.retryAfterMs), signal);
     if (signal?.aborted) throw new Error("Aborted.");
   }
 
-  private async throwForAuthChallenge(response: WebHttpResponse): Promise<void> {
+  private async throwForAuthChallenge(response: WebHttpResponse, signal?: AbortSignal): Promise<void> {
     const auth = response.headers["www-authenticate"];
     if (response.status === 404 && this.sessionId) throw new McpSessionTerminatedError(`MCP ${this.server.name} session expired.`);
     if (response.status === 401 && this.server.authType === "oauth") throw new McpOAuthUnauthorizedError(auth ?? "");
@@ -471,7 +471,7 @@ export class McpHttpClient {
     // its metadata at the well-known URL. Only a server with no credentials set is
     // probed; a wrong bearer token or header is a plain auth failure (U7 #11).
     if (this.server.authType !== "none") return;
-    const wellKnown = await probeProtectedResourceMetadataUrl(this.server, this.fetcher, this.requestTimeoutMs);
+    const wellKnown = await probeProtectedResourceMetadataUrl(this.server, this.fetcher, this.requestTimeoutMs, signal);
     if (wellKnown) await this.markOAuthResourceChallenge(`Bearer resource_metadata="${wellKnown}"`);
   }
 

@@ -904,8 +904,9 @@ async function runMcpLifecycle(action: ChaosAction): Promise<void> {
     throw new Error("the MCP server row disappeared after test");
   }
 
-  // Plugin-declared servers own their endpoint, so the row's Remove button is
-  // disabled by design; removing the package is the supported removal path.
+  // Plugin-declared servers own their endpoint. A one-server package has a row
+  // Remove (it asks first); a shared package has none. This step removes the
+  // package through the service either way.
   const removedPackage = await browser.executeObsidian(async ({ app }, pluginId) => {
     const plugin = (app as unknown as {
       plugins?: {

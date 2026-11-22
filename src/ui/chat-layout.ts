@@ -148,6 +148,9 @@ export function buildLayout(deps: ChatLayoutDeps): ChatLayoutElements {
   // the tab dot and the activity line already show a running turn (U7 #2).
   const statusLineEl = composer.createDiv({ cls: "agentic-chat-status-line", attr: { "aria-live": "polite" } });
   const statusEl = acHook(statusLineEl.createSpan({ cls: "agentic-chat-status" }), "status");
+  // Screen-reader text for a running turn. Visually hidden: the tab dot and the
+  // activity line show it to everyone else (U7 #2).
+  statusLineEl.createSpan({ cls: "agentic-chat-sr-only" });
 
   // The composer card: chips row, an auto-growing textarea, and the toolbar.
   const fieldEl = acHook(composer.createDiv({ cls: "agentic-chat-field" }), "composer-card");

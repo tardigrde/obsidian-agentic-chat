@@ -2,7 +2,7 @@ import { $, browser, expect } from "@wdio/globals";
 import { after, before, describe, it } from "mocha";
 import { expectWithinWindow, waitForComposerReady } from "../support/layout";
 import { installScriptedTurns, textTurn, toolTurn } from "../support/scripted-stream";
-import { openAgenticChatSettings, closeAgenticChatSettings, selectSettingsTab, waitForSetting } from "../support/settings-ui";
+import { openAgenticChatSettings, openMcpAdvancedFolds, closeAgenticChatSettings, selectSettingsTab, waitForSetting } from "../support/settings-ui";
 
 const VIEW_TYPE_AGENT_CHAT = "agentic-chat-chat-view";
 const MOBILE_WIDTH = Number(process.env.AGENTIC_CHAT_E2E_VIEWPORT_WIDTH || 390);
@@ -423,9 +423,7 @@ describe("agentic-chat mobile viewport", function () {
     expect(card.foldClosed).toBe(true);
     expect(card.border).toBeGreaterThan(0);
     expect(card.right).toBeLessThanOrEqual(card.bodyRight + 1);
-    await browser.execute(() => {
-      for (const fold of Array.from(document.querySelectorAll<HTMLDetailsElement>("details.agentic-chat-mcp-advanced"))) fold.open = true;
-    });
+    await openMcpAdvancedFolds();
     await waitForSetting("Tool approvals");
     assertHeadingRowReadable(await measureHeadingRow("Tool approvals"), "Tool approvals heading");
     await assertFits(".agentic-chat-settings-tabbody", "MCP settings body");
@@ -474,6 +472,18 @@ describe("agentic-chat mobile viewport", function () {
     const card = await $('[data-ac="approval"]:not(.is-resolved)');
     await card.waitForExist({ timeout: 10_000 });
     await expectWithinWindow(['[data-ac="approval-allow"]', '[data-ac="approval-deny"]']);
+    // expectWithinWindow checks only the horizontal axis; check the vertical one too.
+    const vertical = await browser.execute(() =>
+      ['[data-ac="approval-allow"]', '[data-ac="approval-deny"]'].map((selector) => {
+        const rect = document.querySelector<HTMLElement>(`[data-ac="approval"]:not(.is-resolved) ${selector}`)?.getBoundingClientRect();
+        return rect ? { top: rect.top, bottom: rect.bottom, inner: window.innerHeight } : null;
+      }),
+    );
+    for (const rect of vertical) {
+      expect(rect).not.toBeNull();
+      expect(rect!.top).toBeGreaterThanOrEqual(0);
+      expect(rect!.bottom).toBeLessThanOrEqual(rect!.inner);
+    }
     const height = await browser.execute(
       () => document.querySelector<HTMLElement>('[data-ac="approval"]:not(.is-resolved)')?.getBoundingClientRect().height ?? 0,
     );

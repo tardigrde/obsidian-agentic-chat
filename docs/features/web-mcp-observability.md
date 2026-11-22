@@ -47,7 +47,7 @@ binary rendering are not supported.
 2. **Add MCP server**: name plus an HTTPS endpoint (or `http://localhost…` for a
    local server). This writes an [agent plugin](./agent-plugins.md) package
    (`plugin.json` + `mcp.json`) that owns the endpoint.
-3. Choose auth, then **Test connection** or **Authenticate & test**.
+3. **Test connection** or **Authenticate & test**. The plugin detects OAuth by itself when the server asks for it; the manual choice is under the server's **Advanced** fold.
 4. Set the server's approval policy (default **ask**) and enable it.
 
 New installs have no servers or presets. Imported plugin packages bring their

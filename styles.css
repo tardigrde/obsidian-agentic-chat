@@ -1674,6 +1674,15 @@ body.is-mobile,
   white-space: nowrap;
 }
 
+.agentic-chat-sr-only {
+  position: absolute;
+  width: var(--ac-line);
+  height: var(--ac-line);
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
 .agentic-chat-status:empty {
   display: none;
 }
@@ -1946,12 +1955,6 @@ body.is-mobile,
   height: var(--ac-line);
   margin: var(--ac-space-1) var(--ac-space-1h);
   background-color: var(--ac-border);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .agentic-chat-dot.is-running {
-    animation: none;
-  }
 }
 
 /* --- The composer card: chips, textarea, and toolbar in one rounded card --- */

@@ -99,9 +99,10 @@ export async function probeProtectedResourceMetadataUrl(
   server: McpServerSettings,
   fetcher: WebFetcher,
   requestTimeoutMs: number,
+  signal?: AbortSignal,
 ): Promise<string | null> {
   try {
-    const found = await firstReachableProtectedResourceMetadata(server, fetcher, requestTimeoutMs);
+    const found = await firstReachableProtectedResourceMetadata(server, fetcher, requestTimeoutMs, signal);
     return firstString(found.metadata.authorization_servers) ? found.url : null;
   } catch {
     return null;
@@ -112,6 +113,7 @@ async function firstReachableProtectedResourceMetadata(
   server: McpServerSettings,
   fetcher: WebFetcher,
   requestTimeoutMs: number,
+  signal?: AbortSignal,
 ): Promise<{ url: string; metadata: OAuthProtectedResourceMetadata }> {
   const candidates = protectedResourceMetadataUrls(server.url);
   for (const url of candidates) {
@@ -119,7 +121,7 @@ async function firstReachableProtectedResourceMetadata(
       fetcher,
       { url, method: "GET", headers: { Accept: "application/json" } },
       `${server.name} OAuth protected-resource metadata`,
-      undefined,
+      signal,
       requestTimeoutMs,
     );
     if (response.status >= 200 && response.status < 300) {

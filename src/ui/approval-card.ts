@@ -115,7 +115,7 @@ export class ApprovalCard {
     if (this.isCreateSkill()) {
       this.bodyEl.createEl("p", {
         cls: "agentic-chat-approval-warning",
-        text: "Permanent: this skill loads in every future session.",
+        text: "Permanent: loads in every future session and /undo cannot remove it. Open the body and read it before you allow.",
       });
     }
     // The create_skill warning above says it all; a second paragraph repeated it (U7 #3).
@@ -197,7 +197,9 @@ export class ApprovalCard {
     if (this.settled || event.isComposing) return;
     const target = event.target as HTMLElement | null;
     const inField = !!target && (target.tagName === "TEXTAREA" || target.tagName === "INPUT");
-    const onButton = !!target && target.tagName === "BUTTON";
+    // A button or the "Show SKILL.md" summary keeps its own Enter (activate / toggle);
+    // Enter there must never allow the call without the user reading the body.
+    const onButton = !!target && (target.tagName === "BUTTON" || target.tagName === "SUMMARY");
     if (event.key === "Enter" && !inField && !onButton) {
       event.preventDefault();
       // With the deny armed, Enter confirms the deny, never an allow.

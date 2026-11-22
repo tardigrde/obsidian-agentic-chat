@@ -150,9 +150,11 @@ export async function clickConfirmModalButton(text: string, timeoutMs = 5_000): 
     for (const handle of await browser.getWindowHandles()) {
       await browser.switchToWindow(handle);
       const clicked = await browser.execute((label) => {
-        const button = Array.from(document.querySelectorAll<HTMLButtonElement>(".modal-container .modal button")).find(
-          (candidate) => candidate.innerText.trim() === label,
-        );
+        // The settings page is itself a modal, and it may hold a button with the same
+        // label (the server row's Remove). The dialog is the last one in the DOM.
+        const button = Array.from(document.querySelectorAll<HTMLButtonElement>(".modal-container .modal button"))
+          .filter((candidate) => candidate.innerText.trim() === label)
+          .at(-1);
         button?.click();
         return Boolean(button);
       }, text);

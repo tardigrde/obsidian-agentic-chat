@@ -159,7 +159,7 @@ describe("ApprovalCard rendering", () => {
     await settle();
     // U7 #3: one short warning (no second paragraph), and the body is folded so
     // Allow and Deny stay on screen on a phone.
-    expect($(".agentic-chat-approval-warning")?.textContent).toBe("Permanent: this skill loads in every future session.");
+    expect($(".agentic-chat-approval-warning")?.textContent).toContain("/undo cannot remove it");
     expect($(".agentic-chat-approval-desc")).toBeNull();
     const fold = $("details.agentic-chat-approval-details");
     expect(fold).not.toBeNull();
@@ -197,6 +197,18 @@ describe("ApprovalCard decisions", () => {
     key(reason!, "Enter");
     await expect(denied.choice).resolves.toEqual({ approved: false, remember: false, reason: "wrong folder" });
     expect($(".agentic-chat-approval-outcome")?.textContent).toBe("Denied");
+  });
+
+  it("Enter on the 'Show SKILL.md' summary opens the body and never allows the skill (U7 review)", async () => {
+    const c = ask(fakeApp(), { toolName: "create_skill", args: { name: "s", description: "d", body: "line" } });
+    await settle();
+    const summary = $<HTMLElement>("details.agentic-chat-approval-details > summary")!;
+    const event = new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true });
+    summary.dispatchEvent(event);
+    // The card did not take Enter: no decision, and the browser's own toggle is not cancelled.
+    expect(c.phase).toBe("open");
+    expect(event.defaultPrevented).toBe(false);
+    key(c.el, "Escape");
   });
 
   it("Esc in the reason disarms the deny; Enter on the card with the deny armed never allows", async () => {

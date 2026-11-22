@@ -125,16 +125,19 @@ describe("chat view state machine", () => {
     expect(panel?.style.display).not.toBe("none");
   });
 
-  it("streaming: no 'Working…' text and no status spinner; the status line stays a polite live region (U7 #2)", async () => {
+  it("streaming: no visible 'Working…' line or spinner; a hidden live-region line still announces the turn (U7 #2)", async () => {
     const held = gate();
     await mount([replayTextTurn("the answer", { hold: true })], held);
     await ui.send("hi");
     const line = ui.$('.agentic-chat-status-line');
     expect(line?.getAttribute("aria-live")).toBe("polite");
-    expect(line?.textContent ?? "").not.toContain("Working");
+    // Visually hidden text keeps the turn audible to screen readers; no visible line.
+    expect(ui.$(".agentic-chat-status")?.textContent).toBe("");
+    expect(ui.$(".agentic-chat-sr-only")?.textContent).toBe("Working…");
     expect(ui.$(".agentic-chat-working")).toBeNull();
     held.release();
     await ui.idle();
+    expect(ui.$(".agentic-chat-sr-only")?.textContent).toBe("");
   });
 
   it("closing the view with the context breakdown open removes its document listeners", async () => {

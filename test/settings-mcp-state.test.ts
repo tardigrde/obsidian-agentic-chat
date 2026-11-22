@@ -5,12 +5,34 @@ import {
   formatMcpServerSummary,
   formatMcpToolApprovalDescription,
   formatMcpToolSample,
+  isSoleServerPackage,
   mcpCredentialResourceChanged,
   mcpCredentialResourceState,
   mcpKnownToolLocalName,
   mcpSecretIds,
   mcpTestButtonState,
 } from "../src/settings-mcp-state";
+
+describe("isSoleServerPackage (Remove deletes the folder, so it must be sure)", () => {
+  const one = { mcpServers: [{}], skills: [], skillReports: [], reports: [], manifestProblem: null, mcpValidation: { servers: [{}] } };
+
+  it("accepts a package that holds exactly one valid server and nothing else", () => {
+    expect(isSoleServerPackage(one)).toBe(true);
+  });
+
+  it.each([
+    ["not loaded", undefined],
+    ["has a skill", { ...one, skills: [{}] }],
+    ["a skill was skipped (bad frontmatter)", { ...one, skillReports: [{}] }],
+    ["another server entry was skipped (stdio)", { ...one, mcpValidation: { servers: [{}, {}] } }],
+    ["has two servers", { ...one, mcpServers: [{}, {}], mcpValidation: { servers: [{}, {}] } }],
+    ["has a manifest problem", { ...one, manifestProblem: "bad" }],
+    ["has reports", { ...one, reports: [{}] }],
+    ["has no mcp.json", { ...one, mcpValidation: null }],
+  ])("refuses a package that %s", (_label, facts) => {
+    expect(isSoleServerPackage(facts as Parameters<typeof isSoleServerPackage>[0])).toBe(false);
+  });
+});
 
 describe("MCP settings state helpers", () => {
   it("formats server auth, summary, and tool descriptions", () => {
