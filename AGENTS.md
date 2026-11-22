@@ -59,7 +59,8 @@ skills hold procedure, `scripts/` and CI hold gates.
    advisory (the owner reads it); a green check is not a verdict.
 7. Never merge a PR unless the user explicitly says "merge". Green checks are not
    permission.
-8. Never call a model from CI, and never present a scripted run as live.
+8. Never call a model from CI, and never present a scripted run as live. The
+   one exception is the advisory `OpenCode review` job: it is not a gate.
 
 ## Testing
 

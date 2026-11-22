@@ -1,0 +1,55 @@
+name: OpenCode review
+
+# Advisory inline review by tardigrde/opencode-pr-review. It posts one COMMENT
+# review with inline findings. It never approves, requests changes, or merges,
+# and it is not the agent-review verdict (verify-pr). The model only reads the
+# diff and tracked files in a sandbox; it runs no commands, so no test, lint,
+# or Obsidian run happens here. The ci and e2e jobs do that.
+#
+# Secret: OPENCODE_API_KEY (OpenCode Go key). Fork, draft, and bot PRs are
+# skipped. This is the one model call CI allows (trust.md rule 4): advisory,
+# not a gate, never a test. The prompt file is read from the base commit, so a
+# PR cannot change its own review instructions.
+
+on:
+  pull_request:
+    types: [opened, synchronize, ready_for_review, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: opencode-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  # Not `review`: that name is the Review report job (review.yml).
+  opencode-review:
+    if: >
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.draft == false &&
+      github.event.pull_request.user.type != 'Bot'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out the PR head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "24"
+
+      - name: OpenCode review (advisory)
+        uses: tardigrde/opencode-pr-review@862a3e08149841aa3f9c692b1ed7325e051c2b3b # v1.1.0
+        with:
+          model: opencode-go/deepseek-v4.1-flash
+          opencode-api-key: ${{ secrets.OPENCODE_API_KEY }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          prompt-file: .github/opencode-review-prompt.md
+          max-findings: 20
+          severity-threshold: medium

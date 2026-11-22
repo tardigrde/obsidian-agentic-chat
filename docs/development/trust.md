@@ -15,6 +15,9 @@ CI run, a bot review, or the author agent checking itself is not the review.
 3. Never go green by skipping. Zero tests or all skipped fails the lane. The
    only allowed skip in T1 and T2 is `it.skip("flaky #<open issue>: ...")`.
 4. Never call a model from CI. Live work is local, with a key and a display.
+   The one exception is the advisory `OpenCode review` job
+   (`.github/workflows/opencode-review.yml`). It posts inline comments and is
+   never a gate or a test.
 5. Never present scripted as live: every run result states its mode.
 6. Never add a retry to a flaky test; fix the observation or the fixture.
 7. Never use `no-behavior-change` for a behavior change or a deletion.
@@ -73,6 +76,12 @@ Fast lane: PASS (X passed, Y files) | CI (ci + e2e green at this head)
 Behavior change: none | yes (<one line>)
 Notes: none | <max 5 bullets>
 ```
+
+The reviewer reads the advisory `OpenCode review` findings for the head and
+confirms or rejects each one. The job state is the first line of
+`logs/delegate/opencode-<pr>.md`: only `pass` means the finder ran, and any other
+state (`failed`, `skipped`, `pending`, `missing`) is not "no findings". A draft
+PR is skipped, so mark the PR ready before the review.
 
 A push makes the verdict stale. The `review` check (`Review report` workflow)
 only reports whether a verdict exists at the head, an open `FAIL`, and the PR

@@ -63,6 +63,7 @@ const READ_SHELL = [
   "npm ls *",
   "gh pr view *",
   "gh pr diff *",
+  "gh pr checks *",
   "ls *",
   "wc *",
 ];

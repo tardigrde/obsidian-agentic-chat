@@ -17,6 +17,7 @@ Each PR inside it follows `@ship-change`.
 ```bash
 npm run worktree:new -- <name>                              # one PR, one worktree
 npm run delegate -- research <name> "<question>"            # optional, read-only
+gh pr ready <pr>                                            # a draft is not reviewed
 npm run delegate -- review <pr> <name> "<focus>"            # after ci and e2e are green
 ```
 
@@ -52,5 +53,20 @@ allowlist, no web, no `.env`, and one writable file. It cites green CI instead
 of re-running `check`, proves the witness with `scripts/verify-witness.mjs`, and
 writes `Verdict / Head / Reviewer / Fast lane / Behavior change` as one PR
 comment. The comment is advisory: the owner reads it before "merge". A push
-makes it stale; ask for a new review at the new head. Fix real findings and say
-which notes you did not fix and why.
+makes it stale; ask for a new review at the new head.
+
+### Order for each PR
+
+1. Keep the PR a **draft** while you implement. A draft gets no OpenCode run and
+   no `e2e`, so it costs nothing.
+2. When the fast checks pass locally, run `gh pr ready <pr>`. That starts `ci`,
+   `e2e`, and the OpenCode finder (`OpenCode review`) on the head.
+3. Run `npm run delegate -- review` only after `ci` and `e2e` are green. It waits
+   for the finder (up to `DELEGATE_OPENCODE_WAIT` seconds, default 600) and gives
+   the reviewer the finder's state on the first line of
+   `logs/delegate/opencode-<pr>.md`. Only `pass` means the finder ran; `failed`,
+   `skipped`, `pending`, or `missing` is not "no findings", and the verdict must
+   say so.
+4. The reviewer confirms or rejects each finding in the verdict. You fix every
+   **confirmed** finding and push. For each note you do not fix, say why in the
+   PR. A rejected finding needs no change.

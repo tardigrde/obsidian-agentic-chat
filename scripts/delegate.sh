@@ -85,17 +85,29 @@ do_review() { # <pr> <worktree-name> <focus>
   OUT="logs/delegate/verdict-$PR.md"
   PROMPT="$W/logs/delegate/review-$PR.md"; LOG="$W/logs/delegate/review-$PR.log"
   rm -f "$W/$OUT"
+  # The reviewer may not call `gh`, so wait for the OpenCode job here and write its state
+  # and its findings for this head to one file (DELEGATE_OPENCODE_WAIT seconds, default 600).
+  BOT="$W/logs/delegate/opencode-$PR.md"
+  (cd "$W" && node "$ROOT/scripts/delegate-opencode.mjs" "$PR" "$BOT" --head "$HEAD") \
+    || echo "OpenCode job: unknown
+The finder step crashed. The findings were NOT read. Say so in the verdict." > "$BOT"
   cat > "$PROMPT" <<EOF
 You are the reviewer agent. You did not write this change. Work in $W (head $HEAD).
 Read AGENTS.md and .agents/skills/verify-pr/SKILL.md first and follow verify-pr.
 Do not edit any repo file. Do not run live chaos, opencode, or any live model call.
+Do not start Obsidian: no e2e, \`verify -- app\`, dogfood, eval, or explore. Allowed:
+\`npm run verify -- check --no-app\` (lint, typecheck, unit, build), \`npx vitest\`, and a
+unit-test witness.
 
 Review PR #$PR (gh pr view $PR; git diff origin/main...HEAD).
 Focus: $3
 Always: prove the witness. For a src/ change it must fail ON AN ASSERTION without the
 src change, for example node scripts/verify-witness.mjs --base origin/main --test-file <t> --src <s>.
 Fast lane: if \`gh pr checks $PR\` shows ci and e2e passing at this head, cite them and do
-not re-run \`npm run verify -- check\`. Otherwise run it and report the counts.
+not re-run \`npm run verify -- check --no-app\`. Otherwise run it and report the counts.
+Read logs/delegate/opencode-$PR.md. Its first line is "OpenCode job: <state>". Only "pass"
+means the finder ran. For any other state, say in the verdict that the finder did not run;
+that is not "no findings". Confirm or reject each inline finding in your findings.
 Decide whether the change alters runtime behavior. Write "none" only for a pure
 refactor that you checked against the diff.
 
@@ -104,7 +116,7 @@ Write the verdict to $OUT (relative to the worktree) with the edit tool, first l
 Verdict: PASS | PASS+NOTES | FAIL
 Head: $HEAD
 Reviewer: $REVIEWER
-Fast lane: PASS (<n> passed unit; smoke e2e <n> passed) | CI (ci + e2e green at this head)
+Fast lane: PASS (<n> passed, <n> files) | CI (ci + e2e green at this head)
 Behavior change: none | yes (<one line>)
 Then findings with file:line. A FAIL needs a concrete failure scenario.
 EOF
