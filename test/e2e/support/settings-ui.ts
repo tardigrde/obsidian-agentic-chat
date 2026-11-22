@@ -140,6 +140,41 @@ export async function selectSettingsTab(label: string): Promise<void> {
   );
 }
 
+/**
+ * Click a button in the open confirm modal. The modal opens in whichever window
+ * Obsidian picks (main or the settings popout), so every window is searched.
+ */
+export async function clickConfirmModalButton(text: string, timeoutMs = 5_000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    for (const handle of await browser.getWindowHandles()) {
+      await browser.switchToWindow(handle);
+      const clicked = await browser.execute((label) => {
+        const button = Array.from(document.querySelectorAll<HTMLButtonElement>(".modal-container .modal button")).find(
+          (candidate) => candidate.innerText.trim() === label,
+        );
+        button?.click();
+        return Boolean(button);
+      }, text);
+      if (clicked) {
+        await focusSettingsWindow();
+        return;
+      }
+    }
+    await browser.pause(200);
+  }
+  await focusSettingsWindow();
+  throw new Error(`Confirm modal button "${text}" did not appear`);
+}
+
+/** Open every MCP server's Advanced fold; rows inside a closed fold have no rendered text. */
+export async function openMcpAdvancedFolds(): Promise<void> {
+  await focusSettingsWindow();
+  await browser.execute(() => {
+    for (const fold of Array.from(document.querySelectorAll<HTMLDetailsElement>("details.agentic-chat-mcp-advanced"))) fold.open = true;
+  });
+}
+
 export async function waitForSetting(name: string, section?: string): Promise<void> {
   await focusSettingsWindow();
   await browser.waitUntil(

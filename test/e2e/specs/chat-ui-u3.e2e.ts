@@ -117,6 +117,12 @@ describe("chat view U3-B", function () {
       ).length,
     );
     expect(spinners).toBe(1);
+    // U7 #2: no "Working…" line either; the tab dot and the activity line show the turn.
+    const statusText = await browser.execute(
+      () => document.querySelector('[data-ac="view"] .agentic-chat-status-line')?.textContent ?? "",
+    );
+    expect(statusText).not.toContain("Working");
+    expect(await browser.execute(() => document.querySelectorAll(".agentic-chat-tab .agentic-chat-dot.is-running").length)).toBeGreaterThanOrEqual(1);
     await releaseScriptedTurns();
     await waitForTranscript("Done. The folder is");
     await waitForIdle();

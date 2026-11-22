@@ -157,7 +157,14 @@ describe("ApprovalCard rendering", () => {
     const body = `${"x".repeat(3_000)}\nTAIL MARKER`;
     ask(app, { toolName: "create_skill", args: { name: "My Skill", description: "does things", body } });
     await settle();
-    expect($(".agentic-chat-approval-warning")).not.toBeNull();
+    // U7 #3: one short warning (no second paragraph), and the body is folded so
+    // Allow and Deny stay on screen on a phone.
+    expect($(".agentic-chat-approval-warning")?.textContent).toBe("Permanent: this skill loads in every future session.");
+    expect($(".agentic-chat-approval-desc")).toBeNull();
+    const fold = $("details.agentic-chat-approval-details");
+    expect(fold).not.toBeNull();
+    expect(fold?.hasAttribute("open")).toBe(false);
+    expect(fold?.querySelector("summary")?.textContent).toMatch(/^Show SKILL\.md · \d+ lines$/);
     expect($$(".agentic-chat-approval-summary").map((el) => el.textContent)).toEqual([
       'Create skill "my-skill" (from "My Skill") → .agentic-plugins/my-skill/skills/my-skill/SKILL.md',
       "Description: does things",

@@ -63,7 +63,6 @@ export interface ChatLayoutElements {
   contextRingEl: SVGCircleElement;
   contextPercentEl: HTMLElement;
   sessionCostEl: HTMLElement;
-  workingEl: HTMLElement;
 }
 
 export const COMPOSER_PLACEHOLDER = "Ask about your vault…";
@@ -144,15 +143,11 @@ export function buildLayout(deps: ChatLayoutDeps): ChatLayoutElements {
 
   const composer = acHook(root.createDiv({ cls: "agentic-chat-composer" }), "composer");
 
-  // Status line above the card: shows only while it has news (a spinner while
-  // the agent works, or a one-line message such as "Restored your draft").
+  // Status line above the card: shows only while it has news (a one-line message
+  // such as "Restored your draft" or "Waiting for your approval"). No "Working…":
+  // the tab dot and the activity line already show a running turn (U7 #2).
   const statusLineEl = composer.createDiv({ cls: "agentic-chat-status-line", attr: { "aria-live": "polite" } });
-  const workingEl = statusLineEl.createSpan({ cls: "agentic-chat-working", attr: { "aria-hidden": "true" } });
-  workingEl.hide();
   const statusEl = acHook(statusLineEl.createSpan({ cls: "agentic-chat-status" }), "status");
-  // "Working…" as real text in the live region (CSS content is not reliably
-  // announced). CSS shows it only while running and the status is empty.
-  statusLineEl.createSpan({ cls: "agentic-chat-working-text" });
 
   // The composer card: chips row, an auto-growing textarea, and the toolbar.
   const fieldEl = acHook(composer.createDiv({ cls: "agentic-chat-field" }), "composer-card");
@@ -355,6 +350,5 @@ export function buildLayout(deps: ChatLayoutDeps): ChatLayoutElements {
     sessionCostEl,
     contextRingEl,
     contextPercentEl,
-    workingEl,
   };
 }

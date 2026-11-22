@@ -89,6 +89,25 @@ async function readAuthChallenge(
   };
 }
 
+/**
+ * The well-known protected-resource metadata URL that answers for this server,
+ * or null. Never throws: a server with no OAuth is a normal answer. Lets a 401
+ * with no `WWW-Authenticate` challenge still reveal that the server uses OAuth
+ * (U7 #11).
+ */
+export async function probeProtectedResourceMetadataUrl(
+  server: McpServerSettings,
+  fetcher: WebFetcher,
+  requestTimeoutMs: number,
+): Promise<string | null> {
+  try {
+    const found = await firstReachableProtectedResourceMetadata(server, fetcher, requestTimeoutMs);
+    return firstString(found.metadata.authorization_servers) ? found.url : null;
+  } catch {
+    return null;
+  }
+}
+
 async function firstReachableProtectedResourceMetadata(
   server: McpServerSettings,
   fetcher: WebFetcher,

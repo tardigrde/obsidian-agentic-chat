@@ -866,6 +866,51 @@ describe("McpHttpClient OAuth resource challenge", () => {
   });
 });
 
+describe("McpHttpClient OAuth detection without a challenge header (U7 #11)", () => {
+  const WELL_KNOWN = "https://mcp.example.com/.well-known/oauth-protected-resource/mcp";
+  const bare401: WebHttpResponse = { status: 401, text: "Unauthorized", headers: {} };
+
+  function fetcherFor(wellKnown: WebHttpResponse, urls: string[]): WebFetcher {
+    return async (request) => {
+      urls.push(request.url);
+      return request.url.includes("/.well-known/oauth-protected-resource") ? wellKnown : bare401;
+    };
+  }
+
+  it("flags OAuth when a bare 401 server publishes protected-resource metadata", async () => {
+    const urls: string[] = [];
+    const target = server({ authType: "none", authHeaderName: "" });
+    const metadata: WebHttpResponse = {
+      status: 200,
+      text: JSON.stringify({ resource: "https://mcp.example.com/mcp", authorization_servers: ["https://auth.example.com"] }),
+      headers: {},
+    };
+    const client = new McpHttpClient({ server: target, fetcher: fetcherFor(metadata, urls) });
+
+    await expect(client.listTools()).rejects.toThrow(/OAuth/i);
+    expect(target.pendingOAuthResourceUrl).toBe(WELL_KNOWN);
+    expect(target.authType).toBe("none");
+  });
+
+  it("keeps a plain HTTP 401 when the server publishes no OAuth metadata", async () => {
+    const urls: string[] = [];
+    const target = server({ authType: "none", authHeaderName: "" });
+    const client = new McpHttpClient({ server: target, fetcher: fetcherFor({ status: 404, text: "", headers: {} }, urls) });
+
+    await expect(client.listTools()).rejects.toThrow(/HTTP 401/);
+    expect(target.pendingOAuthResourceUrl).toBeUndefined();
+  });
+
+  it("does not probe when the user already set a header or bearer credential", async () => {
+    const urls: string[] = [];
+    const target = server();
+    const client = new McpHttpClient({ server: target, fetcher: fetcherFor({ status: 200, text: "{}", headers: {} }, urls) });
+
+    await expect(client.listTools()).rejects.toThrow(/HTTP 401/);
+    expect(urls.some((url) => url.includes("/.well-known/"))).toBe(false);
+  });
+});
+
 describe("shared handshake", () => {
   it("runs one initialize for parallel calls on a fresh client", async () => {
     const methods: string[] = [];

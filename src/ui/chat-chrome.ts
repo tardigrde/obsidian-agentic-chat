@@ -66,7 +66,6 @@ export interface ChatChromeElements {
   /** The composer textarea; an empty draft has nothing to queue. */
   composerInput: () => HTMLTextAreaElement | undefined;
   stopButton: () => HTMLButtonElement;
-  workingEl: () => HTMLElement;
   statusEl: () => HTMLElement;
 }
 
@@ -212,13 +211,9 @@ export class ChatChrome {
   setRunning(running: boolean): void {
     this.running = running;
     this.syncSendAvailability();
-    const working = this.deps.elements.workingEl();
-    working.parentElement?.toggleClass("is-running", running);
-    const workingText = working.parentElement?.querySelector(".agentic-chat-working-text");
-    if (workingText && workingText.textContent !== (running ? "Working…" : "")) workingText.textContent = running ? "Working…" : "";
-    // One spinner per turn: the activity line spins while the turn runs, so the
-    // status line says "Working…" without a second ring (U3 #5).
-    working.hide();
+    // No "Working…" line (U7 #2): the tab dot pulses and the activity line shows
+    // the step. The status line keeps only news that needs the user.
+    this.deps.elements.statusEl().parentElement?.toggleClass("is-running", running);
     if (!running) this.deps.elements.statusEl().setText("");
   }
 

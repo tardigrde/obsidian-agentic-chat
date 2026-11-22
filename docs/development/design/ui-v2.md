@@ -228,8 +228,7 @@ has text below it, or when a message's own text comes before its tool call
   ```
 
   Deferred MCP tools are not sent, so they show as a count, not tokens.
-- **Status line** above the card, only while it has news (`Working…`,
-  `Waiting for your approval`, `Restored your draft`).
+- **Status line** above the card, only while it has news (`Waiting for your approval`, `Restored your draft`).
 - **Queued follow-up:** the dashed chip in the chips row, same behaviour.
 
 ### Empty state

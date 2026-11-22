@@ -2,6 +2,7 @@ import type { WebFetcher, WebHttpResponse } from "../tools/web-fetch";
 import type { McpServerSettings } from "./settings";
 import { parseWwwAuthenticate, refreshMcpOAuthToken, shouldRefreshMcpOAuthToken } from "./oauth";
 import { DEFAULT_MCP_HTTP_TIMEOUT_MS, fetchWithMcpTimeout } from "./http";
+import { probeProtectedResourceMetadataUrl } from "./oauth/discovery";
 import { assertValidHttpHeaderName, assertValidHttpHeaderValue } from "./http-headers";
 import { isPrivateNetworkHost, mcpUrlProblem } from "../utils/host-policy";
 import {
@@ -461,8 +462,17 @@ export class McpHttpClient {
     if (response.status === 403 && this.server.authType === "oauth") throw new McpOAuthForbiddenError(auth ?? "");
     // Auto-detect OAuth requirement when server advertises resource_metadata but authType is none/bearer/header.
     // Do not auto-start flow; just set pending challenge and throw a specific error so the UI can show a banner + Switch CTA.
-    if (response.status !== 401 || !auth || !/resource_metadata/i.test(auth)) return;
-    await this.markOAuthResourceChallenge(auth);
+    if (response.status !== 401) return;
+    if (auth && /resource_metadata/i.test(auth)) {
+      await this.markOAuthResourceChallenge(auth);
+      return;
+    }
+    // A 401 with no challenge header: the server may still use OAuth and publish
+    // its metadata at the well-known URL. Only a server with no credentials set is
+    // probed; a wrong bearer token or header is a plain auth failure (U7 #11).
+    if (this.server.authType !== "none") return;
+    const wellKnown = await probeProtectedResourceMetadataUrl(this.server, this.fetcher, this.requestTimeoutMs);
+    if (wellKnown) await this.markOAuthResourceChallenge(`Bearer resource_metadata="${wellKnown}"`);
   }
 
   private async markOAuthResourceChallenge(auth: string): Promise<void> {
