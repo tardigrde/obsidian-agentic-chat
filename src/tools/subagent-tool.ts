@@ -36,8 +36,12 @@ export interface SubagentChildStatus {
   status: "queued" | "running" | "done" | "error" | "aborted";
   /** Final summary text (or the error message) once the child settles. */
   summary?: string;
-  /** Id used to abort just this child. */
+  /** Id used to abort just this child (its child id). */
   stopId?: string;
+  /** The child id the model uses for continue/stop (`sa-3`). */
+  childId?: string;
+  /** A long report kept whole: the artifact id the user can open. */
+  artifactId?: string;
   /** Live transcript accumulated while the child runs. */
   transcript?: SubagentTranscriptEntry[];
   /** Wall-clock runtime of the child session, set once it settles. */
@@ -69,7 +73,42 @@ export class SubagentRegistry {
   private readonly activeStops = new Map<string, () => void>();
   private readonly pendingErrorDetails = new Map<string, SubagentDetails>();
   private readonly retained = new Map<string, RetainedChild>();
+  /** Children running in the background, by child id (U5 #1). */
+  private readonly running = new Map<string, SubagentChildStatus>();
   private childCounter = 0;
+
+  markRunning(id: string, status: SubagentChildStatus): void {
+    this.running.set(id, status);
+  }
+
+  markSettled(id: string): void {
+    this.running.delete(id);
+  }
+
+  isRunning(id: string): boolean {
+    return this.running.has(id.trim());
+  }
+
+  get runningCount(): number {
+    return this.running.size;
+  }
+
+  runningChildren(): SubagentChildStatus[] {
+    return [...this.running.values()];
+  }
+
+  retainedIds(): string[] {
+    return [...this.retained.keys()];
+  }
+
+  /**
+   * Stop every running child. A child belongs to its tab's agent: closing the
+   * tab, loading another session in it, or a reload stops its children.
+   */
+  abortAll(): void {
+    for (const stop of [...this.activeStops.values()]) stop();
+    this.activeStops.clear();
+  }
 
   /** A fresh child id (`sa-3`): short, so the model copies it reliably. */
   nextChildId(): string {
@@ -135,9 +174,10 @@ export class SubagentRegistry {
     else this.pendingErrorDetails.clear();
   }
 
-  /** Drop all state. Used when a session is cleared or replaced. */
+  /** Drop all state. Used when a session is cleared or replaced: running children stop first. */
   clear(): void {
-    this.activeStops.clear();
+    this.abortAll();
+    this.running.clear();
     this.pendingErrorDetails.clear();
     this.retained.clear();
   }
@@ -190,6 +230,8 @@ export interface SubagentToolDeps {
   registry?: SubagentRegistry;
   /** Keeps a report longer than the inline cap in full, readable with the artifact tool. */
   artifactStore?: ToolArtifactStoreLike;
+  /** Background delivery: live row updates and the settled report. */
+  background?: SubagentBackgroundHooks;
 }
 
 export interface SubagentTask {
@@ -197,51 +239,98 @@ export interface SubagentTask {
   task: string;
 }
 
+/**
+ * Resolve the single requested task, tolerating malformed model output (blank
+ * agent/task collapse to no-op). Retained for approval gating, which inspects
+ * the role of the target agent before the dispatch runs. Stop and status are
+ * not dispatches.
+ */
+export function normalizeTasks(
+  params: { agent?: string; task?: string; action?: string; id?: string },
+  retainedAgent?: (id: string) => string | undefined,
+): SubagentTask[] {
+  if (params.action === "stop" || params.action === "status") return [];
+  // A continue call runs the role of the child it continues.
+  const agent = params.action === "continue" ? (params.id ? retainedAgent?.(params.id) : undefined) : params.agent?.trim();
+  const task = params.task?.trim();
+  if (agent && task) return [{ agent, task }];
+  return [];
+}
+
+/** A settled child, handed to the parent as an event (U5 #1). */
+export interface SubagentReport {
+  childId: string;
+  agent: string;
+  task: string;
+  /** The `subagent` call that started this run; the UI row belongs to it. */
+  toolCallId: string;
+  /** Persisted child status (no live transcript). */
+  details: SubagentDetails;
+  /** What the model reads: the report, the error, or the stop notice. */
+  text: string;
+}
+
+/** How a background child reaches the parent after its dispatch call returned. */
+export interface SubagentBackgroundHooks {
+  /** Live status of a running child, for its row in the activity block. */
+  onChildUpdate?: (toolCallId: string, details: SubagentDetails) => void;
+  /** The child settled (done, error, or stopped): give the report to the parent. */
+  deliverReport: (report: SubagentReport) => void;
+}
+
 const SubagentParameters = Type.Object({
   action: Type.Optional(
-    Type.Union([Type.Literal("start"), Type.Literal("continue")], { description: "default start" }),
+    Type.Union([Type.Literal("start"), Type.Literal("continue"), Type.Literal("stop"), Type.Literal("status")], {
+      description: "default start",
+    }),
   ),
   agent: Type.Optional(Type.String({ description: "role name (start)" })),
-  task: Type.String({ description: "task, or the follow-up" }),
-  id: Type.Optional(Type.String({ description: "child id (continue)" })),
+  task: Type.Optional(Type.String({ description: "task (start), or the follow-up (continue)" })),
+  id: Type.Optional(Type.String({ description: "child id (continue, stop)" })),
 });
 
 /**
- * The `subagent` dispatch tool: spawns one focused child agent in an isolated
- * context and returns its summary. Strict 1:1 — one call = one subagent; to
- * delegate several tasks, make several `subagent` calls in one message (the
- * parent loop runs them concurrently, capped by `maxParallelSubagents` in
- * flight; the rest queue). `action: "continue"` with a child id sends a
- * follow-up to a child kept from an earlier call (its context intact). The
- * parent abort signal cancels every child, and live status streams to the UI
- * via `onUpdate`.
+ * The `subagent` dispatch tool. Children run in the background (U5 #1): a
+ * start or continue call returns at once with the child id, the parent turn
+ * goes on (or ends), and the user can keep talking. When the child settles,
+ * `deliverReport` hands its report to the parent as a `<subagent_report>`
+ * message. The parent's Stop does not stop a child; each child stops on its
+ * own (its row's stop button, or `{action: "stop", id}`). At most
+ * `maxParallelSubagents` children run at once per chat; a call over the limit
+ * fails and says so.
  */
 export function createSubagentTool(
   deps: SubagentToolDeps,
 ): AgentTool<typeof SubagentParameters, SubagentDetails> {
-  // One slot pool per tool instance (and createTool() builds a fresh instance
-  // per parent turn), so the cap is per-run, not global.
-  const limit = Math.max(1, Math.trunc(deps.maxParallel?.() ?? DEFAULT_CONCURRENCY) || DEFAULT_CONCURRENCY);
-  const slots = createSlotPool(limit);
   const registry = deps.registry ?? new SubagentRegistry();
+  const limit = (): number => Math.max(1, Math.trunc(deps.maxParallel?.() ?? DEFAULT_CONCURRENCY) || DEFAULT_CONCURRENCY);
   return {
     name: SUBAGENT_TOOL_NAME,
     label: "Dispatch subagent",
     description:
-      "Run one specialist subagent in an isolated context; it returns a summary and a child id. " +
-      "One call = one subagent ({agent, task}). To delegate several tasks, make several " +
-      `subagent calls in one message — they run in parallel (up to ${limit} at once). ` +
-      'To follow up with the same child (its context intact), call {action: "continue", id, task}. ' +
+      "Start one specialist subagent in the background, in an isolated context. It returns a child id at once; " +
+      "the child's report arrives later as a <subagent_report> message. Do not wait or poll for it, and do not start " +
+      "the same task again: continue with other work or end your turn. One call = one subagent ({agent, task}); " +
+      `several calls run in parallel (at most ${limit()} at once in this chat). ` +
+      'Follow up with a finished child (context intact): {action: "continue", id, task}. ' +
+      'Stop a running child: {action: "stop", id}. List children: {action: "status"}. ' +
       "Roles are in the system prompt; Explorer inherits parent approval/mode.",
     parameters: SubagentParameters,
-    execute: async (toolCallId, params, signal, onUpdate) => {
+    execute: async (toolCallId, params) => {
+      const action = params.action ?? "start";
+      if (action === "status") return statusResult(registry);
+      if (action === "stop") return stopResult(registry, params.id);
+
       const task = params.task?.trim();
-      const continuing = params.action === "continue";
+      const continuing = action === "continue";
       let agent = params.agent?.trim();
       let retained: RetainedChild | undefined;
       let profile: AgentRole | undefined;
       if (continuing) {
         const id = params.id?.trim() ?? "";
+        if (id && registry.isRunning(id)) {
+          throw new Error(`subagent: child "${id}" is still running. Wait for its report, or stop it with {action: "stop", id: "${id}"}.`);
+        }
         retained = id ? registry.retainedChild(id) : undefined;
         if (!retained) {
           throw new Error(
@@ -251,9 +340,7 @@ export function createSubagentTool(
         agent = retained.agent;
         if (!task) throw new Error('subagent: continue needs a follow-up task: {action: "continue", id, task}.');
       } else {
-        if (!agent || !task) {
-          throw new Error("subagent: provide both {agent, task}.");
-        }
+        if (!agent || !task) throw new Error("subagent: provide both {agent, task}.");
         const profiles = deps.getProfiles();
         profile = findAgentRole(profiles, agent);
         if (!profile) {
@@ -262,169 +349,111 @@ export function createSubagentTool(
         }
       }
       if (!agent || !task) throw new Error("subagent: provide both {agent, task}.");
-
-      const status: SubagentChildStatus = { agent, task, status: "queued" };
-      const emit = (): void =>
-        onUpdate?.(toolResult(progressText(status), snapshot([status])));
-
-      let emitTimer: number | null = null;
-      const scheduleEmit = (): void => {
-        if (emitTimer) return;
-        emitTimer = window.setTimeout(() => {
-          emitTimer = null;
-          emit();
-        }, 150);
-      };
-      const flushEmit = (): void => {
-        if (emitTimer) {
-          window.clearTimeout(emitTimer);
-          emitTimer = null;
-        }
-        emit();
-      };
-
-      try {
-        // Surface the "queued" pill only while actually waiting for a slot — an
-        // immediate grant (under the cap) never flashes it.
-        await acquireSlot(slots, signal, () => {
-          status.status = "queued";
-          emit();
-        });
-      } catch {
-        status.status = "aborted";
-        status.summary = "Stopped before it started";
-        flushEmit();
-        return toolResult(truncateToolOutput(`Subagent "${agent}" aborted before it started.`), snapshot([status]));
-      }
-
-      status.status = "running";
-      emit();
-      let fullReport: string | undefined;
-      const childId = retained?.id ?? registry.nextChildId();
-      let child: Agent | undefined = retained?.child;
-      try {
-        child ??= deps.createChildAgent(profile as AgentRole);
-        fullReport = await runSingleChild(deps, registry, status, child, task, toolCallId, signal, scheduleEmit);
-      } catch (error) {
-        if (signal?.aborted) {
-          status.status = "aborted";
-          status.summary = "Stopped by user";
-        } else {
-          status.status = "error";
-          status.summary = redactText(
-            truncateToolOutput(errorMessage(error), PER_CHILD_SUMMARY_CHARS),
-            { redactHighEntropy: true, maxLength: 9000 },
-          );
-        }
-      } finally {
-        releaseSlot(slots);
-      }
-      // Keep the child for a follow-up, unless it never started.
-      if (child) registry.retain({ id: childId, agent, child });
-      let modelText: string | undefined;
-      if (fullReport !== undefined && fullReport.length > PER_CHILD_SUMMARY_CHARS) {
-        // A pending progress tick must not show "done" with the temporary
-        // truncated summary while the artifact is written (review of #406).
-        if (emitTimer) {
-          window.clearTimeout(emitTimer);
-          emitTimer = null;
-        }
-        const kept = await keepFullReport(deps.artifactStore, agent, fullReport);
-        if (kept) {
-          status.summary = kept.userPreview;
-          modelText = kept.modelText;
-        }
-      }
-      flushEmit();
-
-      // A failed child surfaces as a failed tool call so the Dispatch step
-      // renders red. A *stopped* child returns a normal result instead: the
-      // parent must not feel pressure to re-dispatch a task the user just
-      // stopped — the step still renders as stopped via its child statuses.
-      if (status.status === "error") {
-        registry.setPendingErrorDetails(toolCallId, persistedSnapshot([status]));
+      const max = limit();
+      if (registry.runningCount >= max) {
         throw new Error(
-          wrapToolOutputTruncated(
-            truncateToolOutput(`Subagent "${agent}" failed: ${status.summary ?? "unknown error"}`, PER_CHILD_SUMMARY_CHARS),
-            "subagent",
-          ),
+          `subagent: at most ${max} subagents run at once in this chat, and ${registry.runningCount} are running. ` +
+            'Wait for a report, or stop one with {action: "stop", id}.',
         );
       }
 
-      const followUp = `\n\n[child id: ${childId}. To follow up with this subagent, call subagent with {action: "continue", id: "${childId}", task}.]`;
-      return untrustedToolResult(`${modelText ?? mergeSummaries([status])}${followUp}`, snapshot([status]), "subagent");
+      const childId = retained?.id ?? registry.nextChildId();
+      const child = retained?.child ?? deps.createChildAgent(profile as AgentRole);
+      const status: SubagentChildStatus = { agent, task, status: "running", childId, stopId: childId };
+      registry.markRunning(childId, status);
+      void runInBackground(deps, registry, { childId, agent, task, toolCallId, child, status });
+
+      return untrustedToolResult(
+        `Started subagent "${agent}" as ${childId}. It runs in the background; its report arrives later as a <subagent_report id="${childId}"> message. ` +
+          "Do not wait, poll, or start the same task again. Continue with other work, or end your turn.",
+        snapshot([status]),
+        "subagent",
+      );
     },
   };
 }
 
-/**
- * Resolve the single requested task, tolerating malformed model output (blank
- * agent/task collapse to no-op). Retained for approval gating, which inspects
- * the role of the target agent before the dispatch runs.
- */
-export function normalizeTasks(
-  params: { agent?: string; task?: string; action?: string; id?: string },
-  retainedAgent?: (id: string) => string | undefined,
-): SubagentTask[] {
-  // A continue call runs the role of the child it continues.
-  const agent = params.action === "continue" ? (params.id ? retainedAgent?.(params.id) : undefined) : params.agent?.trim();
-  const task = params.task?.trim();
-  if (agent && task) return [{ agent, task }];
-  return [];
+interface BackgroundRun {
+  childId: string;
+  agent: string;
+  task: string;
+  toolCallId: string;
+  child: Agent;
+  status: SubagentChildStatus;
 }
 
-/** Concurrency slot pool shared by all `subagent` calls of one tool instance. */
-interface SlotPool {
-  limit: number;
-  active: number;
-  waiters: Array<() => void>;
-}
-
-function createSlotPool(limit: number): SlotPool {
-  return { limit, active: 0, waiters: [] };
-}
-
-/**
- * Grab a concurrency slot. When the pool is full, `onQueued` fires
- * synchronously and the returned promise resolves once a slot frees; if the
- * signal aborts first it rejects (the queued dispatch settles as aborted
- * without ever starting a child).
- */
-function acquireSlot(
-  pool: SlotPool,
-  signal: AbortSignal | undefined,
-  onQueued?: () => void,
-): Promise<void> {
-  if (pool.active < pool.limit) {
-    pool.active += 1;
-    return Promise.resolve();
+/** Run one child to the end, keep it for a follow-up, and deliver its report. Never throws. */
+async function runInBackground(deps: SubagentToolDeps, registry: SubagentRegistry, run: BackgroundRun): Promise<void> {
+  const { status } = run;
+  let emitTimer: number | null = null;
+  const emit = (): void => deps.background?.onChildUpdate?.(run.toolCallId, snapshot([status]));
+  const scheduleEmit = (): void => {
+    if (emitTimer) return;
+    emitTimer = window.setTimeout(() => {
+      emitTimer = null;
+      emit();
+    }, 150);
+  };
+  let fullReport: string | undefined;
+  try {
+    fullReport = await runSingleChild(deps, registry, status, run.child, run.task, run.childId, undefined, scheduleEmit);
+  } catch (error) {
+    status.status = "error";
+    status.summary = redactText(truncateToolOutput(errorMessage(error), PER_CHILD_SUMMARY_CHARS), {
+      redactHighEntropy: true,
+      maxLength: 9000,
+    });
   }
-  onQueued?.();
-  return new Promise((resolve, reject) => {
-    const cleanup = (): void => {
-      signal?.removeEventListener("abort", onAbort);
-    };
-    const waiter = (): void => {
-      cleanup();
-      resolve();
-    };
-    const onAbort = (): void => {
-      const index = pool.waiters.indexOf(waiter);
-      if (index >= 0) pool.waiters.splice(index, 1);
-      cleanup();
-      reject(new Error("subagent: dispatch aborted while queued"));
-    };
-    pool.waiters.push(waiter);
-    if (signal?.aborted) onAbort();
-    else signal?.addEventListener("abort", onAbort, { once: true });
+  if (emitTimer) {
+    window.clearTimeout(emitTimer);
+    emitTimer = null;
+  }
+  registry.retain({ id: run.childId, agent: run.agent, child: run.child });
+  let modelText: string | undefined;
+  if (fullReport !== undefined && fullReport.length > PER_CHILD_SUMMARY_CHARS) {
+    const kept = await keepFullReport(deps.artifactStore, run.agent, fullReport);
+    if (kept) {
+      status.summary = kept.userPreview;
+      status.artifactId = kept.artifactId;
+      modelText = kept.modelText;
+    }
+  }
+  registry.markSettled(run.childId);
+  emit();
+  const body =
+    status.status === "error"
+      ? `Subagent "${run.agent}" failed: ${status.summary ?? "unknown error"}`
+      : status.status === "aborted"
+        ? `Subagent "${run.agent}" was stopped before it finished. Do not start the same task again unless the user asks.`
+        : modelText ?? status.summary ?? "(no output)";
+  const followUp =
+    status.status === "aborted"
+      ? ""
+      : `\n\n[To follow up with this subagent, call subagent with {action: "continue", id: "${run.childId}", task}.]`;
+  deps.background?.deliverReport({
+    childId: run.childId,
+    agent: run.agent,
+    task: run.task,
+    toolCallId: run.toolCallId,
+    details: persistedSnapshot([status]),
+    text: `${body}${followUp}`,
   });
 }
 
-/** Free a slot: promote the next queued waiter, or decrement the active count. */
-function releaseSlot(pool: SlotPool): void {
-  const next = pool.waiters.shift();
-  if (next) next();
-  else pool.active -= 1;
+function statusResult(registry: SubagentRegistry) {
+  const running = registry.runningChildren();
+  const lines = running.map((child) => `- ${child.childId}: ${child.agent} (running) — ${child.task.slice(0, 120)}`);
+  const kept = registry.retainedIds().filter((id) => !registry.isRunning(id));
+  if (kept.length > 0) lines.push(`Finished, can be continued: ${kept.join(", ")}`);
+  return toolResult(lines.length > 0 ? lines.join("\n") : "No subagents in this chat.", snapshot(running));
+}
+
+function stopResult(registry: SubagentRegistry, rawId: string | undefined) {
+  const id = rawId?.trim() ?? "";
+  if (!id) throw new Error('subagent: stop needs a child id: {action: "stop", id}.');
+  if (!registry.isRunning(id)) throw new Error(`subagent: no running child with id "${id}".`);
+  registry.abort(id);
+  return toolResult(`Stopped subagent ${id}. Its stop notice arrives as a <subagent_report> message.`, snapshot([]));
 }
 
 async function runSingleChild(
@@ -433,7 +462,7 @@ async function runSingleChild(
   status: SubagentChildStatus,
   child: Agent,
   task: string,
-  parentToolCallId: string,
+  stopId: string,
   signal: AbortSignal | undefined,
   scheduleEmit: () => void,
 ): Promise<string | undefined> {
@@ -441,8 +470,6 @@ async function runSingleChild(
   // A continued child keeps its earlier messages: count only this run.
   const firstMessage = child.state.messages.length;
 
-  // 1:1 means the tool call id is a stable, unique stop id for this child.
-  const stopId = parentToolCallId;
   status.stopId = stopId;
   status.transcript = [];
   let stoppedLocally = false;
@@ -462,7 +489,7 @@ async function runSingleChild(
     // Each child model call is billed at once, so the spend cap sees it.
     if (event.type === "message_end" && event.message.role === "assistant") {
       const callUsage = sumAssistantUsage([event.message]);
-      if (callUsage) deps.recordUsage?.(callUsage, parentToolCallId);
+      if (callUsage) deps.recordUsage?.(callUsage, stopId);
     }
     if (!status.transcript) return;
     if (event.type === "message_update") {
@@ -544,7 +571,7 @@ async function keepFullReport(
   store: ToolArtifactStoreLike | undefined,
   agent: string,
   report: string,
-): Promise<{ modelText: string; userPreview: string } | null> {
+): Promise<{ modelText: string; userPreview: string; artifactId: string } | null> {
   if (!store) return null;
   try {
     const artifact = await store.writeArtifact({
@@ -555,6 +582,7 @@ async function keepFullReport(
     });
     const total = report.length.toLocaleString("en-US");
     return {
+      artifactId: artifact.id,
       modelText:
         // `artifact:<id>` is the reference form the artifact prune scan keeps alive.
         `Subagent "${agent}" finished. Its report is ${total} characters, too long to inline, and is stored in full as artifact:${artifact.id}. ` +
@@ -570,19 +598,6 @@ async function keepFullReport(
 
 function snapshot(statuses: SubagentChildStatus[]): SubagentDetails {
   return { kind: "subagent", children: statuses.map((status) => ({ ...status })) };
-}
-
-function progressText(status: SubagentChildStatus): string {
-  if (status.status === "queued") return `Queued subagent "${status.agent}"…`;
-  if (status.status === "running") return `Running subagent "${status.agent}"…`;
-  return `Subagent "${status.agent}" finished`;
-}
-
-function mergeSummaries(statuses: SubagentChildStatus[]): string {
-  const only = statuses[0];
-  return only.status === "error"
-    ? `Subagent "${only.agent}" failed: ${only.summary ?? "unknown error"}`
-    : only.summary ?? "(no output)";
 }
 
 /**
