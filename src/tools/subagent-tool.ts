@@ -316,13 +316,10 @@ export function createSubagentTool(
     name: SUBAGENT_TOOL_NAME,
     label: "Dispatch subagent",
     description:
-      "Start one specialist subagent in the background, in an isolated context. It returns a child id at once; " +
-      "the child's report arrives later as a <subagent_report> message. Do not wait or poll for it, and do not start " +
-      "the same task again: continue with other work or end your turn. One call = one subagent ({agent, task}); " +
-      `several calls run in parallel (at most ${limit()} at once in this chat). ` +
-      'Follow up with a finished child (context intact): {action: "continue", id, task}. ' +
-      'Stop a running child: {action: "stop", id}. List children: {action: "status"}. ' +
-      "Roles are in the system prompt; Explorer inherits parent approval/mode.",
+      "Start a specialist subagent in the background (isolated context). It returns a child id at once; " +
+      "its report arrives later as a <subagent_report> message: do not wait, poll, or repeat the task. " +
+      `One call = one subagent {agent, task}; up to ${limit()} run at once. ` +
+      'Follow up: {action: "continue", id, task}. Stop: {action: "stop", id}. List: {action: "status"}.',
     parameters: SubagentParameters,
     execute: async (toolCallId, params) => {
       const action = params.action ?? "start";
