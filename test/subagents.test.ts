@@ -447,7 +447,7 @@ describe("createSubagentTool (background, U5 #1)", () => {
     expect(usages).toHaveLength(1);
   });
 
-  it("enforces a hard per-chat limit: a start over `maxParallelSubagents` fails and names the limit", async () => {
+  it("enforces a hard per-chat limit: a start over maxParallelSubagents fails and names the limit", async () => {
     const h = harness({ createChildAgent: () => makeChild(hangingStreamFn()), maxParallel: () => 2 });
     expect(h.tool.description).toContain("up to 2 run at once");
     await h.tool.execute("p-0", { agent: "researcher", task: "t0" }, undefined);

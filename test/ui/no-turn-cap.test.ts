@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { replayTextTurn, replayToolCallTurn, type ReplayTurn } from "../../src/agent/replay-stream";
 import { mountChatView, seedFile, settle, type MountedChatView } from "./support/mount-chat-view";
 
@@ -38,17 +38,20 @@ describe("no turn caps (U4)", () => {
   it("a subagent runs past the old 10-turn child cap and returns its report", async () => {
     ui = await mountChatView({
       turns: [
-        replayToolCallTurn("dispatch", "subagent", { agent: "explorer", task: "read all five notes twice" }),
-        ...reads("c", 12),
-        replayTextTurn("CHILD-REPORT read 12 times, all notes present."),
-        replayTextTurn("PARENT-END the explorer is done."),
+        replayToolCallTurn("dispatch", "subagent", { agent: "explorer", task: "read all five notes twice" }, { caller: "parent" }),
+        ...reads("c", 12).map((turn) => ({ ...turn, caller: "child" as const })),
+        replayTextTurn("CHILD-REPORT read 12 times, all notes present.", { caller: "child" }),
+        replayTextTurn("PARENT-FREE the explorer runs.", { caller: "parent" }),
+        replayTextTurn("PARENT-END the explorer is done.", { caller: "parent" }),
       ],
     });
     await seedNotes();
     await ui.send("delegate");
+    await vi.waitFor(() => expect(ui.root.textContent).toContain("CHILD-REPORT read 12 times"), { timeout: 3_000 });
     await ui.idle();
     await settle();
-    expect(ui.calls()).toBe(15);
+    // 1 dispatch + 13 child calls + 1 or 2 parent calls (the report steers in, or starts a turn).
+    expect(ui.calls()).toBeGreaterThanOrEqual(15);
     expect(ui.root.textContent).toContain("CHILD-REPORT read 12 times");
     expect(ui.root.textContent).not.toMatch(/Turn cap/);
   });

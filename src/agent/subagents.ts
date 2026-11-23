@@ -89,3 +89,6 @@ export function formatAgentRolesForSystemPrompt(roles: AgentRole[]): string {
     ...lines,
   ].join("\n");
 }
+
+/** The first words of every child's system prompt (U5 #6); the replay harness tells child calls apart by them. */
+export const CHILD_PROMPT_OPENING = "You are a subagent of the main agent";
