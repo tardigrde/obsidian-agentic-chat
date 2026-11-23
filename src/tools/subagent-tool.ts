@@ -3,7 +3,7 @@ import type { Usage } from "@earendil-works/pi-ai";
 import { Type } from "typebox";
 import { findAgentRole, type AgentRole } from "../agent/subagents";
 import { sumAssistantUsage } from "../agent/usage";
-import { redactText } from "../privacy/redaction";
+import { redactText, redactValue } from "../privacy/redaction";
 import { truncateToolOutput } from "../vault/truncate";
 import { toolResult, untrustedToolResult } from "./result";
 import { errorMessage } from "../utils/errors";
@@ -78,6 +78,8 @@ export interface RetainedChild {
  */
 export class SubagentRegistry {
   private readonly activeStops = new Map<string, () => void>();
+  /** Why a child was stopped, when it was not the user (the spend cap, a session change). */
+  private readonly stopReasons = new Map<string, string>();
   private readonly pendingErrorDetails = new Map<string, SubagentDetails>();
   private readonly retained = new Map<string, RetainedChild>();
   /** Bumped when the session is cleared or replaced: a child from before never reports into the new one. */
@@ -119,8 +121,8 @@ export class SubagentRegistry {
    * Stop every running child. A child belongs to its tab's agent: closing the
    * tab, loading another session in it, or a reload stops its children.
    */
-  abortAll(): void {
-    for (const stop of [...this.activeStops.values()]) stop();
+  abortAll(reason?: string): void {
+    for (const id of [...this.activeStops.keys()]) this.abort(id, reason);
     this.activeStops.clear();
   }
 
@@ -168,9 +170,17 @@ export class SubagentRegistry {
   }
 
   /** Stop one child by id. Other services with the same id are untouched. */
-  abort(id: string): void {
+  abort(id: string, reason?: string): void {
+    if (reason && this.activeStops.has(id)) this.stopReasons.set(id, reason);
     this.activeStops.get(id)?.();
     this.activeStops.delete(id);
+  }
+
+  /** The reason a stopped child settles with; "Stopped by user" when none was given. */
+  takeStopReason(id: string): string {
+    const reason = this.stopReasons.get(id);
+    this.stopReasons.delete(id);
+    return reason ?? "Stopped by user";
   }
 
   setPendingErrorDetails(id: string, details: SubagentDetails): void {
@@ -515,11 +525,11 @@ async function keepTimeline(
 }
 
 function redactValueForTimeline(entries: SubagentTranscriptEntry[]): SubagentTranscriptEntry[] {
-  return entries.map((entry) =>
-    entry.type === "text"
-      ? { type: "text", text: redactText(entry.text, { redactHighEntropy: true, maxLength: 4_000 }) }
-      : entry,
-  );
+  return entries.map((entry) => {
+    if (entry.type === "text") return { type: "text", text: redactText(entry.text, { redactHighEntropy: true, maxLength: 4_000 }) };
+    if (entry.args === undefined) return entry;
+    return { ...entry, args: redactValue(entry.args, { redactHighEntropy: true, maxLength: 500, maxDepth: 4, maxArrayLength: 20, maxObjectKeys: 20 }) };
+  });
 }
 
 function statusResult(registry: SubagentRegistry) {
@@ -636,7 +646,7 @@ async function runSingleChild(
   // and invites the parent to retry the very task the user just stopped).
   if (signal?.aborted || stoppedLocally) {
     status.status = "aborted";
-    status.summary = "Stopped by user";
+    status.summary = registry.takeStopReason(stopId);
   } else if (error) {
     status.status = "error";
     status.summary = redactText(truncateToolOutput(error, PER_CHILD_SUMMARY_CHARS), {

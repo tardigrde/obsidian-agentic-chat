@@ -518,6 +518,14 @@ describe("createSubagentTool (background, U5 #1)", () => {
     expect(h.registry.isRunning("sa-1")).toBe(false);
   });
 
+  it("review of #431: a child stopped by the spend cap says so, not 'Stopped by user'", async () => {
+    const h = harness({ createChildAgent: () => makeChild(hangingStreamFn()) });
+    await h.tool.execute("cap-1", { agent: "researcher", task: "long" }, undefined);
+    await tick();
+    h.registry.abortAll("Stopped by the spend cap");
+    expect((await h.settled("cap-1")).details.children[0]).toMatchObject({ status: "aborted", summary: "Stopped by the spend cap" });
+  });
+
   it("refuses to continue a child that still runs", async () => {
     const h = harness({ createChildAgent: () => makeChild(hangingStreamFn()) });
     await h.tool.execute("c-1", { agent: "researcher", task: "long" }, undefined);

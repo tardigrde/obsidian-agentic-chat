@@ -889,7 +889,7 @@ export class AgentService {
     if (!reason) return;
     this.sessionState.setErrorMessage(reason);
     if (agent?.state.isStreaming) this.steering.stop(agent);
-    if (childrenRunning) this.subagents.registry.abortAll();
+    if (childrenRunning) this.subagents.registry.abortAll("Stopped by the spend cap");
   }
 
   /**
