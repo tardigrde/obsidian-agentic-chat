@@ -548,6 +548,28 @@ describe("subagent: no turn cap, continue, live usage (U4)", () => {
     await expect(h.tool.execute("call-3", { action: "continue", id: "sa-9", task: "x" }, undefined)).rejects.toThrow(/no child with id "sa-9"/);
   });
 
+  it("U5 #14: records the notes a child read, for the parent's source pills", async () => {
+    const turns = [
+      replayToolCallTurn("r1", "read", { path: "Inbox/A.md" }, { usage: COST }),
+      replayTextTurn("Read A.", { usage: COST }),
+    ];
+    const readTool = {
+      name: "read",
+      label: "Read",
+      description: "read a note",
+      parameters: { type: "object", properties: { path: { type: "string" } } },
+      execute: async () => ({ content: [{ type: "text" as const, text: "body" }], details: {} }),
+    };
+    const controller = createReplayStreamController(turns);
+    const child = new Agent({
+      streamFn: controller.streamFn,
+      initialState: { systemPrompt: "child", model: TEST_MODEL, thinkingLevel: "off", tools: [readTool as never], messages: [] },
+    });
+    const h = harness({ createChildAgent: () => child });
+    const { child: settled } = await h.run("call-src", { agent: "researcher", task: "read A" });
+    expect(settled.sources).toEqual(["Inbox/A.md"]);
+  });
+
   it("keeps the last 10 children per tab and drops the oldest", () => {
     const registry = new SubagentRegistry();
     for (let index = 0; index < 12; index += 1) registry.retain({ id: registry.nextChildId(), agent: "researcher", child: {} as Agent });

@@ -23,6 +23,8 @@ export interface ParsedSubagentReport {
   /** For the row after a reload: run time, cost, and the full-report artifact. */
   durationMs?: number;
   costUsd?: number;
+  /** Vault files the child read (U5 #14). */
+  sources?: string[];
   /** The child's token usage; the session total counts it from here, so it survives a reload. */
   usage?: { input: number; output: number; totalTokens: number; costUsd: number };
   artifactId?: string;
@@ -38,6 +40,7 @@ export function formatSubagentReport(report: SubagentReport): string {
       ? ` in="${child.usage.input}" out="${child.usage.output}" tokens="${child.usage.totalTokens}" cost="${child.usage.costUsd}"`
       : "",
     child?.artifactId ? ` artifact="${attr(child.artifactId)}"` : "",
+    child?.sources?.length ? ` sources="${attr(child.sources.map((path) => path.replace(/\|/gu, " ")).join("|"))}"` : "",
   ].join("");
   const header = `<subagent_report id="${attr(report.childId)}" agent="${attr(report.agent)}" status="${attr(child?.status ?? "done")}" call="${attr(report.toolCallId)}"${extra}>`;
   // The body is the child's output: data from notes and the web, never instructions.
@@ -71,6 +74,7 @@ export function parseSubagentReport(text: string): ParsedSubagentReport | null {
       ? { usage: { input: count("in"), output: count("out"), totalTokens: count("tokens"), costUsd: Number.isFinite(cost) ? cost : 0 } }
       : {}),
     ...(attrs.get("artifact") ? { artifactId: attrs.get("artifact") } : {}),
+    ...(attrs.get("sources") ? { sources: (attrs.get("sources") as string).split("|").filter(Boolean) } : {}),
   };
 }
 

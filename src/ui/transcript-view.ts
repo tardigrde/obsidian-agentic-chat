@@ -59,6 +59,8 @@ export class TranscriptView {
   // between two texts (U4 #1). A turn reads `[steps] text [steps] text`.
   private activity: ActivityLine | null = null;
   private turnSegments: ActivityLine[] = [];
+  /** Files a child read, from its report: cited under the answer of the turn it lands in (U5 #14). */
+  private readonly reportSources = new Set<string>();
   /** Every segment on screen: a background child's row may sit in an earlier turn (U5 #1). */
   private readonly allSegments = new Set<ActivityLine>();
   // Bubbles created in the open segment: once one has text, the next step opens a new segment.
@@ -135,7 +137,8 @@ export class TranscriptView {
     this.turnSegments = [];
     this.segmentBubbles = [];
     segments.forEach((segment, index) => segment.finish({ error: this.turnError && index === segments.length - 1 }));
-    const sources = new Set<string>();
+    const sources = new Set<string>(this.reportSources);
+    this.reportSources.clear();
     for (const segment of segments) for (const path of segment.sourcePaths) sources.add(path);
     const answer = [...this.turnBubbles].reverse().find((bubble) => bubble.hasText) ?? this.turnBubbles.at(-1);
     answer?.renderSourceChips(sources);
@@ -216,6 +219,7 @@ export class TranscriptView {
     const report = parseSubagentReport(text);
     if (!report) return false;
     const body = unwrapToolOutput(report.body);
+    for (const path of report.sources ?? []) this.reportSources.add(path);
     if (settleRow) this.updateSubagent(report.toolCallId, reportChildDetails(report, body));
     const el = acHook(this.messagesEl.createEl("details", { cls: ["agentic-chat-subagent-event", `is-${report.status}`] }), "subagent-event");
     const label = report.status === "done" ? "reported back" : report.status === "aborted" ? "was stopped" : "failed";
@@ -283,6 +287,7 @@ export class TranscriptView {
     this.segmentBubbles = [];
     this.turnBubbles = [];
     this.messagesEl.empty();
+    this.reportSources.clear();
     this.bubble = null;
     this.lastBubbleError = undefined;
     this.turnUsage = null;
@@ -295,8 +300,10 @@ export class TranscriptView {
         // non-editable block instead of an editable user bubble.
         this.renderSummaryMessage(messageText(message));
         rendered += 1;
-      } else if (message.role === "user" && this.renderSubagentReport(messageText(message), true)) {
+      } else if (message.role === "user" && parseSubagentReport(messageText(message))) {
+        // Close the turn before: the report's sources belong to the turn it starts.
         this.finishTurn();
+        this.renderSubagentReport(messageText(message), true);
         rendered += 1;
       } else if (message.role === "user") {
         this.finishTurn();

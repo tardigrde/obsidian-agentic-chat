@@ -268,6 +268,24 @@ describe("subagent row (U5 #2, #3): one row per child in the activity block", ()
     expect(lastAll('[data-ac="subagent-open-report"]')).toHaveLength(1);
   });
 
+  it("U5 #14: cites the notes the child read under the answer of the turn its report lands in", async () => {
+    ui.emit({ type: "agent_start" });
+    ui.emit({
+      type: "message_end",
+      message: {
+        role: "user",
+        content: [{ type: "text", text: '<subagent_report id="sa-2" agent="explorer" status="done" call="t-y" sources="Inbox/A.md|Notes/B.md">\nfound\n</subagent_report>' }],
+      },
+    });
+    ui.emit({ type: "message_start", message: { role: "assistant", content: [] } });
+    ui.emit({ type: "message_end", message: { role: "assistant", content: [{ type: "text", text: "The explorer found two notes." }] } });
+    ui.emit({ type: "agent_end" });
+    await settle();
+    const chips = lastAll(".agentic-chat-source-chip").map((chip) => chip.getAttribute("title") ?? text(chip));
+    expect(chips.join(" ")).toContain("A");
+    expect(chips.join(" ")).toContain("B");
+  });
+
   it("renders a report message as an event, not as the user's bubble", () => {
     const users = ui.$$(".agentic-chat-user").length;
     ui.emit({

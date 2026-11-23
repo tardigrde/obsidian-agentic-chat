@@ -16,6 +16,10 @@ export const SUBAGENT_TOOL_NAME = "subagent";
 const DEFAULT_CONCURRENCY = 10;
 /** Finished children kept per chat tab for `action: "continue"`; the oldest is dropped. */
 export const MAX_RETAINED_CHILDREN = 10;
+/** At most this many files a child read are cited under the parent's answer. */
+const MAX_CHILD_SOURCES = 20;
+/** Child tools whose `path` is a note the child read (its sources). */
+const CHILD_SOURCE_TOOLS = new Set(["read"]);
 /** Per-child summary cap (characters) fed into the parent's context. */
 const PER_CHILD_SUMMARY_CHARS = 8_000;
 /**
@@ -42,6 +46,8 @@ export interface SubagentChildStatus {
   childId?: string;
   /** A long report kept whole: the artifact id the user can open. */
   artifactId?: string;
+  /** Vault files the child read (U5 #14): the parent's answer cites them. */
+  sources?: string[];
   /** Live transcript accumulated while the child runs. */
   transcript?: SubagentTranscriptEntry[];
   /** Wall-clock runtime of the child session, set once it settles. */
@@ -218,6 +224,7 @@ export function toPersistedChild(status: SubagentChildStatus): SubagentChildStat
     // Kept on reload: the row's child id and its "Open full report" link (U5 #13).
     ...(status.childId ? { childId: String(status.childId).slice(0, 40) } : {}),
     ...(status.artifactId ? { artifactId: String(status.artifactId).slice(0, 120) } : {}),
+    ...(status.sources?.length ? { sources: status.sources.slice(0, MAX_CHILD_SOURCES).map((path) => String(path).slice(0, 300)) } : {}),
   };
 }
 
@@ -497,7 +504,17 @@ async function runSingleChild(
   signal?.addEventListener("abort", onAbort);
   if (signal?.aborted) child.abort();
 
+  const readPaths = new Map<string, string>();
+  const sources = new Set<string>(status.sources ?? []);
   const unsub = child.subscribe((event: AgentEvent) => {
+    if (event.type === "tool_execution_start" && CHILD_SOURCE_TOOLS.has(event.toolName)) {
+      const path = (event.args as { path?: unknown } | undefined)?.path;
+      if (typeof path === "string" && path.trim()) readPaths.set(event.toolCallId, path.trim());
+    } else if (event.type === "tool_execution_end" && readPaths.has(event.toolCallId)) {
+      if (!event.isError && sources.size < MAX_CHILD_SOURCES) sources.add(readPaths.get(event.toolCallId) as string);
+      readPaths.delete(event.toolCallId);
+      status.sources = [...sources];
+    }
     // Each child model call is billed at once, so the spend cap sees it.
     if (event.type === "message_end" && event.message.role === "assistant") {
       const callUsage = sumAssistantUsage([event.message]);
