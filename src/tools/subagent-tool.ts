@@ -215,6 +215,9 @@ export function toPersistedChild(status: SubagentChildStatus): SubagentChildStat
     ...(status.summary ? { summary: redactText(status.summary, { redactHighEntropy: true, maxLength: 9000 }) } : {}),
     ...(typeof status.durationMs === "number" ? { durationMs: status.durationMs } : {}),
     ...(status.usage ? { usage: status.usage } : {}),
+    // Kept on reload: the row's child id and its "Open full report" link (U5 #13).
+    ...(status.childId ? { childId: String(status.childId).slice(0, 40) } : {}),
+    ...(status.artifactId ? { artifactId: String(status.artifactId).slice(0, 120) } : {}),
   };
 }
 
