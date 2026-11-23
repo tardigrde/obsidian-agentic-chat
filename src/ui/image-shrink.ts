@@ -99,7 +99,7 @@ export const browserImageCodec: ImageCodec = async (blob) => {
     width: bitmap.width,
     height: bitmap.height,
     encode: async (width, height, mimeType, quality) => {
-      const canvas = document.createElement("canvas");
+      const canvas = createEl("canvas");
       canvas.width = width;
       canvas.height = height;
       const context = canvas.getContext("2d");
