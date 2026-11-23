@@ -96,7 +96,9 @@ export function isSubagentReportMessage(message: AgentMessage): boolean {
 }
 
 export function subagentReportMessage(report: SubagentReport): UserMessage {
-  return { role: "user", content: [{ type: "text", text: formatSubagentReport(report) }], timestamp: Date.now() };
+  // A user message, not a tool result: built like `createUserMessage` in the agent service.
+  const content: UserMessage["content"] = [{ type: "text", text: formatSubagentReport(report) }];
+  return { role: "user", content, timestamp: Date.now() };
 }
 
 export interface SubagentReportDeliveryOptions {

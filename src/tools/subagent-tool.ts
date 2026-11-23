@@ -5,7 +5,6 @@ import { findAgentRole, type AgentRole } from "../agent/subagents";
 import { sumAssistantUsage } from "../agent/usage";
 import { redactText } from "../privacy/redaction";
 import { truncateToolOutput } from "../vault/truncate";
-import { wrapToolOutputTruncated } from "./tool-output-wrapper";
 import { toolResult, untrustedToolResult } from "./result";
 import { errorMessage } from "../utils/errors";
 import type { ToolArtifactStoreLike } from "../artifacts/tool-artifact-store";
