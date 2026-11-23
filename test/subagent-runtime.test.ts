@@ -156,7 +156,7 @@ describe("AgentSubagentRuntime", () => {
 
     const child = runtime.createChildAgent(PROFILE);
 
-    expect(child.state.systemPrompt).toBe("child prompt");
+    expect(child.state.systemPrompt).toContain("child prompt");
     expect(child.state.model.id).toBe("child/model");
     expect(child.state.tools.map((tool) => tool.name).sort()).toEqual(["read"]);
   });
@@ -299,5 +299,24 @@ describe("AgentSubagentRuntime: private rules are read live (review of #429)", (
 
     live.ignoreMatcher = createPrivateMatcher("Skills/");
     await expect(skill!.execute("c2", { action: "read", name: "notes" } as never)).rejects.toThrow(/is private/);
+  });
+});
+
+describe("AgentSubagentRuntime: the child prompt (U5 #6)", () => {
+  it("gives a child the trust boundary and the vault's standing instructions, not only its role prompt", () => {
+    const runtime = new AgentSubagentRuntime({
+      app: { vault: {}, workspace: {} } as unknown as App,
+      getSettings: () => settings(),
+      getResources: () => ({ ...resources(), instructionsOverlay: "Vault rules: never open shared/." }),
+      buildStreamFn: () => cannedChildStream("ok"),
+      recordUsage: () => undefined,
+      webFetch: noopWebFetch,
+      toolCalls: noopToolCalls,
+    });
+    const prompt = runtime.createChildAgent(PROFILE).state.systemPrompt;
+    expect(prompt).toContain("child prompt");
+    expect(prompt).toContain("Vault rules: never open shared/.");
+    expect(prompt).toMatch(/untrusted DATA/);
+    expect(prompt.indexOf("child prompt")).toBeLessThan(prompt.indexOf("Vault rules"));
   });
 });
