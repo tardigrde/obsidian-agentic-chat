@@ -51,6 +51,7 @@ import {
 import { AgentCompactionRuntime, type SummarizeFn } from "./compaction-runtime";
 import { AgentConversationCompaction, type ManualCompactionResult } from "./conversation-compaction";
 import { AgentSteeringQueue } from "./steering-queue";
+import { SubagentReportDelivery } from "./subagent-reports";
 import { conversationMessages } from "./conversation-messages";
 import {
   AgentServiceListeners,
@@ -138,6 +139,9 @@ export class AgentService {
   private readonly compaction: AgentCompactionRuntime;
   private readonly conversationCompaction: AgentConversationCompaction;
   private readonly steering = new AgentSteeringQueue();
+  private readonly reports: SubagentReportDelivery;
+  /** Set by a user Stop until the run settles: a waiting report does not start a turn right after it. */
+  private stoppedByUser = false;
   private readonly artifactStore?: ToolArtifactStoreLike;
   private readonly turns: AgentTurnConfiguration;
   private readonly runtimeResources: AgentRuntimeResourceState;
@@ -238,6 +242,16 @@ export class AgentService {
         beforeToolCall: (context, signal) => this.toolCalls.beforeToolCall(context, signal),
         afterToolCall: (context) => this.toolCalls.afterToolCall(context),
       },
+      background: {
+        onChildUpdate: (toolCallId, details) => this.listeners.emitSubagentUpdate(toolCallId, details),
+        deliverReport: (report) => this.reports.deliver(report),
+      },
+    });
+    this.reports = new SubagentReportDelivery({
+      getAgent: () => this.agent ?? undefined,
+      isDisposed: () => this.conversation.isDisposed,
+      isTurnStarting: () => this.promptTurns.isInFlight(),
+      startTurn: (messages) => this.runPrompt((agent) => agent.prompt(messages)),
     });
     this.toolCalls = new AgentToolCallController({
       app: this.app,
@@ -270,7 +284,8 @@ export class AgentService {
           this.toolCalls.clearSessionState();
           // A retained child belongs to the conversation that made it: no
           // `continue` across a session switch (its context and cost would leak).
-          this.subagents.registry.clearRetained();
+          // Running children stop too: a child reports only into the conversation that started it.
+          this.subagents.registry.clear();
         },
       },
       runtimeResources: this.runtimeResources,
@@ -566,7 +581,13 @@ export class AgentService {
     const trimmed = prompt.trim();
     if (!trimmed) return;
     const attached = images && images.length > 0 ? images : undefined;
-    await this.runPrompt((agent) => agent.prompt(trimmed, attached), expectedSessionToken);
+    await this.runPrompt((agent) => {
+      // Reports that waited (a Stop drained them) go ahead of the user's message.
+      const waiting = this.reports.takePending();
+      return waiting.length > 0
+        ? agent.prompt([...waiting, createUserMessage(trimmed, attached)])
+        : agent.prompt(trimmed, attached);
+    }, expectedSessionToken);
   }
 
   /**
@@ -697,7 +718,9 @@ export class AgentService {
   abort(): void {
     const agent = this.agent;
     if (!agent) return;
+    this.stoppedByUser = true;
     this.steering.stop(agent);
+    this.reports.keepDrained(this.steering.takeDrainedReports());
     void agent.waitForIdle().then(() => this.notifyChange());
   }
 
@@ -766,6 +789,8 @@ export class AgentService {
 
   private async disposeAfterStop(): Promise<void> {
     if (this.conversation.isDisposed) return;
+    // A child belongs to its tab's agent: closing the tab stops it.
+    this.subagents.registry.abortAll();
     try {
       await this.conversation.stopRunningTurn();
     } catch {
@@ -786,7 +811,15 @@ export class AgentService {
     // A fresh prompt starts a new epoch: the identical-batch streak of a
     // previous user turn does not carry into this one.
     this.resetTurnGuards();
-    await this.promptTurns.run(this.steering.settling(run), expectedSessionToken);
+    try {
+      await this.promptTurns.run(this.steering.settling(run), expectedSessionToken);
+    } finally {
+      // A report steered in after the last poll did not reach the model: it waits again.
+      this.reports.keepDrained(this.steering.takeDrainedReports());
+      const stopped = this.stoppedByUser;
+      this.stoppedByUser = false;
+      this.reports.afterTurn(stopped);
+    }
   }
 
   private async handleAgentEvent(event: AgentEvent): Promise<void> {
@@ -826,14 +859,17 @@ export class AgentService {
    */
   private enforceSpendCap(): void {
     const agent = this.agent;
+    const childrenRunning = this.subagents.registry.runningCount > 0;
     const reason = spendCapAbortReason({
-      isStreaming: agent?.state.isStreaming ?? false,
+      // Background children spend while no parent turn runs (U5 #1).
+      isStreaming: (agent?.state.isStreaming ?? false) || childrenRunning,
       spendCapUsd: this.getSettings().notifications.costCapUsd,
       sessionCostUsd: this.getSessionUsage().cost?.total ?? 0,
     });
     if (!reason) return;
     this.sessionState.setErrorMessage(reason);
-    if (agent) this.steering.stop(agent);
+    if (agent?.state.isStreaming) this.steering.stop(agent);
+    if (childrenRunning) this.subagents.registry.abortAll();
   }
 
   /**

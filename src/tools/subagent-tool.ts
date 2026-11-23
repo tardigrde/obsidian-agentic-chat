@@ -73,6 +73,13 @@ export class SubagentRegistry {
   private readonly activeStops = new Map<string, () => void>();
   private readonly pendingErrorDetails = new Map<string, SubagentDetails>();
   private readonly retained = new Map<string, RetainedChild>();
+  /** Bumped when the session is cleared or replaced: a child from before never reports into the new one. */
+  private gen = 0;
+
+  get generation(): number {
+    return this.gen;
+  }
+
   /** Children running in the background, by child id (U5 #1). */
   private readonly running = new Map<string, SubagentChildStatus>();
   private childCounter = 0;
@@ -176,6 +183,7 @@ export class SubagentRegistry {
 
   /** Drop all state. Used when a session is cleared or replaced: running children stop first. */
   clear(): void {
+    this.gen += 1;
     this.abortAll();
     this.running.clear();
     this.pendingErrorDetails.clear();
@@ -385,6 +393,7 @@ interface BackgroundRun {
 /** Run one child to the end, keep it for a follow-up, and deliver its report. Never throws. */
 async function runInBackground(deps: SubagentToolDeps, registry: SubagentRegistry, run: BackgroundRun): Promise<void> {
   const { status } = run;
+  const generation = registry.generation;
   let emitTimer: number | null = null;
   const emit = (): void => deps.background?.onChildUpdate?.(run.toolCallId, snapshot([status]));
   const scheduleEmit = (): void => {
@@ -408,6 +417,8 @@ async function runInBackground(deps: SubagentToolDeps, registry: SubagentRegistr
     window.clearTimeout(emitTimer);
     emitTimer = null;
   }
+  // The session was cleared or replaced while this child ran: it belongs to no conversation now.
+  if (registry.generation !== generation) return;
   registry.retain({ id: run.childId, agent: run.agent, child: run.child });
   let modelText: string | undefined;
   if (fullReport !== undefined && fullReport.length > PER_CHILD_SUMMARY_CHARS) {
@@ -418,6 +429,7 @@ async function runInBackground(deps: SubagentToolDeps, registry: SubagentRegistr
       modelText = kept.modelText;
     }
   }
+  if (registry.generation !== generation) return;
   registry.markSettled(run.childId);
   emit();
   const body =

@@ -9,7 +9,7 @@ import { buildModel, type ModelConfig } from "../llm/models";
 import { MUTATING_TOOLS } from "../tools/tool-contracts";
 import { createSkillTool } from "../tools/skill-tool";
 import { createVaultTools } from "../tools/vault-tools";
-import { createSubagentTool, SubagentRegistry } from "../tools/subagent-tool";
+import { createSubagentTool, SubagentRegistry, type SubagentBackgroundHooks } from "../tools/subagent-tool";
 import { createWebTools } from "../tools/web-tools";
 import type { WebFetcher } from "../tools/web-fetch";
 import { createArtifactTool } from "../artifacts/tool-artifact-tools";
@@ -28,6 +28,8 @@ export interface SubagentRuntimeOptions {
   webFetch: WebFetcher;
   artifactStore?: ToolArtifactStoreLike;
   toolCalls: Pick<AgentToolCallController, "beforeToolCall" | "afterToolCall">;
+  /** Live row updates and report delivery for background children (U5 #1). */
+  background?: SubagentBackgroundHooks;
 }
 
 /**
@@ -44,6 +46,7 @@ export class AgentSubagentRuntime {
   private readonly webFetch: WebFetcher;
   private readonly artifactStore: ToolArtifactStoreLike | undefined;
   private readonly toolCalls: Pick<AgentToolCallController, "beforeToolCall" | "afterToolCall">;
+  private readonly background: SubagentBackgroundHooks | undefined;
   private childNamespaceCounter = 0;
   /** Per-runtime stop/error state, shared with this runtime's tool-call controller. */
   readonly registry = new SubagentRegistry();
@@ -57,6 +60,7 @@ export class AgentSubagentRuntime {
     this.webFetch = options.webFetch;
     this.artifactStore = options.artifactStore;
     this.toolCalls = options.toolCalls;
+    this.background = options.background;
   }
 
   createTool(): AgentTool {
@@ -67,6 +71,7 @@ export class AgentSubagentRuntime {
       maxParallel: () => this.getSettings().maxParallelSubagents,
       registry: this.registry,
       artifactStore: this.artifactStore,
+      background: this.background,
     });
   }
 
