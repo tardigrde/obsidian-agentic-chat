@@ -81,6 +81,14 @@ describe("shrinkImageForModel", () => {
     expect(result).toEqual({ data: source, mimeType: "image/jpeg", changed: false });
   });
 
+  it("tries a lower JPEG quality when q0.85 is not smaller than the original (review of #429)", async () => {
+    const fake = fakeCodec(1500, 1000, (_type, quality) => (quality === 0.85 ? 1_500_000 : 800_000));
+    const result = await shrinkImageForModel(bytes(1_200_000), "image/jpeg", fake.codec);
+    expect(result).toMatchObject({ mimeType: "image/jpeg", changed: true });
+    expect(result.data.byteLength).toBe(800_000);
+    expect(fake.calls.map((call) => call.quality)).toEqual([0.85, 0.7]);
+  });
+
   it("never re-encodes a GIF (it can be animated)", async () => {
     const fake = fakeCodec(4000, 4000, () => 10);
     const source = bytes(3_000_000);

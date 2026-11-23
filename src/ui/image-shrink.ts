@@ -71,7 +71,10 @@ export async function shrinkImageForModel(
     for (const quality of JPEG_QUALITIES) {
       const jpeg = await image.encode(size.width, size.height, "image/jpeg", quality);
       if (!jpeg) break;
-      if (base64Length(jpeg.size) <= MAX_IMAGE_BASE64_BYTES) return await result(jpeg, "image/jpeg", data, resized);
+      if (base64Length(jpeg.size) > MAX_IMAGE_BASE64_BYTES) continue;
+      // Within the side limit a re-encode must also be smaller: try the next quality (review of #429).
+      if (!resized && jpeg.size >= data.byteLength) continue;
+      return await result(jpeg, "image/jpeg", data, resized);
     }
     return original;
   } catch {
