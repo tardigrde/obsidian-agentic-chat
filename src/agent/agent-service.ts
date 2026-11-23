@@ -51,7 +51,7 @@ import {
 import { AgentCompactionRuntime, type SummarizeFn } from "./compaction-runtime";
 import { AgentConversationCompaction, type ManualCompactionResult } from "./conversation-compaction";
 import { AgentSteeringQueue } from "./steering-queue";
-import { SubagentReportDelivery } from "./subagent-reports";
+import { messageText, parseSubagentReport, SubagentReportDelivery } from "./subagent-reports";
 import type { SubagentDetails } from "../tools/subagent-tool";
 import { conversationMessages } from "./conversation-messages";
 import {
@@ -829,6 +829,11 @@ export class AgentService {
     // A dispatch's tool result now carries its children's usage (U4 #8).
     if (event.type === "message_end" && event.message.role === "toolResult") {
       this.sessionState.settleSubagentUsage((event.message as { toolCallId: string }).toolCallId);
+    }
+    // A background child's report carries its usage now: drop the live count (keyed by child id).
+    if (event.type === "message_end" && event.message.role === "user") {
+      const report = parseSubagentReport(messageText(event.message));
+      if (report) this.sessionState.settleSubagentUsage(report.childId);
     }
     this.observability.handleAgentEvent(event);
     await handleAgentRuntimeEvent(event, {

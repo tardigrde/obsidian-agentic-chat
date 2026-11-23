@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { rm } from "node:fs/promises";
 import type { App } from "obsidian";
 import type { Model } from "@earendil-works/pi-ai";
@@ -272,8 +272,9 @@ describe("AgentSubagentRuntime", () => {
 
     const result = await runtime.createTool().execute("call-1", { agent: "researcher", task: "inspect notes" });
 
-    expect(JSON.stringify(result.content)).toContain("child result");
-    expect(usages).toEqual([5]);
+    // U5 #1: the call returns at once; the child's usage counts when its model call ends.
+    expect(JSON.stringify(result.content)).toContain('Started subagent \\"researcher\\" as sa-1');
+    await vi.waitFor(() => expect(usages).toEqual([5]));
   });
 });
 

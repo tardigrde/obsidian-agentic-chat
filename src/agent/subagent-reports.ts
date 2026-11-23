@@ -23,6 +23,8 @@ export interface ParsedSubagentReport {
   /** For the row after a reload: run time, cost, and the full-report artifact. */
   durationMs?: number;
   costUsd?: number;
+  /** The child's token usage; the session total counts it from here, so it survives a reload. */
+  usage?: { input: number; output: number; totalTokens: number; costUsd: number };
   artifactId?: string;
 }
 
@@ -32,7 +34,9 @@ export function formatSubagentReport(report: SubagentReport): string {
   const child = report.details.children[0];
   const extra = [
     child?.durationMs !== undefined ? ` ms="${Math.round(child.durationMs)}"` : "",
-    child?.usage ? ` cost="${child.usage.costUsd}"` : "",
+    child?.usage
+      ? ` in="${child.usage.input}" out="${child.usage.output}" tokens="${child.usage.totalTokens}" cost="${child.usage.costUsd}"`
+      : "",
     child?.artifactId ? ` artifact="${attr(child.artifactId)}"` : "",
   ].join("");
   const header = `<subagent_report id="${attr(report.childId)}" agent="${attr(report.agent)}" status="${attr(child?.status ?? "done")}" call="${attr(report.toolCallId)}"${extra}>`;
@@ -51,6 +55,10 @@ export function parseSubagentReport(text: string): ParsedSubagentReport | null {
   if (id === undefined || agent === undefined || status === undefined || call === undefined) return null;
   const ms = Number(attrs.get("ms"));
   const cost = Number(attrs.get("cost"));
+  const count = (name: string): number => {
+    const value = Number(attrs.get(name));
+    return Number.isFinite(value) ? value : 0;
+  };
   return {
     childId: id,
     agent,
@@ -59,6 +67,9 @@ export function parseSubagentReport(text: string): ParsedSubagentReport | null {
     body: text.slice(match[0].length, text.length - CLOSING.length),
     ...(attrs.has("ms") && Number.isFinite(ms) ? { durationMs: ms } : {}),
     ...(attrs.has("cost") && Number.isFinite(cost) ? { costUsd: cost } : {}),
+    ...(attrs.has("tokens")
+      ? { usage: { input: count("in"), output: count("out"), totalTokens: count("tokens"), costUsd: Number.isFinite(cost) ? cost : 0 } }
+      : {}),
     ...(attrs.get("artifact") ? { artifactId: attrs.get("artifact") } : {}),
   };
 }
@@ -154,7 +165,11 @@ export function reportChildDetails(report: ParsedSubagentReport, summary: string
         childId: report.childId,
         summary,
         ...(report.durationMs !== undefined ? { durationMs: report.durationMs } : {}),
-        ...(report.costUsd !== undefined ? { usage: { input: 0, output: 0, totalTokens: 0, costUsd: report.costUsd } } : {}),
+        ...(report.usage
+          ? { usage: report.usage }
+          : report.costUsd !== undefined
+            ? { usage: { input: 0, output: 0, totalTokens: 0, costUsd: report.costUsd } }
+            : {}),
         ...(report.artifactId ? { artifactId: report.artifactId } : {}),
       },
     ],
