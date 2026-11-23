@@ -224,11 +224,13 @@ describe("agentic-chat runtime behavior", function () {
   });
 
   it("shows model/provider status, local undo state, and web tools when enabled", async function () {
-    await runSlashCommand("/status");
+    // `/status` was removed (U5 #4): `/doctor` shows the same rows, plus Thinking.
+    await runSlashCommand("/doctor");
+    await $(".agentic-chat-doctor").waitForExist({ timeout: 10_000 });
     const status = await latestInfoText();
-    expect(status).toContain("Provider");
-    expect(status).toContain("openrouter");
     expect(status).toContain("Model");
+    expect(status).toContain("openrouter");
+    expect(status).toContain("Thinking");
 
     await expect($(".agentic-chat-plan-badge")).not.toExist();
 

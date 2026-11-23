@@ -5,6 +5,7 @@ import { Type } from "typebox";
 import { resolveSkillResourcePath } from "../skills/skills";
 import { toolResult, untrustedToolResult } from "./result";
 import { TEXT_EXTENSIONS } from "./vault-tools";
+import { privatePathMessage, type PrivateMatcher } from "../vault/private-rules";
 import {
   formatTextSlice,
   readSizeGuardrail,
@@ -45,7 +46,7 @@ interface SkillParams {
  * skill root, with the vault `read` guardrails (size, pagination, truncation).
  * Binary assets return a path hint instead of base64.
  */
-export function createSkillTool(app: App, skills: Skill[]): AgentTool<typeof SkillParameters, unknown> {
+export function createSkillTool(app: App, skills: Skill[], isIgnored: PrivateMatcher = () => false): AgentTool<typeof SkillParameters, unknown> {
   return {
     name: SKILL_TOOL_NAME,
     label: "Skill",
@@ -56,12 +57,24 @@ export function createSkillTool(app: App, skills: Skill[]): AgentTool<typeof Ski
     execute: async (_id, rawParams) => {
       const params: SkillParams = rawParams;
       const skill = requireSkill(skills, params.name);
+      // The private rules cover skill files too (U5 deep check): a skill in a
+      // private folder, or a private file inside a skill, stays unreadable.
+      if (isVaultSkillFile(skill.filePath) && isIgnored(skill.filePath)) {
+        throw new Error(privatePathMessage(skill.filePath, isIgnored));
+      }
       if (normalizeAction(params.action) === "read") return readSkillBody(skill);
       const path = typeof params.path === "string" ? params.path.trim() : "";
       if (!path) throw new Error('skill: path is required for action "read_file".');
+      const resolved = resolveSkillResourcePath(skill, path);
+      if (isIgnored(resolved)) throw new Error(privatePathMessage(resolved, isIgnored));
       return readSkillFile(app, skill, { path, offset: params.offset, limit: params.limit });
     },
   };
+}
+
+/** Built-in skills carry a pseudo path such as `(builtin)`; only vault files have rules. */
+function isVaultSkillFile(filePath: string | undefined): filePath is string {
+  return typeof filePath === "string" && filePath.length > 0 && !filePath.startsWith("(");
 }
 
 function normalizeAction(value: unknown): SkillAction {

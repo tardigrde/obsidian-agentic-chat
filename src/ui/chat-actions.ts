@@ -9,7 +9,7 @@ import {
 } from "./commands";
 import { runAgent, runInit, runSkill } from "./slash/agents";
 import type { SlashContext } from "./slash/context";
-import { runDoctor, showHelp, showStatus, showUsage } from "./slash/info";
+import { runDoctor, showHelp, showUsage } from "./slash/info";
 import { runEffort, switchModel } from "./slash/model";
 import { createWorkflowRenderer } from "./slash/renderer";
 import { createSessionWorkflow, exportSession, newSession, runCompact, runSessions, runUndo } from "./slash/session";
@@ -66,7 +66,6 @@ export class ChatActions {
       effort: () => this.runEffort(argString),
       sessions: () => this.runSessions(argString),
       model: () => this.switchModel(),
-      status: () => this.showStatus(),
       doctor: () => this.runDoctor(),
       usage: () => this.showUsage(),
       compact: () => this.runCompact(argString),
@@ -106,7 +105,6 @@ export class ChatActions {
 
   workflowRenderer(): WorkflowRenderer { return createWorkflowRenderer(this.deps.slashCtx()); }
 
-  showStatus(): void { showStatus(this.deps.slashCtx()); }
 
   runUndo(): Promise<void> { return runUndo(this.deps.slashCtx()); }
 

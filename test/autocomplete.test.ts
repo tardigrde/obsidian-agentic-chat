@@ -104,9 +104,9 @@ describe("suggest — commands", () => {
   it("ranks earlier matches first", () => {
     const items = suggest({ kind: "command", range: [0, 2], query: "s" }, context());
     const order = items.map((i) => i.value);
-    // "sessions"/"status"/"skill" start with s (score 0); "usage" has s at index 2;
+    // "sessions"/"skill" start with s (score 0); "usage" has s at index 2;
     // the "translate" skill has s at index 4, so it sorts last.
-    expect(order.indexOf("status")).toBeLessThan(order.indexOf("usage"));
+    expect(order.indexOf("sessions")).toBeLessThan(order.indexOf("usage"));
     expect(order.indexOf("usage")).toBeLessThan(order.indexOf("translate"));
   });
 
@@ -118,10 +118,10 @@ describe("suggest — commands", () => {
 
   it("omits a skill that collides with a built-in command name (the command wins)", () => {
     const items = suggest(
-      { kind: "command", range: [0, 7], query: "status" },
-      context({ skills: [{ name: "status", description: "a shadowing skill" }] }),
+      { kind: "command", range: [0, 7], query: "doctor" },
+      context({ skills: [{ name: "doctor", description: "a shadowing skill" }] }),
     );
-    const matches = items.filter((i) => i.value === "status");
+    const matches = items.filter((i) => i.value === "doctor");
     expect(matches).toHaveLength(1);
     expect(matches[0].icon).toBe("terminal"); // the built-in command, not the skill
   });

@@ -37,7 +37,7 @@ describe("private content (U4 #11)", () => {
     await ui.idle();
     expect(ui.app.vault.contentOf("Private/plan.md")).toBeUndefined();
     const results = toolResultTexts().join("\n");
-    expect(results).toContain('Blocked: \\"Private/plan.md\\" is private (excluded in settings)');
+    expect(results).toContain('Blocked: \\"Private/plan.md\\" is private (excluded in the Ignored paths setting)');
     expect(results).not.toContain("File not found");
   });
 
@@ -51,7 +51,7 @@ describe("private content (U4 #11)", () => {
     await ui.send("what is in Journal?");
     await ui.idle();
     const results = toolResultTexts().join("\n");
-    expect(results).toContain("2 private items hidden (excluded in settings).");
+    expect(results).toContain("2 private items hidden (excluded in the Ignored paths setting).");
     expect(results).not.toContain("(empty folder)");
   });
 

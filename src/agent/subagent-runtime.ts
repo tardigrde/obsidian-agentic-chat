@@ -85,7 +85,7 @@ export class AgentSubagentRuntime {
       ...createVaultTools(this.app, this.getResources().ignoreMatcher, new ReadMemo()),
       ...createWebTools(settings.web, this.webFetch, this.artifactStore),
       ...(artifactTool ? [artifactTool] : []),
-      createSkillTool(this.app, skills),
+      createSkillTool(this.app, skills, this.getResources().ignoreMatcher),
     ].filter(
       (tool) => resolveModePolicy(settings.mode, settings.approval, tool.name).policy !== "deny",
     );

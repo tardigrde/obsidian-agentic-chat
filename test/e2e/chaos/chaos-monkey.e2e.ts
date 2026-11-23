@@ -401,9 +401,9 @@ async function runPrompt(action: ChaosAction): Promise<void> {
 async function runSlash(action: ChaosAction): Promise<void> {
   const panelsBefore = await browser.execute(() => document.querySelectorAll('[data-ac="info"], [data-ac="error"]').length);
   await sendPrompt(action.prompt ?? "");
-  // `/help` and `/status` both answer locally with a new info panel. `/status`
-  // lists the provider; an action list belongs to a picker command, not here.
-  const expected = action.prompt === "/status" ? "Provider" : "";
+  // `/help` and `/doctor` both answer locally with a new info panel. `/doctor`
+  // opens with its status line; an action list belongs to a picker command, not here.
+  const expected = action.prompt === "/doctor" ? "Doctor" : "";
   await browser.waitUntil(
     async () =>
       await browser.execute(

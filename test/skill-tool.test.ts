@@ -3,6 +3,7 @@ import type { App } from "obsidian";
 import { createSkillTool } from "../src/tools/skill-tool";
 import { SELF_KNOWLEDGE_SKILL, DEEP_RESEARCH_SKILL } from "../src/skills/builtin-skills";
 import { FakeApp } from "./helpers/fake-vault";
+import { createPrivateMatcher } from "../src/vault/private-rules";
 
 const noApp = { vault: {} } as unknown as App;
 
@@ -107,5 +108,30 @@ describe("skill tool: action read_file", () => {
     const result = await tool.execute("call-4", { action: "read_file", name: "notes", path: "assets/logo.png" });
     expect(textOf(result)).toContain("Binary file at");
     expect(result.details).toMatchObject({ binary: true, skill: "notes" });
+  });
+});
+
+describe("skill tool: private rules (U5 deep check)", () => {
+  const skillPath = "Private/skills/notes";
+  const skill = { name: "notes", description: "Note helpers.", content: "# Notes", filePath: `${skillPath}/SKILL.md` };
+  const isPrivate = createPrivateMatcher("Private/");
+
+  async function appWithFiles(): Promise<App> {
+    const app = new FakeApp();
+    await app.vault.createFolder(`${skillPath}/references`);
+    await app.vault.create(`${skillPath}/references/api.md`, "secret line");
+    return app as unknown as App;
+  }
+
+  it("refuses read_file on a private file inside the skill folder", async () => {
+    const tool = createSkillTool(await appWithFiles(), [skill], isPrivate);
+    await expect(
+      tool.execute("call-1", { action: "read_file", name: "notes", path: "references/api.md" }),
+    ).rejects.toThrow(/is private/);
+  });
+
+  it("refuses read on a skill whose SKILL.md is private", async () => {
+    const tool = createSkillTool(await appWithFiles(), [skill], isPrivate);
+    await expect(tool.execute("call-2", { action: "read", name: "notes" })).rejects.toThrow(/is private/);
   });
 });

@@ -123,7 +123,7 @@
       "runner": "vitest",
       "globs": [
         "test/{vault-*,web-*,tool-artifact-*}.test.ts",
-        "test/{tool-call-controller,tool-consolidation-witness,tool-contracts,tool-loading,tool-output-wrapper,tool-schema-tokens,ask-user-tool,ignore,path-normalizers,read-memo,truncate,document-ingest,pdf-ingest,attachments,image-attachments,retrieval-citations,source-artifacts,system-browser,diff,file-system-sandbox,active-note,private-rules}.test.ts"
+        "test/{tool-call-controller,tool-consolidation-witness,tool-contracts,tool-loading,tool-output-wrapper,tool-schema-tokens,ask-user-tool,ignore,path-normalizers,read-memo,truncate,document-ingest,pdf-ingest,attachments,image-attachments,image-shrink,retrieval-citations,source-artifacts,system-browser,diff,file-system-sandbox,active-note,private-rules}.test.ts"
       ],
       "triggers": [
         "src/vault/**",

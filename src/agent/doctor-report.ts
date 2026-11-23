@@ -115,6 +115,8 @@ export function buildDoctorReport(input: DoctorInput): DoctorReport {
   const essentials: Array<[string, string]> = [
     ["Model", `${d.provider} · ${model}`],
     ["Mode", `${d.mode} · approval ${d.approval.mutating}`],
+    // The active level, clamped to what the model supports (was in `/status`, U5 #4).
+    ["Thinking", d.thinkingLevel],
     ["Context", d.state.contextPercent === null ? "unknown" : `${d.state.contextPercent}%`],
     ["Cost", formatUsd(input.sessionCostUsd) + (input.subagentCostUsd > 0 ? ` (subagents ${formatUsd(input.subagentCostUsd)})` : "")],
   ];

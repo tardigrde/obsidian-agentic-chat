@@ -236,7 +236,7 @@ function finishRead(
  * the model reports "confirmed empty".
  */
 function listingResult(rows: string[], hidden: number, path: string): ToolResult {
-  const note = hidden > 0 ? `${hidden} private ${hidden === 1 ? "item" : "items"} hidden (excluded in settings).` : "";
+  const note = hidden > 0 ? `${hidden} private ${hidden === 1 ? "item" : "items"} hidden (excluded in the Ignored paths setting).` : "";
   const body = rows.length === 0 ? (note ? note : "(empty folder)") : truncateToolOutput(note ? `${rows.join("\n")}\n${note}` : rows.join("\n"));
   return textResult(body, { path, count: rows.length, ...(hidden > 0 ? { hidden } : {}) });
 }
@@ -244,7 +244,7 @@ function listingResult(rows: string[], hidden: number, path: string): ToolResult
 /** List a vault folder (`vault_inspect` action `list`). Ignored children stay hidden. */
 export async function listFolder(app: App, isIgnored: IgnoreMatcher, folder: string | undefined): Promise<ToolResult> {
   const path = normalizeFolderPath(folder ?? "");
-  if (path && isIgnored(path)) throw new Error(privatePathMessage(path));
+  if (path && isIgnored(path)) throw new Error(privatePathMessage(path, isIgnored));
   const entry = path ? findVaultEntry(app, path) : app.vault.getRoot();
   if (entry instanceof TFolder) {
     const visible = entry.children.filter((child) => !isIgnored(child.path));

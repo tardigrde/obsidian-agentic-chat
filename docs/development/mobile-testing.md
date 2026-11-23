@@ -84,7 +84,7 @@ Then run this smoke checklist in Obsidian Mobile:
 - Save a provider API key and model, then reopen settings and confirm the values
   persist.
 - Send a no-tool prompt through a real provider or local gateway.
-- Run `/help`, `/status`, `/sessions`, and `/new`.
+- Run `/help`, `/doctor`, `/sessions`, and `/new`.
 - Ask for a vault read, then ask for a write/edit and confirm the approval modal
   is readable and touchable.
 - Confirm session history persists after closing and reopening Obsidian.

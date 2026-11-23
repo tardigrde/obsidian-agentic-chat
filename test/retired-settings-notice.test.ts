@@ -85,6 +85,8 @@ describe("retiredCommandHint", () => {
     expect(retiredCommandHint("history")).toMatch(/\/sessions/);
     expect(retiredCommandHint("semindex")).toMatch(/semantic index is gone/);
     expect(retiredCommandHint("thinking")).toMatch(/\/effort/);
+    // U5 #4: `/status` was a subset of `/doctor`.
+    expect(retiredCommandHint("status")).toMatch(/^\/status was removed: use \/doctor\./);
     expect(retiredCommandHint("add-dir")).toMatch(/Ignored files/);
   });
 
