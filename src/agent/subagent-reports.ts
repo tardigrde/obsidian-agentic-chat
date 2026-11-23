@@ -106,20 +106,34 @@ export interface SubagentReportDeliveryOptions {
   isDisposed: () => boolean;
   /** True while a parent turn is being set up but `isStreaming` is not yet set. */
   isTurnStarting: () => boolean;
-  /** Start a parent turn with these messages (reports first, then any user message). */
-  startTurn: (messages: AgentMessage[]) => Promise<void>;
+  /**
+   * Start a parent turn that takes the waiting reports itself (`takePending`
+   * inside its run). A turn that never runs (a blocked preflight, a turn
+   * already starting) takes nothing, so no report is lost (review of #431).
+   */
+  startTurn: () => Promise<void>;
+}
+
+interface PendingReport {
+  message: AgentMessage;
+  /** False for a stop report: the user stopped that work, so it never starts a turn by itself. */
+  startsTurn: boolean;
 }
 
 /**
  * Where a settled child's report goes (owner, 2026-11-23):
  * - a parent turn runs: steer it in; the model reads it after the current tool call;
  * - no turn runs: start a parent turn with it, so the work does not look lost;
- * - a turn is starting: keep it and start a turn when that one ends;
- * - Stop drained it from the steering queue: keep it for the next user message
- *   (no new turn right after the user pressed Stop).
+ * - a turn is starting: keep it; start a turn when that one has run;
+ * - after a user Stop, and for a stopped child's report: keep it for the next
+ *   user message; nothing starts a turn by itself.
+ * A session change drops what waits: a report belongs to the conversation
+ * that started its child.
  */
 export class SubagentReportDelivery {
-  private readonly pending: AgentMessage[] = [];
+  private readonly pending: PendingReport[] = [];
+  /** Set by a user Stop until the user sends again. */
+  private paused = false;
 
   constructor(private readonly options: SubagentReportDeliveryOptions) {}
 
@@ -131,33 +145,55 @@ export class SubagentReportDelivery {
       agent.steer(message);
       return;
     }
-    this.pending.push(message);
-    if (!this.options.isTurnStarting()) this.flush();
+    const startsTurn = report.details.children[0]?.status !== "aborted";
+    this.pending.push({ message, startsTurn });
+    if (startsTurn) this.maybeStartTurn();
   }
 
-  /** Reports a Stop drained from the queue: kept for the next user message, no new turn. */
-  keepDrained(messages: AgentMessage[]): void {
-    this.pending.push(...messages);
+  /** Reports drained from the steering queue (a Stop, or a steer after the last poll). */
+  keepDrained(messages: AgentMessage[], options: { startsTurn: boolean }): void {
+    for (const message of messages) this.pending.push({ message, startsTurn: options.startsTurn });
   }
 
-  /** The reports waiting for a turn; the caller sends them ahead of the user's message. */
+  /** The user pressed Stop: no report starts a turn by itself until the user sends again. */
+  pauseAfterStop(): void {
+    this.paused = true;
+  }
+
+  /** The user sent or steered: automatic delivery resumes. */
+  resume(): void {
+    this.paused = false;
+  }
+
+  /** The reports waiting for a turn, taken by the turn that sends them (user's or automatic). */
   takePending(): AgentMessage[] {
-    return this.pending.splice(0);
+    return this.pending.splice(0).map((entry) => entry.message);
   }
 
   get pendingCount(): number {
     return this.pending.length;
   }
 
-  /** A turn ended: start one for reports that arrived while it was starting. */
-  afterTurn(stoppedByUser: boolean): void {
-    if (!stoppedByUser && this.pending.length > 0 && !this.options.isDisposed()) this.flush();
+  get isPaused(): boolean {
+    return this.paused;
   }
 
-  private flush(): void {
-    const messages = this.takePending();
-    if (messages.length === 0) return;
-    void this.options.startTurn(messages).catch((error: unknown) => {
+  /** The session was cleared or replaced: its waiting reports go with it. */
+  reset(): void {
+    this.pending.length = 0;
+    this.paused = false;
+  }
+
+  /** A turn ended. Only a turn that ran may start the next one (no retry loop on a blocked start). */
+  afterTurn(ran: boolean): void {
+    if (ran) this.maybeStartTurn();
+  }
+
+  private maybeStartTurn(): void {
+    if (this.paused || this.options.isDisposed() || this.options.isTurnStarting()) return;
+    if (!this.pending.some((entry) => entry.startsTurn)) return;
+    void this.options.startTurn().catch((error: unknown) => {
+      // The reports stay in `pending` unless the turn took them: the next user message sends them.
       console.warn("Agentic Chat: could not start a turn for a subagent report.", error);
     });
   }

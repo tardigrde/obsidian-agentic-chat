@@ -46,6 +46,8 @@ export interface TranscriptViewHost {
   abortSubagentChild(id: string): void;
   openSubagentReport?(artifactId: string, title: string): void;
   loadSubagentTimeline?(artifactId: string): Promise<SubagentTranscriptEntry[]>;
+  /** Whether a background child of this chat still runs; a replayed row without one is interrupted. */
+  isSubagentRunning?(childId: string): boolean;
   /** Whether the tab that owns this transcript has a turn in flight. */
   isStreaming?(): boolean;
 }
@@ -322,6 +324,9 @@ export class TranscriptView {
         rendered += 1;
       }
     });
+    // A replayed "running" row whose child no longer runs can never settle.
+    const isRunning = (childId: string) => this.host.isSubagentRunning?.(childId) ?? false;
+    for (const segment of this.allSegments) segment.settleOrphanedChildren(isRunning);
     // A turn still in flight (a tab switch mid-run) keeps its activity open,
     // so the live steps that follow land in it.
     if (!(this.host.isStreaming?.() ?? false)) this.finishTurn();

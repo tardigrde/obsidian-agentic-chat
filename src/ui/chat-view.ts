@@ -722,6 +722,7 @@ export class ChatView extends ItemView {
           const service = this.service;
           new SubagentReportModal(this.app, title, () => service.readArtifactText(artifactId)).open();
         },
+        isSubagentRunning: (childId) => this.service.isSubagentRunning(childId),
         loadSubagentTimeline: async (artifactId) => {
           const parsed: unknown = JSON.parse(await this.service.readArtifactText(artifactId));
           return Array.isArray(parsed) ? (parsed as SubagentTranscriptEntry[]) : [];

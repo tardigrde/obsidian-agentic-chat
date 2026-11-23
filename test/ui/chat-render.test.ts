@@ -286,6 +286,28 @@ describe("subagent row (U5 #2, #3): one row per child in the activity block", ()
     expect(chips.join(" ")).toContain("B");
   });
 
+  it("review of #431: a replayed running row whose child no longer runs reads stopped, with no Stop", async () => {
+    const view = ui.view as unknown as { renderTranscript: (messages: unknown[]) => void };
+    view.renderTranscript([
+      { role: "user", content: "delegate", timestamp: 1 },
+      { role: "assistant", content: [{ type: "toolCall", id: "t-old", name: "subagent", arguments: { agent: "explorer", task: "map" } }], timestamp: 2 },
+      {
+        role: "toolResult",
+        toolCallId: "t-old",
+        toolName: "subagent",
+        content: [{ type: "text", text: "Started" }],
+        details: { kind: "subagent", children: [{ agent: "explorer", task: "map", status: "running", childId: "sa-1" }] },
+        isError: false,
+        timestamp: 3,
+      },
+    ]);
+    await settle();
+    const row = last('[data-ac="step"].is-subagent');
+    expect(cls(row)).not.toContain("is-child-running");
+    expect(text(row?.querySelector(".agentic-chat-subagent-status"))).toBe("stopped");
+    expect(lastAll('[data-ac="subagent-stop"]')).toHaveLength(0);
+  });
+
   it("renders a report message as an event, not as the user's bubble", () => {
     const users = ui.$$(".agentic-chat-user").length;
     ui.emit({

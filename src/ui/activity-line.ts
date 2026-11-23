@@ -405,6 +405,14 @@ export class ActivityLine {
     return true;
   }
 
+  /** Settle replayed rows whose child no longer runs (review of #431). */
+  settleOrphanedChildren(isRunning: (childId: string) => boolean): void {
+    for (const view of this.childViews.values()) {
+      const id = view.childId;
+      if (view.isRunning && (!id || !isRunning(id))) view.markInterrupted();
+    }
+  }
+
   /** Whether a background child still runs in this segment (its row keeps a clock). */
   get hasRunningChild(): boolean {
     return [...this.childViews.values()].some((view) => view.isRunning);

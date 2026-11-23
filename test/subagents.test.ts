@@ -494,6 +494,30 @@ describe("createSubagentTool (background, U5 #1)", () => {
     expect((await h.settled("s-1")).details.children[0].status).toBe("aborted");
   });
 
+  it("review of #431: a status call carries no child details (no extra row, no usage counted twice)", async () => {
+    const h = harness({ createChildAgent: () => makeChild(hangingStreamFn()) });
+    await h.tool.execute("s-1", { agent: "researcher", task: "long" }, undefined);
+    const status = await h.tool.execute("s-2", { action: "status" }, undefined);
+    expect(status.details.children).toEqual([]);
+    h.registry.abortAll();
+  });
+
+  it("review of #431: an artifact store failure still settles the child and delivers its report", async () => {
+    const failing = {
+      writeArtifact: async () => {
+        throw new Error("disk full");
+      },
+      readArtifact: async () => {
+        throw new Error("unused");
+      },
+    };
+    const h = harness({ createChildAgent: () => makeChild(streamingChildStreamFn("x".repeat(9_000))), artifactStore: failing });
+    const { child } = await h.run("call-store", { agent: "researcher", task: "t" });
+    expect(child.status).toBe("done");
+    expect(child.summary).toContain("[Output truncated");
+    expect(h.registry.isRunning("sa-1")).toBe(false);
+  });
+
   it("refuses to continue a child that still runs", async () => {
     const h = harness({ createChildAgent: () => makeChild(hangingStreamFn()) });
     await h.tool.execute("c-1", { agent: "researcher", task: "long" }, undefined);

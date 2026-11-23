@@ -81,6 +81,20 @@ export class SubagentChildView {
     this.log = acHook(slots.detail.createDiv({ cls: "agentic-chat-subagent-log" }), "subagent-log");
   }
 
+  /** The child id the row shows, if known. */
+  get childId(): string | undefined {
+    return this.child?.childId;
+  }
+
+  /**
+   * A replayed row says "running" but no child of this chat runs it (a reload,
+   * or a session saved while it ran): it can never settle, so it reads stopped.
+   */
+  markInterrupted(): void {
+    if (!this.child || !this.isRunning) return;
+    this.update({ ...this.child, status: "aborted", summary: "Stopped: the chat was reloaded or the session changed before it finished." });
+  }
+
   /** The child is still running (its row spins; the turn may end without it). */
   get isRunning(): boolean {
     return this.child?.status === "running" || this.child?.status === "queued";

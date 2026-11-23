@@ -378,7 +378,9 @@ export function createSubagentTool(
       const child = retained?.child ?? deps.createChildAgent(profile as AgentRole);
       const status: SubagentChildStatus = { agent, task, status: "running", childId, stopId: childId };
       registry.markRunning(childId, status);
-      void runInBackground(deps, registry, { childId, agent, task, toolCallId, child, status });
+      runInBackground(deps, registry, { childId, agent, task, toolCallId, child, status }).catch((error: unknown) => {
+        console.warn("Agentic Chat: a background subagent failed to settle.", error);
+      });
 
       return untrustedToolResult(
         `Started subagent "${agent}" as ${childId}. It runs in the background; its report arrives later as a <subagent_report id="${childId}"> message. ` +
@@ -399,12 +401,23 @@ interface BackgroundRun {
   status: SubagentChildStatus;
 }
 
-/** Run one child to the end, keep it for a follow-up, and deliver its report. Never throws. */
+/**
+ * Run one child to the end, keep it for a follow-up, and deliver its report.
+ * Whatever fails on the way (the child, an artifact write, a row update), the
+ * child is settled and its report delivered: the parent never waits for a
+ * report that does not come (review of #431).
+ */
 async function runInBackground(deps: SubagentToolDeps, registry: SubagentRegistry, run: BackgroundRun): Promise<void> {
   const { status } = run;
   const generation = registry.generation;
   let emitTimer: number | null = null;
-  const emit = (): void => deps.background?.onChildUpdate?.(run.toolCallId, snapshot([status]));
+  const emit = (): void => {
+    try {
+      deps.background?.onChildUpdate?.(run.toolCallId, snapshot([status]));
+    } catch (error) {
+      console.warn("Agentic Chat: a subagent row update failed.", error);
+    }
+  };
   const scheduleEmit = (): void => {
     if (emitTimer) return;
     emitTimer = window.setTimeout(() => {
@@ -413,6 +426,7 @@ async function runInBackground(deps: SubagentToolDeps, registry: SubagentRegistr
     }, 150);
   };
   let fullReport: string | undefined;
+  let modelText: string | undefined;
   try {
     fullReport = await runSingleChild(deps, registry, status, run.child, run.task, run.childId, undefined, scheduleEmit);
   } catch (error) {
@@ -426,21 +440,25 @@ async function runInBackground(deps: SubagentToolDeps, registry: SubagentRegistr
     window.clearTimeout(emitTimer);
     emitTimer = null;
   }
+  try {
+    if (fullReport !== undefined && fullReport.length > PER_CHILD_SUMMARY_CHARS) {
+      const kept = await keepFullReport(deps.artifactStore, run.agent, fullReport);
+      if (kept) {
+        status.summary = kept.userPreview;
+        status.artifactId = kept.artifactId;
+        modelText = kept.modelText;
+      }
+    }
+    const timelineId = await keepTimeline(deps.artifactStore, run.agent, status.transcript);
+    if (timelineId) status.timelineArtifactId = timelineId;
+  } catch (error) {
+    // The report goes out with its truncated summary.
+    console.warn("Agentic Chat: could not store a subagent report or timeline.", error);
+  }
   // The session was cleared or replaced while this child ran: it belongs to no conversation now.
   if (registry.generation !== generation) return;
+  // Kept for a follow-up in settle order, so the last ten reported children stay continuable.
   registry.retain({ id: run.childId, agent: run.agent, child: run.child });
-  let modelText: string | undefined;
-  if (fullReport !== undefined && fullReport.length > PER_CHILD_SUMMARY_CHARS) {
-    const kept = await keepFullReport(deps.artifactStore, run.agent, fullReport);
-    if (kept) {
-      status.summary = kept.userPreview;
-      status.artifactId = kept.artifactId;
-      modelText = kept.modelText;
-    }
-  }
-  const timelineId = await keepTimeline(deps.artifactStore, run.agent, status.transcript);
-  if (timelineId) status.timelineArtifactId = timelineId;
-  if (registry.generation !== generation) return;
   registry.markSettled(run.childId);
   emit();
   const body =
@@ -509,7 +527,8 @@ function statusResult(registry: SubagentRegistry) {
   const lines = running.map((child) => `- ${child.childId}: ${child.agent} (running) — ${child.task.slice(0, 120)}`);
   const kept = registry.retainedIds().filter((id) => !registry.isRunning(id));
   if (kept.length > 0) lines.push(`Finished, can be continued: ${kept.join(", ")}`);
-  return toolResult(lines.length > 0 ? lines.join("\n") : "No subagents in this chat.", snapshot(running));
+  // Text only: a status call must not carry child details (no row, no usage counted twice; review of #431).
+  return toolResult(lines.length > 0 ? lines.join("\n") : "No subagents in this chat.", snapshot([]));
 }
 
 function stopResult(registry: SubagentRegistry, rawId: string | undefined) {
@@ -535,6 +554,7 @@ async function runSingleChild(
   const firstMessage = child.state.messages.length;
 
   status.stopId = stopId;
+  const generation = registry.generation;
   status.transcript = [];
   let stoppedLocally = false;
   registry.setActiveStop(stopId, () => {
@@ -563,7 +583,8 @@ async function runSingleChild(
     // Each child model call is billed at once, so the spend cap sees it.
     if (event.type === "message_end" && event.message.role === "assistant") {
       const callUsage = sumAssistantUsage([event.message]);
-      if (callUsage) deps.recordUsage?.(callUsage, stopId);
+      // A child of a cleared session must not charge the new one (review of #431).
+      if (callUsage && registry.generation === generation) deps.recordUsage?.(callUsage, stopId);
     }
     if (!status.transcript) return;
     if (event.type === "message_update") {

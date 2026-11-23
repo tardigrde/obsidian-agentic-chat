@@ -141,8 +141,6 @@ export class AgentService {
   private readonly conversationCompaction: AgentConversationCompaction;
   private readonly steering = new AgentSteeringQueue();
   private readonly reports: SubagentReportDelivery;
-  /** Set by a user Stop until the run settles: a waiting report does not start a turn right after it. */
-  private stoppedByUser = false;
   private readonly artifactStore?: ToolArtifactStoreLike;
   private readonly turns: AgentTurnConfiguration;
   private readonly runtimeResources: AgentRuntimeResourceState;
@@ -252,7 +250,11 @@ export class AgentService {
       getAgent: () => this.agent ?? undefined,
       isDisposed: () => this.conversation.isDisposed,
       isTurnStarting: () => this.promptTurns.isInFlight(),
-      startTurn: (messages) => this.runPrompt((agent) => agent.prompt(messages)),
+      startTurn: () =>
+        this.runPrompt((agent) => {
+          const messages = this.reports.takePending();
+          return messages.length > 0 ? agent.prompt(messages) : Promise.resolve();
+        }),
     });
     this.toolCalls = new AgentToolCallController({
       app: this.app,
@@ -287,6 +289,9 @@ export class AgentService {
           // `continue` across a session switch (its context and cost would leak).
           // Running children stop too: a child reports only into the conversation that started it.
           this.subagents.registry.clear();
+          // Reports waiting for a turn belong to the old conversation (review of #431).
+          this.reports.reset();
+          this.steering.takeDrainedReports();
         },
       },
       runtimeResources: this.runtimeResources,
@@ -582,6 +587,7 @@ export class AgentService {
     const trimmed = prompt.trim();
     if (!trimmed) return;
     const attached = images && images.length > 0 ? images : undefined;
+    this.reports.resume();
     await this.runPrompt((agent) => {
       // Reports that waited (a Stop drained them) go ahead of the user's message.
       const waiting = this.reports.takePending();
@@ -634,6 +640,7 @@ export class AgentService {
     }
 
     const message = createUserMessage(text, attached);
+    this.reports.resume();
     // The model will hold this text: a note in it counts as sent at once (U4).
     this.queuedTexts.push(text);
     this.sessionState.clearError();
@@ -719,9 +726,9 @@ export class AgentService {
   abort(): void {
     const agent = this.agent;
     if (!agent) return;
-    this.stoppedByUser = true;
+    this.reports.pauseAfterStop();
     this.steering.stop(agent);
-    this.reports.keepDrained(this.steering.takeDrainedReports());
+    this.reports.keepDrained(this.steering.takeDrainedReports(), { startsTurn: true });
     void agent.waitForIdle().then(() => this.notifyChange());
   }
 
@@ -812,14 +819,21 @@ export class AgentService {
     // A fresh prompt starts a new epoch: the identical-batch streak of a
     // previous user turn does not carry into this one.
     this.resetTurnGuards();
+    // Whether the turn really ran: a blocked preflight or a turn already starting
+    // returns without calling `run`, and must not start a report turn (no loop).
+    let ran = false;
     try {
-      await this.promptTurns.run(this.steering.settling(run), expectedSessionToken);
+      await this.promptTurns.run(
+        this.steering.settling((agent) => {
+          ran = true;
+          return run(agent);
+        }),
+        expectedSessionToken,
+      );
     } finally {
       // A report steered in after the last poll did not reach the model: it waits again.
-      this.reports.keepDrained(this.steering.takeDrainedReports());
-      const stopped = this.stoppedByUser;
-      this.stoppedByUser = false;
-      this.reports.afterTurn(stopped);
+      this.reports.keepDrained(this.steering.takeDrainedReports(), { startsTurn: true });
+      this.reports.afterTurn(ran);
     }
   }
 
@@ -961,6 +975,11 @@ export class AgentService {
   async readArtifactText(id: string): Promise<string> {
     if (!this.artifactStore) throw new Error("No artifact store in this chat.");
     return (await this.artifactStore.readArtifact(id)).text;
+  }
+
+  /** Whether a background child of this chat still runs (a replayed row without one is interrupted). */
+  isSubagentRunning(childId: string): boolean {
+    return this.subagents.registry.isRunning(childId);
   }
 
   /** Live status of background children, for their rows (U5 #1). */

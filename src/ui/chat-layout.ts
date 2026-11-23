@@ -15,6 +15,7 @@ export interface ChatLayoutCallbacks {
   abortSubagentChild(id: string): void;
   openSubagentReport(artifactId: string, title: string): void;
   loadSubagentTimeline(artifactId: string): Promise<SubagentTranscriptEntry[]>;
+  isSubagentRunning(childId: string): boolean;
   chooseAutocomplete(item: AcItem): void;
   submit(source: ComposerSubmitSource): void;
   stopActiveTurn(): void;
@@ -138,6 +139,7 @@ export function buildLayout(deps: ChatLayoutDeps): ChatLayoutElements {
     abortSubagentChild: (id) => callbacks.abortSubagentChild(id),
     openSubagentReport: (artifactId, title) => callbacks.openSubagentReport(artifactId, title),
     loadSubagentTimeline: (artifactId) => callbacks.loadSubagentTimeline(artifactId),
+    isSubagentRunning: (childId) => callbacks.isSubagentRunning(childId),
     isStreaming: () => callbacks.isStreaming(),
   });
   deps.registerDomEvent(messagesEl, "wheel", () => transcript.markUserScrollIntent());
