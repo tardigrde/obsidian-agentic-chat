@@ -3,9 +3,6 @@ import { buildDoctorReport, doctorDiagnosticsSummary, type DoctorInput } from ".
 import { modelCatalogStatus } from "../../llm/pricing-cache";
 import { sumSubagentResultUsage } from "../../agent/session-usage";
 import { BUILTIN_SKILL_NAMES } from "../../skills/builtin-skills";
-import { activeModelId } from "../../settings-schema";
-import { MODES } from "../../agent/modes";
-import { formatMcpDiagnosticRows, formatMcpDiagnosticSummary } from "../../agent/diagnostics";
 import { errorMessage } from "../../utils/errors";
 import { formatDetailedUsage } from "../format";
 import { visibleCommands } from "../commands";
