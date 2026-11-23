@@ -48,6 +48,8 @@ export interface SubagentChildStatus {
   artifactId?: string;
   /** Vault files the child read (U5 #14): the parent's answer cites them. */
   sources?: string[];
+  /** The child's compact timeline, kept as an artifact so the row shows it after a reload (U5 #12). */
+  timelineArtifactId?: string;
   /** Live transcript accumulated while the child runs. */
   transcript?: SubagentTranscriptEntry[];
   /** Wall-clock runtime of the child session, set once it settles. */
@@ -224,6 +226,7 @@ export function toPersistedChild(status: SubagentChildStatus): SubagentChildStat
     // Kept on reload: the row's child id and its "Open full report" link (U5 #13).
     ...(status.childId ? { childId: String(status.childId).slice(0, 40) } : {}),
     ...(status.artifactId ? { artifactId: String(status.artifactId).slice(0, 120) } : {}),
+    ...(status.timelineArtifactId ? { timelineArtifactId: String(status.timelineArtifactId).slice(0, 120) } : {}),
     ...(status.sources?.length ? { sources: status.sources.slice(0, MAX_CHILD_SOURCES).map((path) => String(path).slice(0, 300)) } : {}),
   };
 }
@@ -436,6 +439,8 @@ async function runInBackground(deps: SubagentToolDeps, registry: SubagentRegistr
       modelText = kept.modelText;
     }
   }
+  const timelineId = await keepTimeline(deps.artifactStore, run.agent, status.transcript);
+  if (timelineId) status.timelineArtifactId = timelineId;
   if (registry.generation !== generation) return;
   registry.markSettled(run.childId);
   emit();
@@ -457,6 +462,47 @@ async function runInBackground(deps: SubagentToolDeps, registry: SubagentRegistr
     details: persistedSnapshot([status]),
     text: `${body}${followUp}`,
   });
+}
+
+/** Most timeline entries kept for a reload; the live row shows all of them. */
+const MAX_TIMELINE_ENTRIES = 200;
+
+/**
+ * The child's timeline is live-only in the row; it is stored as a compact
+ * artifact (tool lines and text, no tool results) so the row can show it
+ * again after a reload. The model never reads it. Null without a store.
+ */
+async function keepTimeline(
+  store: ToolArtifactStoreLike | undefined,
+  agent: string,
+  transcript: SubagentTranscriptEntry[] | undefined,
+): Promise<string | null> {
+  if (!store || !transcript || transcript.length === 0) return null;
+  const merged: SubagentTranscriptEntry[] = [];
+  for (const entry of transcript) {
+    const last = merged.at(-1);
+    if (entry.type === "text" && last?.type === "text") last.text += entry.text;
+    else merged.push(entry.type === "text" ? { ...entry } : { type: "tool", name: entry.name, status: entry.status, ...(entry.args !== undefined ? { args: entry.args } : {}), ...(entry.isError ? { isError: true } : {}) });
+  }
+  try {
+    const artifact = await store.writeArtifact({
+      label: `${agent} subagent timeline`,
+      sourceToolName: SUBAGENT_TOOL_NAME,
+      text: JSON.stringify(redactValueForTimeline(merged.slice(-MAX_TIMELINE_ENTRIES))),
+      contentType: "application/json",
+    });
+    return artifact.id;
+  } catch {
+    return null;
+  }
+}
+
+function redactValueForTimeline(entries: SubagentTranscriptEntry[]): SubagentTranscriptEntry[] {
+  return entries.map((entry) =>
+    entry.type === "text"
+      ? { type: "text", text: redactText(entry.text, { redactHighEntropy: true, maxLength: 4_000 }) }
+      : entry,
+  );
 }
 
 function statusResult(registry: SubagentRegistry) {

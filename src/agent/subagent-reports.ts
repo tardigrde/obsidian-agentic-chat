@@ -25,6 +25,8 @@ export interface ParsedSubagentReport {
   costUsd?: number;
   /** Vault files the child read (U5 #14). */
   sources?: string[];
+  /** The child's stored timeline (U5 #12). */
+  timelineArtifactId?: string;
   /** The child's token usage; the session total counts it from here, so it survives a reload. */
   usage?: { input: number; output: number; totalTokens: number; costUsd: number };
   artifactId?: string;
@@ -40,6 +42,7 @@ export function formatSubagentReport(report: SubagentReport): string {
       ? ` in="${child.usage.input}" out="${child.usage.output}" tokens="${child.usage.totalTokens}" cost="${child.usage.costUsd}"`
       : "",
     child?.artifactId ? ` artifact="${attr(child.artifactId)}"` : "",
+    child?.timelineArtifactId ? ` timeline="artifact:${attr(child.timelineArtifactId)}"` : "",
     child?.sources?.length ? ` sources="${attr(child.sources.map((path) => path.replace(/\|/gu, " ")).join("|"))}"` : "",
   ].join("");
   const header = `<subagent_report id="${attr(report.childId)}" agent="${attr(report.agent)}" status="${attr(child?.status ?? "done")}" call="${attr(report.toolCallId)}"${extra}>`;
@@ -74,6 +77,7 @@ export function parseSubagentReport(text: string): ParsedSubagentReport | null {
       ? { usage: { input: count("in"), output: count("out"), totalTokens: count("tokens"), costUsd: Number.isFinite(cost) ? cost : 0 } }
       : {}),
     ...(attrs.get("artifact") ? { artifactId: attrs.get("artifact") } : {}),
+    ...(attrs.get("timeline")?.startsWith("artifact:") ? { timelineArtifactId: (attrs.get("timeline") as string).slice("artifact:".length) } : {}),
     ...(attrs.get("sources") ? { sources: (attrs.get("sources") as string).split("|").filter(Boolean) } : {}),
   };
 }
@@ -175,6 +179,7 @@ export function reportChildDetails(report: ParsedSubagentReport, summary: string
             ? { usage: { input: 0, output: 0, totalTokens: 0, costUsd: report.costUsd } }
             : {}),
         ...(report.artifactId ? { artifactId: report.artifactId } : {}),
+        ...(report.timelineArtifactId ? { timelineArtifactId: report.timelineArtifactId } : {}),
       },
     ],
   };

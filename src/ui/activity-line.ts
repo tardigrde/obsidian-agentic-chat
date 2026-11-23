@@ -5,6 +5,7 @@ import { callPath, formatElapsed, formatShortElapsed, HIDE_RESULT_TOOLS, safeJso
 import { failedCount, runningLabel, stepRowParts, summarizeSteps, type StepStatus } from "./activity-summary";
 import { renderAskUserStep, renderCallSection } from "./step-card";
 import { SubagentChildView, subagentChildren } from "./subagent-tree";
+import type { SubagentTranscriptEntry } from "../tools/subagent-tool";
 import { acHook } from "./test-hooks";
 
 /** How the user settled an approval, as recorded on the step row. */
@@ -29,6 +30,8 @@ export interface ActivityLineOptions {
   onStopSubagentChild?: (stopId: string) => void;
   /** Open a subagent report kept as an artifact (U5 #13). */
   onOpenSubagentReport?: (artifactId: string, title: string) => void;
+  /** Load a stored child timeline (U5 #12). */
+  loadSubagentTimeline?: (artifactId: string) => Promise<SubagentTranscriptEntry[]>;
   /** Called after the line changes height (scroll pinning). */
   onChange?: () => void;
 }
@@ -416,6 +419,7 @@ export class ActivityLine {
           live: this.options.live,
           onStopSubagentChild: this.options.onStopSubagentChild,
           onOpenReport: this.options.onOpenSubagentReport,
+          loadTimeline: this.options.loadSubagentTimeline,
           onChange: () => this.options.onChange?.(),
         },
       );

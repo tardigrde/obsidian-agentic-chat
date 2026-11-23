@@ -21,6 +21,7 @@ import {
   type SubagentToolDeps,
 } from "../src/tools/subagent-tool";
 import { buildModel } from "../src/llm/models";
+import { formatSubagentReport } from "../src/agent/subagent-reports";
 import { filterChildTools } from "../src/agent/subagent-runtime";
 import { createReplayStreamController, replayTextTurn, replayToolCallTurn } from "../src/agent/replay-stream";
 import { lastAssistantText } from "../src/tools/subagent-tool";
@@ -367,6 +368,28 @@ describe("createSubagentTool (background, U5 #1)", () => {
     expect(child.summary).not.toContain("THE-TAIL-MARKER");
     // U5 #13: the row can open the whole report.
     expect(child.artifactId).toBe("art-1");
+  });
+
+  it("U5 #12: keeps the child's timeline as an artifact, so the row can show it after a reload", async () => {
+    const stored: Array<{ id: string; text: string; label: string; contentType?: string }> = [];
+    const artifactStore = {
+      writeArtifact: async (input: { label: string; text: string; sourceToolName: string; contentType?: string }) => {
+        const id = `art-${stored.length + 1}`;
+        stored.push({ id, text: input.text, label: input.label, contentType: input.contentType });
+        return { id, label: input.label, sourceToolName: input.sourceToolName, contentType: input.contentType ?? "text/plain", createdAt: "", charLength: input.text.length };
+      },
+      readArtifact: async () => {
+        throw new Error("unused");
+      },
+    };
+    const h = harness({ createChildAgent: () => makeChild(streamingChildStreamFn("short answer")), artifactStore });
+    const { report, child } = await h.run("call-t", { agent: "researcher", task: "t" });
+    expect(child.timelineArtifactId).toBe("art-1");
+    expect(stored[0]).toMatchObject({ label: "researcher subagent timeline", contentType: "application/json" });
+    // Merged text, not one entry per streamed chunk.
+    expect(JSON.parse(stored[0].text)).toEqual([{ type: "text", text: "short answer" }]);
+    // The header reference keeps it alive in the artifact prune scan.
+    expect(collectArtifactIdsFromText(formatSubagentReport(report))).toEqual(new Set(["art-1"]));
   });
 
   it("the parent's Stop signal does not stop a child; its own stop does (owner, 2026-11-23)", async () => {

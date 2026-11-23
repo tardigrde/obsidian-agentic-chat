@@ -26,6 +26,7 @@ import { subagentDetailsUsage } from "../agent/session-usage";
 import { formatTurnMeta, truncateText } from "./format";
 import { parseSubagentReport, reportChildDetails } from "../agent/subagent-reports";
 import { unwrapToolOutput } from "../tools/tool-output-wrapper";
+import type { SubagentTranscriptEntry } from "../tools/subagent-tool";
 import { openSystemUrl } from "../platform/system-browser";
 import { isPinnedToBottom } from "./scroll-pinning";
 import { isSummaryMessage } from "../agent/compaction";
@@ -44,6 +45,7 @@ export interface TranscriptViewHost {
   retryLast(): void;
   abortSubagentChild(id: string): void;
   openSubagentReport?(artifactId: string, title: string): void;
+  loadSubagentTimeline?(artifactId: string): Promise<SubagentTranscriptEntry[]>;
   /** Whether the tab that owns this transcript has a turn in flight. */
   isStreaming?(): boolean;
 }
@@ -120,6 +122,7 @@ export class TranscriptView {
       isFolder: (path) => isVaultFolder(this.host.app, path),
       onStopSubagentChild: (id) => this.host.abortSubagentChild(id),
       onOpenSubagentReport: (artifactId, title) => this.host.openSubagentReport?.(artifactId, title),
+      loadSubagentTimeline: (artifactId) => this.host.loadSubagentTimeline?.(artifactId) ?? Promise.resolve([]),
       onChange: () => this.scrollToBottom(),
     });
     this.allSegments.add(segment);

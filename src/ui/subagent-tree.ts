@@ -42,6 +42,8 @@ export interface SubagentChildViewOptions {
   onStopSubagentChild?: (stopId: string) => void;
   /** Open a long report kept as an artifact (U5 #13). */
   onOpenReport?: (artifactId: string, title: string) => void;
+  /** Load a stored child timeline (U5 #12): the live one is gone after a reload. */
+  loadTimeline?: (artifactId: string) => Promise<SubagentTranscriptEntry[]>;
   onChange?: () => void;
 }
 
@@ -67,6 +69,7 @@ export class SubagentChildView {
   private readonly log: HTMLElement;
   private readonly stateEl: HTMLElement;
   private stopBtn: HTMLButtonElement | null = null;
+  private timelineRequested = false;
 
   constructor(
     private readonly slots: SubagentStepSlots,
@@ -95,6 +98,7 @@ export class SubagentChildView {
     this.stateEl.setText(running ? "" : SUBAGENT_STATUS_LABEL[status] ?? String(status));
     this.renderStop();
     this.renderLog();
+    this.maybeLoadTimeline();
     if (running && this.options.live && this.timer === null) {
       this.timer = window.setInterval(() => this.renderTime(), 1000);
     }
@@ -109,6 +113,22 @@ export class SubagentChildView {
   dispose(): void {
     if (this.timer !== null) window.clearInterval(this.timer);
     this.timer = null;
+  }
+
+  private maybeLoadTimeline(): void {
+    const child = this.child;
+    const id = child?.timelineArtifactId;
+    if (!child || !id || this.timelineRequested || this.isRunning || (child.transcript?.length ?? 0) > 0 || !this.options.loadTimeline) return;
+    this.timelineRequested = true;
+    this.options.loadTimeline(id).then(
+      (entries) => {
+        if (!this.child || (this.child.transcript?.length ?? 0) > 0) return;
+        this.child = { ...this.child, transcript: entries };
+        this.renderLog();
+        this.options.onChange?.();
+      },
+      () => undefined,
+    );
   }
 
   private renderTime(): void {

@@ -1,3 +1,4 @@
+import type { SubagentTranscriptEntry } from "../tools/subagent-tool";
 import {
   ItemView,
   Notice,
@@ -720,6 +721,10 @@ export class ChatView extends ItemView {
         openSubagentReport: (artifactId, title) => {
           const service = this.service;
           new SubagentReportModal(this.app, title, () => service.readArtifactText(artifactId)).open();
+        },
+        loadSubagentTimeline: async (artifactId) => {
+          const parsed: unknown = JSON.parse(await this.service.readArtifactText(artifactId));
+          return Array.isArray(parsed) ? (parsed as SubagentTranscriptEntry[]) : [];
         },
         chooseAutocomplete: (item) => this.chooseAutocomplete(item),
         submit: (source) => void this.submit(source),
