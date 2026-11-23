@@ -113,7 +113,7 @@ export type PrivateMatcher = IgnoreMatcher & { isProtected?: IgnoreMatcher };
 export function privatePathMessage(path: string, matcher?: PrivateMatcher): string {
   const isProtected = matcher?.isProtected ?? createProtectedPathMatcher();
   if (isProtected(path)) {
-    return `Blocked: "${path}" is protected by the plugin (vault metadata such as .obsidian, .git and .trash is never readable; this is built in, not a user setting). Do not try to read or change it another way.`;
+    return `Blocked: "${path}" is protected by the plugin (vault metadata such as the Obsidian config folder, .git and .trash is never readable; this is built in, not a user setting). Do not try to read or change it another way.`;
   }
   return `Blocked: "${path}" is private (excluded in the Ignored paths setting). Do not try to read or change it another way.`;
 }
