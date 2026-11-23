@@ -242,7 +242,7 @@ export function buildAgentParentTools(options: BuildAgentParentToolsOptions): Ag
     }),
     ...(options.askUser ? [createAskUserTool(options.askUser)] : []),
     ...(options.subagentTool ? [options.subagentTool] : []),
-    createSkillTool(options.app, options.resources.skills),
+    createSkillTool(options.app, options.resources.skills, options.resources.ignoreMatcher),
     ...(artifactTool ? [artifactTool] : []),
     createCurrentTimeTool(options.now),
     // Deferred: listed in the system prompt, loaded by search_tools.

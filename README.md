@@ -61,7 +61,7 @@ Approve the diff, then run `/undo` to see the change reverted. More prompts in
 | Give the agent standing rules | Put them in `AGENTS.md` at the vault root, or run `/init` |
 | Watch cost | The meta under each answer, `/usage`, the context ring, and a spend cap in *Advanced → Notifications* |
 | Undo / rewind | `/undo` for the last vault change; click a sent message to edit and rerun |
-| Debug setup | `/doctor`, then `/status` |
+| Debug setup | `/doctor` |
 
 All commands: [Slash commands](docs/reference/slash-commands.md). All tools:
 [Vault tools](docs/reference/vault-tools.md).

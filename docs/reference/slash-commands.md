@@ -14,7 +14,6 @@ Slash commands run locally and are not sent to the model.
 | `/<skill-name>` | Run a skill directly when no built-in command has that name. Any other `/word` shows "Unknown command" and is not sent to the model. |
 | `/agent [name] [task]` | Delegate a task to a subagent. Without arguments, opens a picker. |
 | `/undo` | Undo the last vault change made by the agent. |
-| `/status` | Show provider, model, mode, session, MCP servers, and tools. |
 | `/usage` | Show token and cost totals. |
 | `/export` | Save this conversation as a Markdown note in the vault. |
 | `/doctor` | Health check: problems first (each with a fix), then model, mode, context, and cost (subagents included), then folded sections for the session, plugins, MCP, tools, and debug events. It also saves a small summary (codes and counts, no names or URLs) to the session for bug reports. |

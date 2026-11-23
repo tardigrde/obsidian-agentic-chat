@@ -6,6 +6,7 @@ import type { AgentTool } from "@earendil-works/pi-agent-core";
 import type { IgnoreMatcher } from "../src/vault/ignore";
 import { ReadMemo } from "../src/vault/read-memo";
 import { unwrapToolOutput } from "../src/tools/tool-output-wrapper";
+import { createPrivateMatcher } from "../src/vault/private-rules";
 
 interface FileSpec {
   content?: string;
@@ -439,7 +440,7 @@ describe("local_graph", () => {
   it("reports an ignored note as private (U4 #11)", async () => {
     const app = makeApp(spec);
     await expect(run(getTool(app, "local_graph", ignore("Hub.md")), { path: "Hub.md" })).rejects.toThrow(
-      /is private \(excluded in settings\)/,
+      /is private \(the Ignored paths setting or a built-in protected folder\)/,
     );
   });
 
@@ -482,7 +483,7 @@ describe("get_properties", () => {
   it("reports an ignored note as private (U4 #11)", async () => {
     const app = makeApp({ files: { "Note.md": { frontmatter: { a: 1 } } } });
     await expect(run(getTool(app, "get_properties", ignore("Note.md")), { path: "Note.md" })).rejects.toThrow(
-      /is private \(excluded in settings\)/,
+      /is private \(the Ignored paths setting or a built-in protected folder\)/,
     );
   });
 
@@ -528,7 +529,7 @@ describe("set_properties", () => {
     const app = makeApp({ files: { "Note.md": { frontmatter: { a: 1 } } } });
     await expect(
       run(getTool(app, "set_properties", ignore("Note.md")), { path: "Note.md", properties: { a: 2 } }),
-    ).rejects.toThrow(/is private \(excluded in settings\)/);
+    ).rejects.toThrow(/is private \(the Ignored paths setting or a built-in protected folder\)/);
     const after = await run(getTool(app, "get_properties"), { path: "Note.md" });
     expect(JSON.parse(unwrapToolOutput(after.text))).toEqual({ a: 1 });
   });
@@ -857,5 +858,41 @@ describe("edit — audit details", () => {
     expect(details.applied).toEqual([]);
     expect(details.editCount).toBe(0);
     expect(details.failedCount).toBe(1);
+  });
+});
+
+describe("U5 #10 and #11: root path and the real block reason", () => {
+  const app = () => makeApp({ files: { "Note.md": { content: "needle" }, "Inbox/Idea.md": { content: "needle" } }, folders: ["Inbox"] });
+
+  it("lists the vault root for '/', './' and '@/' (the model's first guess)", async () => {
+    for (const path of ["/", "./", "@/"]) {
+      const { text } = await run(getTool(app(), "ls"), { path });
+      expect(text, path).toContain("Note.md");
+      expect(text, path).toContain("Inbox");
+    }
+  });
+
+  it("searches from the vault root for '/'", async () => {
+    const { text } = await run(getTool(app(), "search"), { query: "needle", path: "/" });
+    expect(text).toContain("Note.md");
+    expect(text).toContain("Inbox/Idea.md");
+  });
+
+  it("still rejects an absolute path below the root", async () => {
+    await expect(run(getTool(app(), "ls"), { path: "/Inbox" })).rejects.toThrow(/vault-relative/);
+  });
+
+  it("says a built-in protected folder blocks .git, not the user's settings", async () => {
+    const vault = makeApp({ files: { ".git/HEAD": { content: "ref: main" } } });
+    const error = await run(getTool(vault, "read", createPrivateMatcher("")), { path: ".git/HEAD" }).catch((e: Error) => e);
+    expect(String(error)).toMatch(/protected by the plugin/);
+    expect(String(error)).not.toMatch(/Ignored paths/);
+  });
+
+  it("names the Ignored paths setting when a user rule blocks the note", async () => {
+    const vault = makeApp({ files: { "Secret.md": { content: "x" } } });
+    await expect(run(getTool(vault, "read", createPrivateMatcher("Secret.md")), { path: "Secret.md" })).rejects.toThrow(
+      /excluded in the Ignored paths setting/,
+    );
   });
 });

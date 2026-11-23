@@ -5,6 +5,7 @@ import { Type } from "typebox";
 import { resolveSkillResourcePath } from "../skills/skills";
 import { toolResult, untrustedToolResult } from "./result";
 import { TEXT_EXTENSIONS } from "./vault-tools";
+import { privatePathMessage, type PrivateMatcher } from "../vault/private-rules";
 import {
   formatTextSlice,
   readSizeGuardrail,
@@ -45,7 +46,7 @@ interface SkillParams {
  * skill root, with the vault `read` guardrails (size, pagination, truncation).
  * Binary assets return a path hint instead of base64.
  */
-export function createSkillTool(app: App, skills: Skill[]): AgentTool<typeof SkillParameters, unknown> {
+export function createSkillTool(app: App, skills: Skill[], isIgnored: PrivateMatcher = () => false): AgentTool<typeof SkillParameters, unknown> {
   return {
     name: SKILL_TOOL_NAME,
     label: "Skill",
@@ -56,13 +57,23 @@ export function createSkillTool(app: App, skills: Skill[]): AgentTool<typeof Ski
     execute: async (_id, rawParams) => {
       const params: SkillParams = rawParams;
       const skill = requireSkill(skills, params.name);
+      // The private rules cover skill files too (U5 deep check): a skill in a
+      // private folder, or a private file inside a skill, stays unreadable.
+      // Every path is checked: the built-in marker never matches a user rule, and a
+      // prefix test would skip a real folder whose name starts with "(" (review of #429).
+      if (skill.filePath && isIgnored(skill.filePath)) {
+        throw new Error(privatePathMessage(skill.filePath, isIgnored));
+      }
       if (normalizeAction(params.action) === "read") return readSkillBody(skill);
       const path = typeof params.path === "string" ? params.path.trim() : "";
       if (!path) throw new Error('skill: path is required for action "read_file".');
+      const resolved = resolveSkillResourcePath(skill, path);
+      if (isIgnored(resolved)) throw new Error(privatePathMessage(resolved, isIgnored));
       return readSkillFile(app, skill, { path, offset: params.offset, limit: params.limit });
     },
   };
 }
+
 
 function normalizeAction(value: unknown): SkillAction {
   if (value === "read" || value === "read_file") return value;

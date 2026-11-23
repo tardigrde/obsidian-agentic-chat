@@ -449,6 +449,24 @@ describe("loadImageAttachments", () => {
 
     expect(images).toEqual([{ type: "image", data: "AQID", mimeType: "image/png" }]);
   });
+
+  it("sends the shrunk copy, not the full file, of a large image (U5 #8)", async () => {
+    const fake = app();
+    await fake.vault.create("Photo.png", "");
+    Object.assign(fake.vault, { readBinary: async () => new Uint8Array(2_000_000).buffer });
+    const images = await loadImageAttachments({
+      app: fake,
+      attachments: ["Photo.png"],
+      supportsImages: true,
+      imageCodec: async () => ({
+        width: 1070,
+        height: 1335,
+        encode: async (_w: number, _h: number, type: string) => new Blob([new Uint8Array(type === "image/png" ? 2_000_000 : 3)], { type }),
+        close: () => undefined,
+      }),
+    } as Parameters<typeof loadImageAttachments>[0]);
+    expect(images).toEqual([{ type: "image", data: "AAAA", mimeType: "image/jpeg" }]);
+  });
 });
 
 describe("sentUserText", () => {

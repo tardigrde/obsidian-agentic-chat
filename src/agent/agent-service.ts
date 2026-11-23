@@ -254,7 +254,9 @@ export class AgentService {
       recordCheckpoint: (input) => this.actionAudit.recordCheckpoint(input),
       recordFileCheckpoint: (checkpoint) => this.fileCheckpoints.record(checkpoint),
       subagentRegistry: this.subagents.registry,
-      isPathIgnored: (path) => this.runtimeResources.isPathIgnored(path),
+      isPathIgnored: Object.assign((path: string) => this.runtimeResources.isPathIgnored(path), {
+        isProtected: (path: string) => this.runtimeResources.isPathProtected(path),
+      }),
     });
     this.conversation = new AgentConversation({
       sessionManager,

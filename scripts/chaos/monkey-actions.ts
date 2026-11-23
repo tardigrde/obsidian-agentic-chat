@@ -108,11 +108,11 @@ export function chaosActionCatalog(): ChaosAction[] {
       prompt: "/help",
     },
     {
-      id: "slash-status",
+      id: "slash-doctor",
       surface: "slash-commands",
       kind: "slash",
-      description: "run /status in the composer",
-      prompt: "/status",
+      description: "run /doctor in the composer",
+      prompt: "/doctor",
     },
     {
       id: "settings-tabs",
@@ -207,7 +207,7 @@ function catalogAction(id: string): ChaosAction {
 export function focusedSequence(target: ChaosTarget): ChaosAction[] {
   switch (target) {
     case "composer":
-      return [catalogAction("composer-prompt"), catalogAction("slash-help"), catalogAction("slash-status")];
+      return [catalogAction("composer-prompt"), catalogAction("slash-help"), catalogAction("slash-doctor")];
     case "settings":
       return [catalogAction("settings-tabs")];
     case "mcp":

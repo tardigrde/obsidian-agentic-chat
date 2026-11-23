@@ -11,6 +11,7 @@ import type { ToolArtifactStoreLike } from "../src/artifacts/tool-artifact-store
 import { DEFAULT_SETTINGS, type AgenticChatSettings } from "../src/settings-schema";
 import type { WebFetcher } from "../src/tools/web-fetch";
 import type { AgentToolCallController } from "../src/agent/tool-call-controller";
+import { createPrivateMatcher } from "../src/vault/private-rules";
 
 /** Arbitrary dispatch fixture — the name is test data, not a built-in role. */
 const PROFILE: AgentRole = {
@@ -273,5 +274,30 @@ describe("AgentSubagentRuntime", () => {
 
     expect(JSON.stringify(result.content)).toContain("child result");
     expect(usages).toEqual([5]);
+  });
+});
+
+describe("AgentSubagentRuntime: private rules are read live (review of #429)", () => {
+  it("blocks a retained child's skill read after the folder is added to Ignored paths", async () => {
+    const live: AgentRuntimeResources = {
+      ...resources(),
+      skills: [{ name: "notes", description: "Notes.", content: "# Secret steps", filePath: "Skills/notes/SKILL.md" }],
+    };
+    const runtime = new AgentSubagentRuntime({
+      app: { vault: {}, workspace: {} } as unknown as App,
+      getSettings: () => settings(),
+      getResources: () => live,
+      buildStreamFn: () => cannedChildStream("ok"),
+      recordUsage: () => undefined,
+      webFetch: noopWebFetch,
+      toolCalls: noopToolCalls,
+    });
+    const child = runtime.createChildAgent({ ...PROFILE, toolAllowlist: ["skill"] });
+    const skill = child.state.tools.find((tool) => tool.name === "skill");
+    expect(skill).toBeDefined();
+    await expect(skill!.execute("c1", { action: "read", name: "notes" } as never)).resolves.toBeDefined();
+
+    live.ignoreMatcher = createPrivateMatcher("Skills/");
+    await expect(skill!.execute("c2", { action: "read", name: "notes" } as never)).rejects.toThrow(/is private/);
   });
 });

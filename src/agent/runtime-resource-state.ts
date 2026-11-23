@@ -8,6 +8,7 @@ import type { WebFetcher } from "../tools/web-fetch";
 import type { AskUserHandler } from "../tools/ask-user-tool";
 import type { SkillScaffolder } from "../tools/skill-tools";
 import type { ReadMemo } from "../vault/read-memo";
+import type { PrivateMatcher } from "../vault/private-rules";
 import type { ToolArtifactStoreLike } from "../artifacts/tool-artifact-store";
 import type { AgentRole } from "./subagents";
 import type { PluginCatalog } from "../plugins/service";
@@ -67,6 +68,11 @@ export class AgentRuntimeResourceState {
 
   isPathIgnored(path: string): boolean {
     return this.resources.ignoreMatcher(path);
+  }
+
+  /** True when a built-in protected folder (not a user rule) blocks `path`. */
+  isPathProtected(path: string): boolean {
+    return (this.resources.ignoreMatcher as PrivateMatcher).isProtected?.(path) ?? false;
   }
 
   /**

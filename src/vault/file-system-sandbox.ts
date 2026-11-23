@@ -35,10 +35,18 @@ export const PROTECTED_DENY_GLOBS: readonly string[] = [
  * When a custom vault configDir is provided and differs from `.obsidian`, it is
  * also denied so a renamed config folder does not leak.
  */
+function extraProtectedGlobs(configDir?: string): string[] {
+  return configDir && configDir !== DEFAULT_OBSIDIAN_DIR && configDir.trim() ? [configDir.trim()] : [];
+}
+
+/** Only the built-in protected folders (no user globs): tells "built in" from "your setting". */
+export function createProtectedPathMatcher(configDir?: string): IgnoreMatcher {
+  return createIgnoreMatcher([...PROTECTED_DENY_GLOBS, ...extraProtectedGlobs(configDir)]);
+}
+
 export function createFileSystemDenyMatcher(userGlobs: string, configDir?: string): IgnoreMatcher {
   const userPatterns = parseIgnorePatterns(userGlobs);
-  const extraProtected =
-    configDir && configDir !== DEFAULT_OBSIDIAN_DIR && configDir.trim() ? [configDir.trim()] : [];
+  const extraProtected = extraProtectedGlobs(configDir);
   // Cap user patterns before merging so protected globs are never dropped by the
   // 200-pattern limit in createIgnoreMatcher (adversarial-review finding).
   const protectedCount = PROTECTED_DENY_GLOBS.length + extraProtected.length;

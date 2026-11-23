@@ -1,3 +1,4 @@
+import type { PrivateMatcher } from "../vault/private-rules";
 import type { App } from "obsidian";
 import { Agent, type AgentTool, type StreamFn } from "@earendil-works/pi-agent-core";
 import type { Usage } from "@earendil-works/pi-ai";
@@ -80,12 +81,17 @@ export class AgentSubagentRuntime {
     // Strip tools the user explicitly denied before the child is created.
     // Allowed child calls still flow through the parent tool-call controller.
     const skills = this.getResources().skills;
+    // Read the private rules when each check runs, not when the child is built: a
+    // retained child is continued later, after an Ignored-paths edit (review of #429).
+    const isPrivate: PrivateMatcher = Object.assign((path: string) => this.getResources().ignoreMatcher(path), {
+      isProtected: (path: string) => (this.getResources().ignoreMatcher as PrivateMatcher).isProtected?.(path) ?? false,
+    });
     const artifactTool = createArtifactTool(this.artifactStore);
     const childTools = [
-      ...createVaultTools(this.app, this.getResources().ignoreMatcher, new ReadMemo()),
+      ...createVaultTools(this.app, isPrivate, new ReadMemo()),
       ...createWebTools(settings.web, this.webFetch, this.artifactStore),
       ...(artifactTool ? [artifactTool] : []),
-      createSkillTool(this.app, skills),
+      createSkillTool(this.app, skills, isPrivate),
     ].filter(
       (tool) => resolveModePolicy(settings.mode, settings.approval, tool.name).policy !== "deny",
     );

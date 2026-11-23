@@ -84,6 +84,8 @@ describe("buildDoctorReport", () => {
     );
     expect(doctorStatusLine(report)).toBe("✅ All OK");
     expect(report.essentials).toContainEqual(["Cost", "$0.01 (subagents $0.0040)"]);
+    // U5 #4: the thinking level moved here from the removed `/status`.
+    expect(report.essentials).toContainEqual(["Thinking", "off"]);
   });
 
   it("notes a vault skill that overrides a built-in, and folds names into sections with counts on top", () => {

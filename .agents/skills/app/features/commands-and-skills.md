@@ -52,7 +52,6 @@ await $(".agentic-chat-info").waitForExist();
 | `/init` | `src/ui/commands.ts#name: "init"` | `test/e2e/specs/smoke.e2e.ts#routes /help, /init, and /compact locally without a model call` | `covered` |
 | `/compact` | `src/ui/commands.ts#name: "compact"` | `test/e2e/specs/smoke.e2e.ts#routes /help, /init, and /compact locally without a model call` | `covered` |
 | `/memory` removed | `src/ui/commands.ts#SLASH_COMMANDS` | `test/feature-cut-2026-11.test.ts#does not register /memory and shows a retired hint` (unit only) | `partial` |
-| `/status` | `src/ui/commands.ts#name: "status"` | `test/e2e/specs/runtime-behavior.e2e.ts#shows model/provider status, local undo state, and web tools when enabled` | `covered` |
 | `/plan` removed | `src/ui/commands.ts#SLASH_COMMANDS` | `test/e2e/specs/smoke.e2e.ts#renders a scripted turn, answers /plan locally, runs /skill, and Stop clears a running turn` | `covered` |
 | `/undo` | `src/ui/commands.ts#name: "undo"` | `test/e2e/specs/approval-deterministic.e2e.ts#asks before a scripted edit and undo restores the prior text` | `covered` |
 | `/sessions` | `src/ui/commands.ts#name: "sessions"` | `test/e2e/specs/runtime-behavior.e2e.ts#reopens, renames, and deletes persisted sessions without a model call` | `covered` |

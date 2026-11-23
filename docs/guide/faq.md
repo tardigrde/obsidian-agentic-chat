@@ -75,7 +75,7 @@ stopping, type and press Enter while it works. That steers the run.
 ### Where do I report a bug?
 
 [GitHub issues](https://github.com/tardigrde/obsidian-agentic-chat/issues).
-Include the output of `/status` and `/doctor`.
+Include the output of `/doctor`.
 
 ## Glossary
 

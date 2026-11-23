@@ -36,4 +36,4 @@ If something fails, find the symptom below. Run `/doctor` first for configuratio
 | --- | --- |
 | Edited skill files are not picked up | Restart Obsidian to rebuild the vault index. Dot-folders created outside Obsidian can be stale. Built-in skills come from the plugin itself; a vault skill with the same name overrides one (`/doctor` notes it). |
 
-Also see the [FAQ](./faq.md). If these steps do not help, run `/status` (provider, model, mode, session, MCP) and include its output in the report.
+Also see the [FAQ](./faq.md). If these steps do not help, run `/doctor` (problems, provider, model, mode, thinking level, session, MCP) and include its output in the report.

@@ -22,7 +22,7 @@ import type { AgentRole } from "./subagents";
 import { findAgentRole } from "./subagents";
 import { UNDOABLE_TOOLS, captureUndo } from "./undo";
 import { normalizeVaultPath } from "../vault/path";
-import { privatePathMessage } from "../vault/private-rules";
+import { privatePathMessage, type PrivateMatcher } from "../vault/private-rules";
 
 /** Tools whose `path` / `newPath` arguments name a vault entry. */
 const VAULT_PATH_TOOLS: ReadonlySet<string> = new Set([
@@ -96,7 +96,7 @@ interface ToolCallControllerOptions {
   /** Same per-service registry the subagent runtime writes to. */
   subagentRegistry: SubagentRegistry;
   /** Private-content rules (U4 #11): checked before any approval card. */
-  isPathIgnored?: (path: string) => boolean;
+  isPathIgnored?: PrivateMatcher;
 }
 
 /**
@@ -115,7 +115,7 @@ export class AgentToolCallController {
   private readonly recordCheckpoint?: (input: CheckpointAuditInput) => Promise<void> | void;
   private readonly recordFileCheckpoint?: (checkpoint: FileCheckpoint) => Promise<void> | void;
   private readonly subagentRegistry: SubagentRegistry;
-  private readonly isPathIgnored?: (path: string) => boolean;
+  private readonly isPathIgnored?: PrivateMatcher;
 
   /** Reversible records of mutating tool calls, newest last (for undo-last-change). */
   private undoStack: FileCheckpoint[] = [];
@@ -190,7 +190,7 @@ export class AgentToolCallController {
     // checkpoint: the user is never asked to approve a call that must fail (U4 #11).
     const privatePath = this.privateTarget(context.toolCall.name, context.args);
     if (privatePath) {
-      const reason = privatePathMessage(privatePath);
+      const reason = privatePathMessage(privatePath, this.isPathIgnored);
       await this.auditApproval({ decision: "denied", toolCallId: context.toolCall.id, toolName: context.toolCall.name, args: context.args, reason });
       return { block: true, reason };
     }
