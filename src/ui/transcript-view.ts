@@ -23,7 +23,9 @@ import {
 import { acHook } from "./test-hooks";
 import { addUsage, emptyUsage } from "../agent/usage";
 import { subagentDetailsUsage } from "../agent/session-usage";
-import { formatTurnMeta } from "./format";
+import { formatTurnMeta, truncateText } from "./format";
+import { parseSubagentReport, reportChildDetails } from "../agent/subagent-reports";
+import { unwrapToolOutput } from "../tools/tool-output-wrapper";
 import { openSystemUrl } from "../platform/system-browser";
 import { isPinnedToBottom } from "./scroll-pinning";
 import { isSummaryMessage } from "../agent/compaction";
@@ -41,6 +43,7 @@ export interface TranscriptViewHost {
   beginEdit(index: number, text: string, el: HTMLElement): void;
   retryLast(): void;
   abortSubagentChild(id: string): void;
+  openSubagentReport?(artifactId: string, title: string): void;
   /** Whether the tab that owns this transcript has a turn in flight. */
   isStreaming?(): boolean;
 }
@@ -56,6 +59,8 @@ export class TranscriptView {
   // between two texts (U4 #1). A turn reads `[steps] text [steps] text`.
   private activity: ActivityLine | null = null;
   private turnSegments: ActivityLine[] = [];
+  /** Every segment on screen: a background child's row may sit in an earlier turn (U5 #1). */
+  private readonly allSegments = new Set<ActivityLine>();
   // Bubbles created in the open segment: once one has text, the next step opens a new segment.
   private segmentBubbles: AssistantBubble[] = [];
   private turnLive = false;
@@ -112,8 +117,10 @@ export class TranscriptView {
       onOpenNote: (path) => openVaultPath(this.host.app, path),
       isFolder: (path) => isVaultFolder(this.host.app, path),
       onStopSubagentChild: (id) => this.host.abortSubagentChild(id),
+      onOpenSubagentReport: (artifactId, title) => this.host.openSubagentReport?.(artifactId, title),
       onChange: () => this.scrollToBottom(),
     });
+    this.allSegments.add(segment);
     this.activity = segment;
     this.turnSegments.push(segment);
     this.segmentBubbles = [];
@@ -195,8 +202,32 @@ export class TranscriptView {
     this.bubble.beginThinking();
   }
 
+  /** A background child changed: update its row, wherever its turn is (U5 #1). */
+  updateSubagent(toolCallId: string, details: unknown): void {
+    for (const segment of this.allSegments) if (segment.updateSubagent(toolCallId, details)) return;
+  }
+
+  /**
+   * A child's report reached the parent: a small event line, not the user's
+   * bubble. `settleRow` also gives the row its final state (history replay;
+   * live, the row already settled through `updateSubagent`).
+   */
+  private renderSubagentReport(text: string, settleRow: boolean): boolean {
+    const report = parseSubagentReport(text);
+    if (!report) return false;
+    const body = unwrapToolOutput(report.body);
+    if (settleRow) this.updateSubagent(report.toolCallId, reportChildDetails(report, body));
+    const el = acHook(this.messagesEl.createEl("details", { cls: ["agentic-chat-subagent-event", `is-${report.status}`] }), "subagent-event");
+    const label = report.status === "done" ? "reported back" : report.status === "aborted" ? "was stopped" : "failed";
+    el.createEl("summary", { text: `Subagent ${report.agent} (${report.childId}) ${label}` });
+    el.createEl("pre", { text: truncateText(body, 4_000) });
+    this.scrollToBottom();
+    return true;
+  }
+
   /** message_end for a user message: skip the one this view already rendered. */
   endUserMessage(message: AgentMessage): void {
+    if (this.renderSubagentReport(messageText(message), false)) return;
     if (this.locallyRenderedUserMessages > 0) this.locallyRenderedUserMessages -= 1;
     else
       this.renderUserMessage(stripContextPreamble(messageText(message)), [], undefined, {
@@ -217,7 +248,8 @@ export class TranscriptView {
   }
 
   dispose(): void {
-    for (const segment of this.turnSegments) segment.dispose();
+    for (const segment of this.allSegments) segment.dispose();
+    this.allSegments.clear();
     this.activity?.dispose();
     this.activity = null;
     this.turnSegments = [];
@@ -243,7 +275,8 @@ export class TranscriptView {
 
   renderTranscript(messages: AgentMessage[]): void {
     this.destroyMountedBubbles();
-    for (const segment of this.turnSegments) segment.dispose();
+    for (const segment of this.allSegments) segment.dispose();
+    this.allSegments.clear();
     this.activity?.dispose();
     this.activity = null;
     this.turnSegments = [];
@@ -261,6 +294,9 @@ export class TranscriptView {
         // A compaction summary isn't a user turn: show it as a distinct,
         // non-editable block instead of an editable user bubble.
         this.renderSummaryMessage(messageText(message));
+        rendered += 1;
+      } else if (message.role === "user" && this.renderSubagentReport(messageText(message), true)) {
+        this.finishTurn();
         rendered += 1;
       } else if (message.role === "user") {
         this.finishTurn();

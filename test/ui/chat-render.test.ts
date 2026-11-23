@@ -212,142 +212,79 @@ function dispatch(opts: { id: string; children: Child[]; isError: boolean; conte
   ui.emit({ type: "agent_end" });
 }
 
-const blockSummary = () => text(last('[data-ac="subagents"] .agentic-chat-subagent-block-summary'));
+/** U5 #1: a background child changed after its dispatch call returned. */
+const childUpdate = (id: string, child: Child): void =>
+  (ui.view as unknown as { transcript: { updateSubagent: (id: string, details: unknown) => void } }).transcript.updateSubagent(id, {
+    kind: "subagent",
+    children: [child],
+  });
 
-describe("subagent section (U4 #5)", () => {
-  it("summarizes the children in its head; Stop only on a running row; cost once settled", async () => {
-    startAssistantTurn();
-    ui.emit(toolStart("t-sub", "subagent", { agent: "explorer", task: "map the vault" }));
+const running: Child = { agent: "explorer", task: "map the vault", status: "running", childId: "sa-1", stopId: "sa-1", transcript: [] };
+
+describe("subagent row (U5 #2, #3): one row per child in the activity block", () => {
+  it("has no separate Subagents section; the row keeps its spinner and Stop after the parent turn ends", () => {
+    dispatch({ id: "t-bg", contentText: 'Started subagent "explorer" as sa-1.', isError: false, children: [running] });
+    expect(ui.$$(".agentic-chat-subagent-block")).toHaveLength(0);
+    const row = last('[data-ac="step"]');
+    expect(cls(row)).toContain("is-subagent");
+    expect(cls(row)).toContain("is-child-running");
+    expect(row?.querySelector(".agentic-chat-status-icon .agentic-chat-spinner")).not.toBeNull();
+    expect(lastAll('[data-ac="subagent-stop"]')).toHaveLength(1);
+    // The parent turn is over: its block head is settled, only the child's row runs.
+    expect(last('[data-ac="activity"]')?.getAttribute("data-ac-state")).toBe("done");
+    // The dispatch's "Started ..." text is not shown as a result section.
+    expect(text(row)).not.toContain("Started subagent");
+  });
+
+  it("settles the row from a live update after the turn: icon, label, time, cost, report, no Stop", () => {
+    dispatch({ id: "t-live", contentText: "started", isError: false, children: [running] });
+    childUpdate("t-live", {
+      ...running,
+      status: "done",
+      summary: "found 3 notes",
+      durationMs: 125_000,
+      usage: { input: 4_000, output: 800, totalTokens: 4_800, costUsd: 0.012 },
+    });
+    const row = last('[data-ac="step"]');
+    expect(cls(row)).not.toContain("is-child-running");
+    expect(row?.querySelector(".agentic-chat-status-icon svg")?.getAttribute("class")).toContain("check-circle-2");
+    expect(text(row?.querySelector(".agentic-chat-subagent-status"))).toBe("done");
+    expect(text(row?.querySelector(".agentic-chat-step-time"))).toBe("2m 5s · $0.01");
+    expect(lastAll('[data-ac="subagent-stop"]')).toHaveLength(0);
+    expect(text(last('[data-ac="subagent-report"]'))).toContain("found 3 notes");
+  });
+
+  it("labels a stopped child as stopped, with a red icon, never a green check", () => {
+    dispatch({ id: "t-stop", contentText: "started", isError: false, children: [running] });
+    childUpdate("t-stop", { ...running, status: "aborted", summary: "Stopped by user", durationMs: 5000 });
+    const row = last('[data-ac="step"]');
+    expect(text(row?.querySelector(".agentic-chat-subagent-status"))).toBe("stopped");
+    expect(row?.querySelector(".agentic-chat-status-icon svg")?.getAttribute("class")).toContain("alert-circle");
+  });
+
+  it("U5 #13: a long report has an Open full report button", () => {
+    dispatch({ id: "t-long", contentText: "started", isError: false, children: [running] });
+    childUpdate("t-long", { ...running, status: "done", summary: "head of the report…", artifactId: "art-7" });
+    expect(lastAll('[data-ac="subagent-open-report"]')).toHaveLength(1);
+  });
+
+  it("renders a report message as an event, not as the user's bubble", () => {
+    const users = ui.$$(".agentic-chat-user").length;
     ui.emit({
-      type: "tool_execution_update",
-      toolCallId: "t-sub",
-      partialResult: {
-        details: {
-          kind: "subagent",
-          children: [
-            { agent: "explorer", task: "task 1", status: "running", stopId: "s0", transcript: [], summary: "" },
-            { agent: "explorer", task: "task 2", status: "done", transcript: [], summary: "summary" },
-          ],
-        },
+      type: "message_end",
+      message: {
+        role: "user",
+        content: [
+          {
+            type: "text",
+            text: '<subagent_report id="sa-1" agent="explorer" status="done" call="t-x">\n[BEGIN_UNTRUSTED_TOOL_OUTPUT tool="subagent"]\nfound 3 notes\n[END_UNTRUSTED_TOOL_OUTPUT]\n</subagent_report>',
+          },
+        ],
       },
     });
-    expect(blockSummary()).toBe("Subagents · 1 running · 1 done");
-    expect(lastAll(".agentic-chat-subagent .agentic-chat-subagent-stop")).toHaveLength(1);
-
-    ui.emit({
-      type: "tool_execution_update",
-      toolCallId: "t-sub",
-      partialResult: {
-        details: {
-          kind: "subagent",
-          children: [
-            { agent: "explorer", task: "task 1", status: "done", transcript: [], summary: "summary", durationMs: 125_000, usage: { input: 4_000, output: 800, totalTokens: 4_800, costUsd: 0.012 } },
-            { agent: "explorer", task: "task 2", status: "done", transcript: [], summary: "summary", durationMs: 90_000, usage: { input: 2_000, output: 500, totalTokens: 2_500, costUsd: 0.006 } },
-          ],
-        },
-      },
-    });
-    expect(blockSummary()).toBe("Subagents · 2 done");
-    expect(lastAll(".agentic-chat-subagent .agentic-chat-subagent-stop")).toHaveLength(0);
-    expect(lastAll(".agentic-chat-subagent-time").map(text)).toEqual(["2m 5s", "1m 30s"]);
-    expect(lastAll(".agentic-chat-subagent-meta").map(text)).toEqual(["$0.01", "$0.0060"]);
-  });
-
-  it("a progress tick keeps the section and the row as the user left them", async () => {
-    startAssistantTurn();
-    ui.emit(toolStart("t-tick", "subagent", { agent: "explorer", task: "map" }));
-    const tick = (summary: string) =>
-      ui.emit({
-        type: "tool_execution_update",
-        toolCallId: "t-tick",
-        partialResult: {
-          details: { kind: "subagent", children: [{ agent: "explorer", task: "task 1", status: "running", stopId: "s0", transcript: [], summary }] },
-        },
-      });
-    tick("");
-    const block = last('[data-ac="subagents"]');
-    const child = last(".agentic-chat-subagent") as HTMLDetailsElement;
-    // Collapsed by default, also while running.
-    expect(block?.classList.contains("is-open")).toBe(false);
-    expect(child.open).toBe(false);
-    (last('[data-ac="subagents-head"]') as HTMLElement).click();
-    child.open = true;
-    tick("still going");
-    expect(block?.classList.contains("is-open")).toBe(true);
-    expect((last(".agentic-chat-subagent") as HTMLDetailsElement).open).toBe(true);
-    child.open = false;
-    tick("more");
-    expect((last(".agentic-chat-subagent") as HTMLDetailsElement).open).toBe(false);
-  });
-
-  it("labels a stopped child as stopped, not failed, and never shows a green check", async () => {
-    startAssistantTurn();
-    const stopped = [{ agent: "explorer", task: "hang", status: "aborted", transcript: [], summary: "Stopped by user" }];
-    ui.emit(toolStart("t-stop", "subagent", { agent: "explorer", task: "hang" }));
-    ui.emit({ type: "tool_execution_update", toolCallId: "t-stop", partialResult: { details: { kind: "subagent", children: stopped } } });
-    expect(text(last(".agentic-chat-subagent-status"))).toBe("stopped");
-    expect(blockSummary()).toBe("Subagents · 1 stopped");
-    // A stopped dispatch settles as a normal result (isError false); the red icon
-    // comes from the persisted child statuses.
-    ui.emit({
-      type: "tool_execution_end",
-      toolCallId: "t-stop",
-      result: { content: [{ type: "text", text: 'Subagent "explorer" was stopped: Stopped by user' }], details: { kind: "subagent", children: stopped } },
-      isError: false,
-    });
-    expect(cls(last('[data-ac="step"] .agentic-chat-status-icon svg'))).toContain("alert-circle");
-    expect(cls(last(".agentic-chat-step"))).toContain("is-error");
-  });
-
-  it("rehydrates a done dispatch from tool_execution_end alone, collapsed with its report", () => {
-    dispatch({
-      id: "t-r1-done",
-      contentText: "summary text",
-      isError: false,
-      children: [{ agent: "explorer", task: "map the vault", status: "done", summary: "found 3 notes", durationMs: 42_000, usage: { input: 1000, output: 500, totalTokens: 1500, costUsd: 0.003 } }],
-    });
-    expect(cls(last(".agentic-chat-step"))).toContain("is-done");
-    expect(cls(last(".agentic-chat-step"))).not.toContain("is-running");
-    expect(text(last(".agentic-chat-subagent-log"))).toContain("found 3 notes");
-    expect(blockSummary()).toBe("Subagents · 1 done");
-    expect(lastAll(".agentic-chat-subagent-stop")).toHaveLength(0);
-    expect(last('[data-ac="subagents-head"]')?.getAttribute("aria-expanded")).toBe("false");
-  });
-
-  it("rehydrates an aborted dispatch as stopped (red) and an error dispatch as failed", () => {
-    dispatch({
-      id: "t-r1-abort",
-      contentText: 'Subagent "explorer" was stopped: Stopped by user',
-      isError: false,
-      children: [{ agent: "explorer", task: "hang", status: "aborted", summary: "Stopped by user", durationMs: 5000 }],
-    });
-    expect(cls(last('[data-ac="step"] .agentic-chat-status-icon svg'))).toContain("alert-circle");
-    expect(blockSummary()).toBe("Subagents · 1 stopped");
-    expect(text(last(".agentic-chat-subagent-status"))).toBe("stopped");
-
-    dispatch({
-      id: "t-r1-error",
-      contentText: 'Subagent "explorer" failed: disk full',
-      isError: true,
-      children: [{ agent: "explorer", task: "bad", status: "error", summary: "disk full", durationMs: 1000 }],
-    });
-    expect(cls(last(".agentic-chat-step"))).toContain("is-error");
-    expect(blockSummary()).toBe("Subagents · 1 failed");
-  });
-
-  it("opens a collapsed replayed section and keeps Stop hidden", () => {
-    dispatch({
-      id: "t-r1-toggle",
-      contentText: "toggle summary",
-      isError: false,
-      children: [{ agent: "explorer", task: "toggle me", status: "done", summary: "toggle summary", durationMs: 1000 }],
-    });
-    const toggle = last('[data-ac="subagents-head"]');
-    expect(toggle?.getAttribute("aria-expanded")).toBe("false");
-    toggle?.click();
-    expect(last('[data-ac="subagents-head"]')?.getAttribute("aria-expanded")).toBe("true");
-    expect(lastAll(".agentic-chat-subagent-stop")).toHaveLength(0);
-    expect(text(last(".agentic-chat-subagent-log"))).toContain("toggle summary");
+    expect(ui.$$(".agentic-chat-user")).toHaveLength(users);
+    expect(text(last('[data-ac="subagent-event"] summary'))).toBe("Subagent explorer (sa-1) reported back");
+    expect(text(last('[data-ac="subagent-event"] pre'))).toContain("found 3 notes");
   });
 });
 

@@ -9,7 +9,8 @@ import { wrapToolOutput } from "../tools/tool-output-wrapper";
  * the opening tag marks it, so the UI renders it as an event, not as the
  * user's words, and the steering drain never puts it back in the composer.
  */
-const OPENING = /^<subagent_report id="([^"]*)" agent="([^"]*)" status="([^"]*)" call="([^"]*)">\n/u;
+const OPENING = /^<subagent_report((?: [a-z]+="[^"]*")+)>\n/u;
+const ATTRIBUTE = / ([a-z]+)="([^"]*)"/gu;
 const CLOSING = "\n</subagent_report>";
 
 export interface ParsedSubagentReport {
@@ -19,13 +20,22 @@ export interface ParsedSubagentReport {
   toolCallId: string;
   /** The model-facing text, still wrapped as untrusted output. */
   body: string;
+  /** For the row after a reload: run time, cost, and the full-report artifact. */
+  durationMs?: number;
+  costUsd?: number;
+  artifactId?: string;
 }
 
 const attr = (value: string): string => value.replace(/["<>\n\r]/gu, " ").trim();
 
 export function formatSubagentReport(report: SubagentReport): string {
-  const status = report.details.children[0]?.status ?? "done";
-  const header = `<subagent_report id="${attr(report.childId)}" agent="${attr(report.agent)}" status="${attr(status)}" call="${attr(report.toolCallId)}">`;
+  const child = report.details.children[0];
+  const extra = [
+    child?.durationMs !== undefined ? ` ms="${Math.round(child.durationMs)}"` : "",
+    child?.usage ? ` cost="${child.usage.costUsd}"` : "",
+    child?.artifactId ? ` artifact="${attr(child.artifactId)}"` : "",
+  ].join("");
+  const header = `<subagent_report id="${attr(report.childId)}" agent="${attr(report.agent)}" status="${attr(child?.status ?? "done")}" call="${attr(report.toolCallId)}"${extra}>`;
   // The body is the child's output: data from notes and the web, never instructions.
   return `${header}\n${wrapToolOutput(report.text, "subagent")}${CLOSING}`;
 }
@@ -33,12 +43,23 @@ export function formatSubagentReport(report: SubagentReport): string {
 export function parseSubagentReport(text: string): ParsedSubagentReport | null {
   const match = OPENING.exec(text);
   if (!match || !text.endsWith(CLOSING)) return null;
+  const attrs = new Map([...match[1].matchAll(ATTRIBUTE)].map((entry) => [entry[1], entry[2]]));
+  const id = attrs.get("id");
+  const agent = attrs.get("agent");
+  const status = attrs.get("status");
+  const call = attrs.get("call");
+  if (id === undefined || agent === undefined || status === undefined || call === undefined) return null;
+  const ms = Number(attrs.get("ms"));
+  const cost = Number(attrs.get("cost"));
   return {
-    childId: match[1],
-    agent: match[2],
-    status: match[3] as SubagentChildStatus["status"],
-    toolCallId: match[4],
+    childId: id,
+    agent,
+    status: status as SubagentChildStatus["status"],
+    toolCallId: call,
     body: text.slice(match[0].length, text.length - CLOSING.length),
+    ...(attrs.has("ms") && Number.isFinite(ms) ? { durationMs: ms } : {}),
+    ...(attrs.has("cost") && Number.isFinite(cost) ? { costUsd: cost } : {}),
+    ...(attrs.get("artifact") ? { artifactId: attrs.get("artifact") } : {}),
   };
 }
 
@@ -119,4 +140,23 @@ export class SubagentReportDelivery {
       console.warn("Agentic Chat: could not start a turn for a subagent report.", error);
     });
   }
+}
+
+/** The row status a report settles (live or replayed): what `SubagentChildView` draws. */
+export function reportChildDetails(report: ParsedSubagentReport, summary: string): { kind: "subagent"; children: SubagentChildStatus[] } {
+  return {
+    kind: "subagent",
+    children: [
+      {
+        agent: report.agent,
+        task: "",
+        status: report.status,
+        childId: report.childId,
+        summary,
+        ...(report.durationMs !== undefined ? { durationMs: report.durationMs } : {}),
+        ...(report.costUsd !== undefined ? { usage: { input: 0, output: 0, totalTokens: 0, costUsd: report.costUsd } } : {}),
+        ...(report.artifactId ? { artifactId: report.artifactId } : {}),
+      },
+    ],
+  };
 }

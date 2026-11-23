@@ -12,6 +12,7 @@ export interface ChatLayoutCallbacks {
   beginEdit(index: number, text: string, el: HTMLElement): void;
   retryLast(): void;
   abortSubagentChild(id: string): void;
+  openSubagentReport(artifactId: string, title: string): void;
   chooseAutocomplete(item: AcItem): void;
   submit(source: ComposerSubmitSource): void;
   stopActiveTurn(): void;
@@ -133,6 +134,7 @@ export function buildLayout(deps: ChatLayoutDeps): ChatLayoutElements {
     beginEdit: (index, text, el) => callbacks.beginEdit(index, text, el),
     retryLast: () => callbacks.retryLast(),
     abortSubagentChild: (id) => callbacks.abortSubagentChild(id),
+    openSubagentReport: (artifactId, title) => callbacks.openSubagentReport(artifactId, title),
     isStreaming: () => callbacks.isStreaming(),
   });
   deps.registerDomEvent(messagesEl, "wheel", () => transcript.markUserScrollIntent());

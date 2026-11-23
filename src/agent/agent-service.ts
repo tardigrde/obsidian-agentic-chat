@@ -52,6 +52,7 @@ import { AgentCompactionRuntime, type SummarizeFn } from "./compaction-runtime";
 import { AgentConversationCompaction, type ManualCompactionResult } from "./conversation-compaction";
 import { AgentSteeringQueue } from "./steering-queue";
 import { SubagentReportDelivery } from "./subagent-reports";
+import type { SubagentDetails } from "../tools/subagent-tool";
 import { conversationMessages } from "./conversation-messages";
 import {
   AgentServiceListeners,
@@ -951,6 +952,17 @@ export class AgentService {
    * Steered text that never reached the model because the run ended or was
    * stopped first. Each text is returned once; the UI puts it back in the composer.
    */
+  /** The whole text of an artifact, e.g. a long subagent report (U5 #13). */
+  async readArtifactText(id: string): Promise<string> {
+    if (!this.artifactStore) throw new Error("No artifact store in this chat.");
+    return (await this.artifactStore.readArtifact(id)).text;
+  }
+
+  /** Live status of background children, for their rows (U5 #1). */
+  onSubagentUpdate(listener: (toolCallId: string, details: SubagentDetails) => void): () => void {
+    return this.listeners.onSubagentUpdate(listener);
+  }
+
   takeUndeliveredSteers(): string[] {
     return this.steering.takeUndelivered();
   }

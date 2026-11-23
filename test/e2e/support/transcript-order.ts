@@ -3,7 +3,7 @@ import { browser } from "@wdio/globals";
 /**
  * The transcript as a reader sees it, top to bottom (real Obsidian). Same
  * tokens as `test/ui/support/transcript-order.ts`:
- * `user:<text>`, `thought`, `step:<verb>`, `subagents`, `approval`,
+ * `user:<text>`, `thought`, `step:<verb>`, `report:<agent>`, `approval`,
  * `text:<first 24 chars>`, `ask`. Assert against the acceptance sentence, not
  * against DOM neighbours.
  */
@@ -19,7 +19,7 @@ export async function readTranscriptOrder(): Promise<string[]> {
       else if (hook === "thought") {
         if (!el.classList.contains("is-empty")) out.push("thought");
       } else if (hook === "step") out.push(`step:${short(el.querySelector(".agentic-chat-step-name")?.textContent)}`);
-      else if (hook === "subagents") out.push("subagents");
+      else if (hook === "subagent-event") out.push(`report:${short(el.querySelector("summary")?.textContent).split(" ")[1] ?? ""}`);
       else if (hook === "approval") out.push("approval");
       else if (hook === "ask-user") out.push("ask");
       else if (hook === "assistant-message") {

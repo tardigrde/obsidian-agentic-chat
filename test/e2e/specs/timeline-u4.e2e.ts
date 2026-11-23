@@ -164,51 +164,45 @@ describe("chat timeline U4-A", function () {
     await configureScriptedPlugin("allow");
   });
 
-  it("U4 #5: subagents get their own collapsed section with one row per child", async function () {
+  it("U5 #1-#3: a subagent runs in the background; the turn ends, the row keeps running, the report starts a turn", async function () {
     await installScriptedTurns([
-      turn("s1", [{ type: "toolCall", id: "u4-sub", name: "subagent", arguments: { agent: "explorer", task: "Critique the plan for gaps" } }]),
+      turn("s1", [{ type: "toolCall", id: "u5-sub", name: "subagent", arguments: { agent: "explorer", task: "Critique the plan for gaps" } }]),
       textTurn("s-child", "CHILD-REPORT the plan has two gaps.", { hold: true }),
+      textTurn("s-parent", "PARENT-FREE I started the explorer."),
       textTurn("s2", "SUB-END the explorer found two gaps."),
     ]);
     await submitComposer("delegate it");
-    await browser.waitUntil(async () => await browser.execute(() => !!document.querySelector('[data-ac="subagents"] [data-ac="subagent-row"]')), {
-      timeout: 5_000,
-      timeoutMsg: "the subagent section never rendered",
-    });
+    await waitForTranscript("PARENT-FREE I started the explorer.");
+    await waitForIdle();
+    // The parent turn is over while the child still runs: one row, in the activity block, with Stop.
     const running = await browser.execute(() => {
-      const block = Array.from(document.querySelectorAll('[data-ac="subagents"]')).at(-1);
+      const row = Array.from(document.querySelectorAll('[data-ac="step"].is-subagent')).at(-1);
       return {
-        summary: block?.querySelector(".agentic-chat-subagent-block-summary")?.textContent,
-        open: block?.classList.contains("is-open"),
-        rows: block?.querySelectorAll('[data-ac="subagent-row"]').length,
-        stop: !!block?.querySelector(".agentic-chat-subagent-stop"),
-        inActivity: !!block?.closest('[data-ac="activity"]'),
+        section: !!document.querySelector(".agentic-chat-subagent-block"),
+        inActivity: !!row?.closest('[data-ac="activity"]'),
+        running: row?.classList.contains("is-child-running") ?? false,
+        stop: !!row?.querySelector('[data-ac="subagent-stop"]'),
       };
     });
-    expect(running).toEqual({ summary: "Subagents · 1 running", open: false, rows: 1, stop: true, inActivity: false });
-    expect(await readLastTurnOrder()).toEqual(["step:Subagent", "subagents"]);
+    expect(running).toEqual({ section: false, inActivity: true, running: true, stop: true });
+    expect(await readLastTurnOrder()).toEqual(["step:Subagent", "text:PARENT-FREE I started th"]);
 
     await releaseScriptedTurns();
     await waitForTranscript("SUB-END the explorer found two gaps.");
     await waitForIdle();
-    await browser.execute(() => {
-      const block = Array.from(document.querySelectorAll('[data-ac="subagents"]')).at(-1);
-      block?.querySelector<HTMLElement>('[data-ac="subagents-head"]')?.click();
-      block?.querySelector<HTMLElement>('[data-ac="subagent-row"] summary')?.click();
-    });
     const done = await browser.execute(() => {
-      const block = Array.from(document.querySelectorAll('[data-ac="subagents"]')).at(-1);
-      const row = block?.querySelector<HTMLDetailsElement>('[data-ac="subagent-row"]');
+      const row = Array.from(document.querySelectorAll<HTMLElement>('[data-ac="step"].is-subagent')).at(-1);
+      row?.querySelector<HTMLElement>(".agentic-chat-step-head")?.click();
       return {
-        summary: block?.querySelector(".agentic-chat-subagent-block-summary")?.textContent,
-        open: row?.open,
-        report: (row as HTMLElement | undefined)?.innerText.includes("CHILD-REPORT") ?? false,
-        stop: !!block?.querySelector(".agentic-chat-subagent-stop"),
+        running: row?.classList.contains("is-child-running") ?? true,
+        status: row?.querySelector(".agentic-chat-subagent-status")?.textContent,
+        report: row?.innerText.includes("CHILD-REPORT") ?? false,
+        stop: !!row?.querySelector('[data-ac="subagent-stop"]'),
+        event: document.querySelector('[data-ac="subagent-event"] summary')?.textContent,
       };
     });
-    expect(done).toEqual({ summary: "Subagents · 1 done", open: true, report: true, stop: false });
-    await expectNoOverlapWithin('[data-ac="subagents"]', '[data-ac="subagent-row"]');
-    await browser.saveScreenshot(`${SHOTS}/u4a-subagents.png`);
+    expect(done).toEqual({ running: false, status: "done", report: true, stop: false, event: "Subagent explorer (sa-1) reported back" });
+    await browser.saveScreenshot(`${SHOTS}/u5-subagent-background.png`);
   });
 
   it("Stop/Queue: one round button (Stop on an empty draft, Queue with text); Escape stops", async function () {
