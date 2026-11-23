@@ -59,7 +59,9 @@ export function createSkillTool(app: App, skills: Skill[], isIgnored: PrivateMat
       const skill = requireSkill(skills, params.name);
       // The private rules cover skill files too (U5 deep check): a skill in a
       // private folder, or a private file inside a skill, stays unreadable.
-      if (isVaultSkillFile(skill.filePath) && isIgnored(skill.filePath)) {
+      // Every path is checked: the built-in marker never matches a user rule, and a
+      // prefix test would skip a real folder whose name starts with "(" (review of #429).
+      if (skill.filePath && isIgnored(skill.filePath)) {
         throw new Error(privatePathMessage(skill.filePath, isIgnored));
       }
       if (normalizeAction(params.action) === "read") return readSkillBody(skill);
@@ -72,10 +74,6 @@ export function createSkillTool(app: App, skills: Skill[], isIgnored: PrivateMat
   };
 }
 
-/** Built-in skills carry a pseudo path such as `(builtin)`; only vault files have rules. */
-function isVaultSkillFile(filePath: string | undefined): filePath is string {
-  return typeof filePath === "string" && filePath.length > 0 && !filePath.startsWith("(");
-}
 
 function normalizeAction(value: unknown): SkillAction {
   if (value === "read" || value === "read_file") return value;

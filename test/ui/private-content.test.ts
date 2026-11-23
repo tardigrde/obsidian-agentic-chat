@@ -51,7 +51,7 @@ describe("private content (U4 #11)", () => {
     await ui.send("what is in Journal?");
     await ui.idle();
     const results = toolResultTexts().join("\n");
-    expect(results).toContain("2 private items hidden (excluded in the Ignored paths setting).");
+    expect(results).toContain("2 private items hidden (Ignored paths setting or built-in protection).");
     expect(results).not.toContain("(empty folder)");
   });
 

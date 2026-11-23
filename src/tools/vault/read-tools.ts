@@ -236,7 +236,7 @@ function finishRead(
  * the model reports "confirmed empty".
  */
 function listingResult(rows: string[], hidden: number, path: string): ToolResult {
-  const note = hidden > 0 ? `${hidden} private ${hidden === 1 ? "item" : "items"} hidden (excluded in the Ignored paths setting).` : "";
+  const note = hidden > 0 ? `${hidden} private ${hidden === 1 ? "item" : "items"} hidden (Ignored paths setting or built-in protection).` : "";
   const body = rows.length === 0 ? (note ? note : "(empty folder)") : truncateToolOutput(note ? `${rows.join("\n")}\n${note}` : rows.join("\n"));
   return textResult(body, { path, count: rows.length, ...(hidden > 0 ? { hidden } : {}) });
 }

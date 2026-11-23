@@ -135,3 +135,11 @@ describe("skill tool: private rules (U5 deep check)", () => {
     await expect(tool.execute("call-2", { action: "read", name: "notes" })).rejects.toThrow(/is private/);
   });
 });
+
+describe("skill tool: a folder whose name starts with '(' (review of #429)", () => {
+  it("still applies the private rules to a skill under '(Private)/'", async () => {
+    const skill = { name: "notes", description: "Notes.", content: "# Notes", filePath: "(Private)/skills/notes/SKILL.md" };
+    const tool = createSkillTool(noApp, [skill], createPrivateMatcher("(Private)/"));
+    await expect(tool.execute("call-1", { action: "read", name: "notes" })).rejects.toThrow(/is private/);
+  });
+});

@@ -440,7 +440,7 @@ describe("local_graph", () => {
   it("reports an ignored note as private (U4 #11)", async () => {
     const app = makeApp(spec);
     await expect(run(getTool(app, "local_graph", ignore("Hub.md")), { path: "Hub.md" })).rejects.toThrow(
-      /is private \(excluded in the Ignored paths setting\)/,
+      /is private \(the Ignored paths setting or a built-in protected folder\)/,
     );
   });
 
@@ -483,7 +483,7 @@ describe("get_properties", () => {
   it("reports an ignored note as private (U4 #11)", async () => {
     const app = makeApp({ files: { "Note.md": { frontmatter: { a: 1 } } } });
     await expect(run(getTool(app, "get_properties", ignore("Note.md")), { path: "Note.md" })).rejects.toThrow(
-      /is private \(excluded in the Ignored paths setting\)/,
+      /is private \(the Ignored paths setting or a built-in protected folder\)/,
     );
   });
 
@@ -529,7 +529,7 @@ describe("set_properties", () => {
     const app = makeApp({ files: { "Note.md": { frontmatter: { a: 1 } } } });
     await expect(
       run(getTool(app, "set_properties", ignore("Note.md")), { path: "Note.md", properties: { a: 2 } }),
-    ).rejects.toThrow(/is private \(excluded in the Ignored paths setting\)/);
+    ).rejects.toThrow(/is private \(the Ignored paths setting or a built-in protected folder\)/);
     const after = await run(getTool(app, "get_properties"), { path: "Note.md" });
     expect(JSON.parse(unwrapToolOutput(after.text))).toEqual({ a: 1 });
   });

@@ -111,8 +111,11 @@ export type PrivateMatcher = IgnoreMatcher & { isProtected?: IgnoreMatcher };
  * message that blamed "settings" made the model tell the user so.
  */
 export function privatePathMessage(path: string, matcher?: PrivateMatcher): string {
-  const isProtected = matcher?.isProtected ?? createProtectedPathMatcher();
-  if (isProtected(path)) {
+  // A matcher without the marker (tests, a bare deny matcher) gives no cause: say both.
+  if (!matcher?.isProtected) {
+    return `Blocked: "${path}" is private (the Ignored paths setting or a built-in protected folder). Do not try to read or change it another way.`;
+  }
+  if (matcher.isProtected(path)) {
     return `Blocked: "${path}" is protected by the plugin (vault metadata such as the Obsidian config folder, .git and .trash is never readable; this is built in, not a user setting). Do not try to read or change it another way.`;
   }
   return `Blocked: "${path}" is private (excluded in the Ignored paths setting). Do not try to read or change it another way.`;
