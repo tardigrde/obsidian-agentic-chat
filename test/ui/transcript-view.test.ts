@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { App, Component } from "obsidian";
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
+import type { ApprovalCard } from "../../src/ui/approval-card";
 import { TranscriptView, type TranscriptViewHost } from "../../src/ui/transcript-view";
 
 class NoopResizeObserver {
@@ -70,6 +71,19 @@ describe("TranscriptView renderer agreement", () => {
     history.renderTranscript(messages);
 
     expect(snapshotLastAssistant(historyEl)).toBe(snapshotLastAssistant(liveEl));
+  });
+});
+
+describe("TranscriptView approval records", () => {
+  it("keeps the newest 200 settled approvals, not every one of a long session", () => {
+    const view = new TranscriptView(document.createElement("div"), host());
+    for (let index = 0; index < 250; index += 1) {
+      view.recordApproval({ outcome: "allowed", toolCallId: `call-${index}`, el: document.createElement("div") } as unknown as ApprovalCard);
+    }
+    const outcomes = (view as unknown as { approvalOutcomes: Map<string, string> }).approvalOutcomes;
+    expect(outcomes.size).toBe(200);
+    expect(outcomes.has("call-0")).toBe(false);
+    expect(outcomes.has("call-249")).toBe(true);
   });
 });
 

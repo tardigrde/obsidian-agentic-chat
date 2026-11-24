@@ -88,10 +88,19 @@ export function unwrapToolOutput(text: string): string {
   const lastMarker = text.lastIndexOf(`\n${TOOL_OUTPUT_END_MARKER}`);
   if (firstNewline === -1 || lastMarker === -1) return text;
   const inner = text.slice(firstNewline + 1, lastMarker);
-  // Reverse in opposite order: ORIG first, then regular
-  return inner
-    .replaceAll(`${TOOL_OUTPUT_BEGIN_ESCAPED}_ORIG_`, TOOL_OUTPUT_BEGIN_ESCAPED)
-    .replaceAll(`${TOOL_OUTPUT_END_ESCAPED}_ORIG_`, TOOL_OUTPUT_END_ESCAPED)
-    .replaceAll(TOOL_OUTPUT_BEGIN_ESCAPED, TOOL_OUTPUT_BEGIN_PREFIX)
-    .replaceAll(TOOL_OUTPUT_END_ESCAPED, TOOL_OUTPUT_END_MARKER);
+  // One pass: a literal restored from `_ORIG_` must not be unescaped a second time (review of #431).
+  return inner.replace(UNESCAPE_PATTERN, (match) => UNESCAPE_TO.get(match) ?? match);
 }
+
+const UNESCAPE_TO = new Map<string, string>([
+  [`${TOOL_OUTPUT_BEGIN_ESCAPED}_ORIG_`, TOOL_OUTPUT_BEGIN_ESCAPED],
+  [`${TOOL_OUTPUT_END_ESCAPED}_ORIG_`, TOOL_OUTPUT_END_ESCAPED],
+  [TOOL_OUTPUT_BEGIN_ESCAPED, TOOL_OUTPUT_BEGIN_PREFIX],
+  [TOOL_OUTPUT_END_ESCAPED, TOOL_OUTPUT_END_MARKER],
+]);
+
+// The `_ORIG_` forms come first: they share a prefix with the plain escaped forms.
+const UNESCAPE_PATTERN = new RegExp(
+  [...UNESCAPE_TO.keys()].map((key) => key.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&")).join("|"),
+  "gu",
+);

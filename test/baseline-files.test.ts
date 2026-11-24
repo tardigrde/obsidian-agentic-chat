@@ -43,7 +43,7 @@ function writeRun(records: RunRecord[], options: { gitHead?: string } = {}): str
       model: "deepseek/deepseek-v4.1-flash",
       runsPerCase: 2,
       budget: { maxUsd: 1, maxModelCalls: 100, maxTokens: 1_000_000 },
-      turn: { timeoutMs: 1_000, maxTurnsPerPrompt: 5 },
+      turn: { timeoutMs: 1_000 },
       cases: [CASE],
     }));
   const plan: ToolUsePlan = {
@@ -55,7 +55,7 @@ function writeRun(records: RunRecord[], options: { gitHead?: string } = {}): str
     thinkingLevel: "low",
     thinkingLevelSource: "suite",
     budget: { maxUsd: 1, maxModelCalls: 100, maxTokens: 1_000_000 },
-    turn: { timeoutMs: 1_000, maxTurnsPerPrompt: 5 },
+    turn: { timeoutMs: 1_000 },
     prices: PRICES,
     ...(options.gitHead ? { gitHead: options.gitHead } : {}),
     cases: [CASE],

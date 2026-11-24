@@ -44,6 +44,8 @@ export function formatSubagentReport(report: SubagentReport): string {
       : "",
     child?.artifactId ? ` artifact="${attr(child.artifactId)}"` : "",
     child?.timelineArtifactId ? ` timeline="artifact:${attr(child.timelineArtifactId)}"` : "",
+    // A number cannot carry text: the parser takes the trailer only when its count matches.
+    child?.sources?.length ? ` nsrc="${child.sources.length}"` : "",
   ].join("");
   const header = `<subagent_report id="${attr(report.childId)}" agent="${attr(report.agent)}" status="${attr(child?.status ?? "done")}" call="${attr(report.toolCallId)}"${extra}>`;
   // The body is the child's output: data from notes and the web, never instructions.
@@ -53,14 +55,20 @@ export function formatSubagentReport(report: SubagentReport): string {
   return `${header}\n${wrapToolOutput(`${report.text}${sources}`, "subagent")}${CLOSING}`;
 }
 
-/** Split the vault files the child read off the end of the unwrapped payload; the body stays wrapped. */
-function splitSources(wrappedBody: string): { body: string; sources?: string[] } {
+/**
+ * Split the vault files the child read off the end of the unwrapped payload; the body stays wrapped.
+ * `expected` is the header's `nsrc`: with none, a trailer in the child's own text is plain text.
+ */
+function splitSources(wrappedBody: string, expected: number): { body: string; sources?: string[] } {
+  if (expected <= 0) return { body: wrappedBody };
   const inner = unwrapToolOutput(wrappedBody);
   const at = inner.lastIndexOf(SOURCES_PREFIX);
   if (at === -1 || inner.includes("\n", at + SOURCES_PREFIX.length)) return { body: wrappedBody };
   try {
     const parsed: unknown = JSON.parse(inner.slice(at + SOURCES_PREFIX.length));
-    if (!Array.isArray(parsed) || !parsed.every((path) => typeof path === "string")) return { body: wrappedBody };
+    if (!Array.isArray(parsed) || parsed.length !== expected || !parsed.every((path) => typeof path === "string")) {
+      return { body: wrappedBody };
+    }
     return { body: wrapToolOutput(inner.slice(0, at), "subagent"), sources: parsed.filter(Boolean) };
   } catch {
     return { body: wrappedBody };
@@ -82,7 +90,7 @@ export function parseSubagentReport(text: string): ParsedSubagentReport | null {
     const value = Number(attrs.get(name));
     return Number.isFinite(value) ? value : 0;
   };
-  const { body, sources } = splitSources(text.slice(match[0].length, text.length - CLOSING.length));
+  const { body, sources } = splitSources(text.slice(match[0].length, text.length - CLOSING.length), count("nsrc"));
   return {
     childId: id,
     agent,
@@ -159,7 +167,8 @@ export class SubagentReportDelivery {
     if (this.options.isDisposed()) return;
     const message = subagentReportMessage(report);
     const agent = this.options.getAgent();
-    if (agent?.state.isStreaming) {
+    // After a Stop the aborted turn can still read as streaming: keep the report for the next user message.
+    if (agent?.state.isStreaming && !this.paused) {
       agent.steer(message);
       return;
     }

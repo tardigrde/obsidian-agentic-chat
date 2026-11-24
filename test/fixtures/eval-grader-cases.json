@@ -11,8 +11,7 @@
     "maxTokens": 3000000
   },
   "turn": {
-    "timeoutMs": 180000,
-    "maxTurnsPerPrompt": 15
+    "timeoutMs": 180000
   },
   "cases": [
     {

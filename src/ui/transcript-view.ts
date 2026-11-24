@@ -35,6 +35,9 @@ import { isVaultFolder, openVaultPath } from "./vault-open";
 /** Cap inline image thumbnails per user bubble so a turn can't flood the pane. */
 const MAX_USER_IMAGE_THUMBS = 8;
 
+/** Settled approvals kept for a re-render: a long session does not grow this map without end. */
+const MAX_APPROVAL_OUTCOMES = 200;
+
 /** What the transcript needs from the chat view that owns it. */
 export interface TranscriptViewHost {
   readonly app: App;
@@ -179,7 +182,13 @@ export class TranscriptView {
     const outcome = card.outcome;
     const id = card.toolCallId;
     const segment = id ? this.turnSegments.find((candidate) => candidate.hasStep(id)) : undefined;
-    if (outcome && id) this.approvalOutcomes.set(id, outcome);
+    if (outcome && id) {
+      this.approvalOutcomes.set(id, outcome);
+      if (this.approvalOutcomes.size > MAX_APPROVAL_OUTCOMES) {
+        const oldest = this.approvalOutcomes.keys().next().value;
+        if (oldest !== undefined) this.approvalOutcomes.delete(oldest);
+      }
+    }
     if (outcome && id && segment) {
       card.el.remove();
       segment.recordApproval(id, outcome);

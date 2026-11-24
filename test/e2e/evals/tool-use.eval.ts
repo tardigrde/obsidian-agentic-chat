@@ -362,7 +362,6 @@ async function configurePlugin(): Promise<Record<string, unknown>> {
     pluginId: PLUGIN_ID,
     apiKey,
     model: plan.model,
-    maxTurnsPerPrompt: plan.turn.maxTurnsPerPrompt,
     mcpServers: plan.mcpFixtureUrl ? [fixtureMcpServer(plan.mcpFixtureUrl)] : [],
     overridableKeys: topLevelSettingKeys(plan.cases),
   });

@@ -24,7 +24,7 @@ behavior.
 | # | Principle | Current behavior | Status | Rationale / evidence |
 |---|-----------|-----------------|--------|----------------------|
 | 1 | Loop is delegated to a vetted runtime, not re-implemented | `agent-service.ts` wraps `@earendil-works/pi-agent-core` `Agent` for the full ReAct loop (`agent.prompt`, `agent.steer`, `agent.abort`, `agent.waitForIdle`) | compliant | Avoids re-implementing the loop; pi-agent handles streaming, tool dispatch, message queueing |
-| 2 | `max_turns` cap to prevent runaway loops | pi-agent's built-in turn/iteration cap; `enforceSpendCap` aborts in-flight runs past `costCapUsd` (`agent-service.ts:705-715`) | compliant | Cost cap is our proxy for turn cap; long-running model calls would burn spend before turns |
+| 2 | `max_turns` cap to prevent runaway loops | No turn cap (owner decision, U4): Stop, the loop guard and `enforceSpendCap` (aborts in-flight runs past `costCapUsd`, off by default) end a run | gap (owner decision) | With defaults only Stop and the loop guard end a run; the release notes say so |
 | 3 | Parallel tool calls in a single assistant turn | pi-agent dispatches parallel `tool_calls`; harness processes each through `AgentToolCallController` | compliant | No special-casing needed in our code; model emits parallel calls, runtime executes |
 | 4 | Detect repeated-identical tool calls and escalate | Not implemented | partial | Failures are surfaced as tool results; identical-call loops rely on the model to self-correct. No `detect_loop` helper. Acceptable for short vault tasks; revisit if long-running agent mode lands |
 | 5 | Stream model output token-by-token | `AgentStreamRuntime` uses `streamSimple`; UI renders incrementally | compliant | `stream-runtime.ts` |
@@ -93,7 +93,7 @@ behavior.
 | 32 | Leader delegates to workers with isolated context | `AgentSubagentRuntime.createChildAgent` builds a fresh `Agent` per child (`subagent-runtime.ts:69-80`); child tool set is pre-filtered by parent mode | compliant | Each child has its own message list; parent does not see partial child state mid-run |
 | 33 | Children get only the tools the parent allows | `resolveModePolicy` + `MUTATING_TOOLS` denial (`subagent-runtime.ts:75-80`); child passes back through parent `AgentToolCallController` | compliant | Hard pre-filter; bypass requires a parent-side bug |
 | 34 | Concurrency cap to prevent flooding | `defaultConcurrency: 3` (`subagent-runtime.ts:66`) | compliant | Bound matches guide's "limit depth" advice |
-| 35 | Per-subagent timeout | `settings.subagentTimeoutSeconds` enforced via `AbortController` + `setTimeout(healSubagentTimeout)` in `src/tools/subagent-tool.ts:271`, surfaced as `Timed out after Ns` / `aborted` not `error`; `0` disables, max `86400` `src/settings-schema.ts:271` | compliant | H4 closed: wall-clock timeout ships; spend cap remains as cost backstop |
+| 35 | Per-subagent timeout | Retired (U4, U5): no timeout setting; each background child has its own Stop (row button and the `stop` action of the `subagent` tool), and the spend cap applies | gap (owner decision) | A hung child runs until Stop or the spend cap |
 | 36 | Sub-agents can't share mutable state | Child operates on a `ReadMemo` snapshot; parent invalidates on `vault modify` (`agent-service.ts:250-252`) | compliant | Vault is the only shared substrate, and it's user-controlled |
 | 37 | Depth limit (no nested sub-agents) | `createSubagentTool` does not expose subagent recursion; profiles can't name a profile that delegates | compliant | No `subagent`-inside-`subagent` |
 
