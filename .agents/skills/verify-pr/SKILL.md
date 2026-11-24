@@ -93,6 +93,11 @@ New global state: none | <file:line + isolation test>
 Notes: none | <max 5 bullets>
 ```
 
+Keep it short: the block above is the whole comment, about 10 lines, and a
+`PASS` with no notes is about 6. Write no extra headings, no pasted logs, and no
+prose that repeats a line of the block. A note is one line: the risk and the
+`file:line`. Put long evidence in `logs/` and cite the path.
+
 Post it as one PR comment after `ci` and `e2e` are green. It is advisory: the
 owner reads it before "merge". `Behavior change: none` lets the delegate script
 set the `no-behavior-change` label; write it only for a pure refactor you
