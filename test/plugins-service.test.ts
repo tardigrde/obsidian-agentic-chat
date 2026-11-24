@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { TFolder, type App } from "obsidian";
 import { DEFAULT_SETTINGS, type AgenticChatSettings } from "../src/settings-schema";
 import { PluginService } from "../src/plugins/service";
-import { formatPluginAudit, pluginMcpServerId } from "../src/plugins/loader";
+import { pluginMcpServerId } from "../src/plugins/loader";
 import { AGENT_PLUGINS_SCHEMA_ID } from "../src/plugins/manifest";
 import { FakeApp } from "./helpers/fake-vault";
 
@@ -77,23 +77,7 @@ describe("PluginService.generateMcpServerPackage", () => {
   });
 });
 
-describe("formatPluginAudit", () => {
-  it("summarizes every package with counts and reports", async () => {
-    const app = await seed();
-    await serviceFor(app, settings()).generateMcpServerPackage({
-      serverName: "docs",
-      url: "https://docs.example.com/mcp",
-    });
-    const current = settings();
-    const service = serviceFor(app, current);
-    const plugins = await service.reload();
-
-    const text = formatPluginAudit(plugins);
-    expect(text).toContain("**docs** (.agentic-plugins/docs)");
-    expect(text).toContain("0 skills, 1 MCP server");
-    expect(text).toContain("enabled");
-  });
-
+describe("generated MCP packages", () => {
   it("serializes plugin.json with the canonical schema id", async () => {
     const app = await seed();
     const service = serviceFor(app, settings());

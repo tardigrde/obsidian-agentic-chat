@@ -151,38 +151,6 @@ export function summarizeAgentEvent(event: AgentEvent): string {
   }
 }
 
-export function formatRuntimeDiagnosticsRows(diagnostics: AgentRuntimeDiagnostics): Array<[string, string]> {
-  const rows: Array<[string, string]> = [
-    ["Session path", diagnostics.session.path ?? "(none)"],
-    ["Session", formatSession(diagnostics)],
-    ["Provider", diagnostics.provider],
-    ["Model", diagnostics.modelOverride ? `${diagnostics.model} (next message only)` : diagnostics.model],
-    ["Thinking", diagnostics.thinkingLevel],
-    ["Mode", diagnostics.mode],
-    ["Tools", formatList(diagnostics.tools)],
-    ["Approval", formatApproval(diagnostics)],
-    ["Pending undo", diagnostics.state.canUndo ? "yes" : "no"],
-    ["Resources", formatResources(diagnostics)],
-    ["MCP", formatMcpDiagnosticSummary(diagnostics.resources.mcpServers)],
-    ["Observability", formatObservability(diagnostics)],
-    ...formatMcpDiagnosticRows(diagnostics.resources.mcpServers),
-    ["Streaming", diagnostics.state.isStreaming ? "yes" : "no"],
-    ["Context", diagnostics.state.contextPercent === null ? "unknown" : `${diagnostics.state.contextPercent}%`],
-    ["Usage", `${diagnostics.state.totalTokens} tokens, ${diagnostics.state.compactionCount} compactions`],
-    ["Last error", diagnostics.state.lastError ?? "(none)"],
-  ];
-  if (diagnostics.recentEvents.length === 0) {
-    rows.push(["Recent events", "(none)"]);
-  } else {
-    const start = Math.max(0, diagnostics.recentEvents.length - 8);
-    rows.push(["Recent events", `${diagnostics.recentEvents.length} kept, showing latest ${diagnostics.recentEvents.length - start}`]);
-    diagnostics.recentEvents.slice(start).forEach((event, index) => {
-      rows.push([`Event ${start + index + 1}`, event]);
-    });
-  }
-  return rows;
-}
-
 export function formatMcpDiagnosticRows(servers: readonly McpServerDiagnostic[]): Array<[string, string]> {
   const rows: Array<[string, string]> = [];
   for (const server of servers) {
@@ -196,41 +164,6 @@ export function formatMcpDiagnosticRows(servers: readonly McpServerDiagnostic[])
     );
   }
   return rows;
-}
-
-function formatObservability(diagnostics: AgentRuntimeDiagnostics): string {
-  const obs = diagnostics.observability;
-  if (!obs.enabled) return "off";
-  const configured = obs.endpointConfigured ? "endpoint configured" : "endpoint missing";
-  const health = obs.exportHealth;
-  const exportState =
-    health.attemptedExports === 0
-      ? `no exports yet, dropped ${health.droppedTraces}`
-      : `ok ${health.successfulExports}, failed ${health.failedExports}, dropped ${health.droppedTraces}, last status ${health.lastStatus ?? "n/a"}`;
-  const lastError = health.lastError ? `, last error ${health.lastError}` : "";
-  return `${obs.backend}, ${configured}, ${obs.payloadMode}, sample ${obs.sampleRate}%, ${exportState}${lastError}`;
-}
-
-function formatSession(diagnostics: AgentRuntimeDiagnostics): string {
-  const { id, name, messageCount } = diagnostics.session;
-  if (!id) return "(none)";
-  return `${name ?? id} (${messageCount} messages)`;
-}
-
-function formatApproval(diagnostics: AgentRuntimeDiagnostics): string {
-  return (
-    `mutating=${diagnostics.approval.mutating}, ` +
-    `per-tool overrides=${diagnostics.approval.perToolOverrides}`
-  );
-}
-
-function formatResources(diagnostics: AgentRuntimeDiagnostics): string {
-  return (
-    `skills=${diagnostics.resources.skillCount}, ` +
-    `subagents=${diagnostics.resources.profileCount}, ` +
-    `instructions=${diagnostics.resources.hasInstructionsOverlay ? "yes" : "no"}, ` +
-    `reloaded=${diagnostics.resources.lastReloadAt ?? "never"}`
-  );
 }
 
 export function formatMcpDiagnosticSummary(servers: readonly McpServerDiagnostic[]): string {

@@ -3,7 +3,6 @@ import type { AgentEvent } from "@earendil-works/pi-agent-core";
 import {
   formatMcpDiagnosticRows,
   formatMcpDiagnosticSummary,
-  formatRuntimeDiagnosticsRows,
   summarizeAgentEvent,
 } from "../src/agent/diagnostics";
 import { replayTextTurn, replayToolCallTurn } from "../src/agent/replay-stream";
@@ -74,10 +73,6 @@ describe("runtime diagnostics", () => {
     );
     expect(diagnostics.recentEvents.join("\n")).not.toContain("secret-token");
 
-    const rows = formatRuntimeDiagnosticsRows(diagnostics);
-    expect(rows).toContainEqual(["Pending undo", "no"]);
-    expect(rows.some(([label]) => label === "Tool budget")).toBe(false);
-    expect(rows.some(([label]) => label === "Recent events")).toBe(true);
   });
 
 

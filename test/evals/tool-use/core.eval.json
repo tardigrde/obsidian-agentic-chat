@@ -11,8 +11,7 @@
     "maxTokens": 15000000
   },
   "turn": {
-    "timeoutMs": 180000,
-    "maxTurnsPerPrompt": 25
+    "timeoutMs": 180000
   },
   "smoke": [
     "find.easy.today",

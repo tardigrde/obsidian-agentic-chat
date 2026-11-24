@@ -47,7 +47,7 @@ function plan(): ToolUsePlan {
     thinkingLevel: "low",
     thinkingLevelSource: "suite",
     budget: { maxUsd: 1, maxModelCalls: 100, maxTokens: 1_000_000 },
-    turn: { timeoutMs: 1_000, maxTurnsPerPrompt: 5 },
+    turn: { timeoutMs: 1_000 },
     prices: PRICES,
     cases: [CASE],
     runs: [1, 2, 3].map((run) => ({ caseId: CASE.id, run })),

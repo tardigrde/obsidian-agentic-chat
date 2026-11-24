@@ -42,7 +42,6 @@ export interface ToolUseBudgetCaps {
 
 export interface ToolUseTurnLimits {
   timeoutMs: number;
-  maxTurnsPerPrompt: number;
 }
 
 export interface ToolUseSeedVault {
@@ -660,15 +659,8 @@ function validateTurn(input: unknown, problems: string[]): ToolUseTurnLimits | u
   const turn = asRecord(input, "suite.turn", problems);
   if (!turn) return undefined;
   const timeoutMs = readNonNegativeNumber(turn.timeoutMs, "suite.turn.timeoutMs", problems);
-  const maxTurnsPerPrompt = readNonNegativeNumber(turn.maxTurnsPerPrompt, "suite.turn.maxTurnsPerPrompt", problems);
   if (timeoutMs !== undefined && timeoutMs <= 0) problems.push("suite.turn.timeoutMs must be greater than 0.");
-  if (maxTurnsPerPrompt !== undefined && (!Number.isInteger(maxTurnsPerPrompt) || maxTurnsPerPrompt < 1)) {
-    problems.push("suite.turn.maxTurnsPerPrompt must be an integer of at least 1.");
-  }
-  return {
-    timeoutMs: timeoutMs ?? 0,
-    maxTurnsPerPrompt: maxTurnsPerPrompt ?? 1,
-  };
+  return { timeoutMs: timeoutMs ?? 0 };
 }
 
 function seedPathProblem(filePath: string): string | undefined {

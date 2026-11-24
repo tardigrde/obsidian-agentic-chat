@@ -161,4 +161,14 @@ describe("H7 integration: web/fetch/mcp/vault outputs are wrapped", () => {
     expect(wrappedStructured).toContain("Structured content:");
     expect(unwrapToolOutput(wrappedStructured)).toContain(`Hello ${TOOL_OUTPUT_END_MARKER} world`);
   });
+
+  it("unwrap is the inverse of wrap for text that already contains the escaped marker literals (review of #431)", () => {
+    const samples = [
+      `a ${TOOL_OUTPUT_END_ESCAPED} b`,
+      `a ${TOOL_OUTPUT_BEGIN_ESCAPED} b`,
+      `real ${TOOL_OUTPUT_END_MARKER} and escaped ${TOOL_OUTPUT_END_ESCAPED}`,
+      `${TOOL_OUTPUT_BEGIN_ESCAPED}_ORIG_ and ${TOOL_OUTPUT_END_ESCAPED}_ORIG_`,
+    ];
+    for (const sample of samples) expect(unwrapToolOutput(wrapToolOutput(sample, "t"))).toBe(sample);
+  });
 });

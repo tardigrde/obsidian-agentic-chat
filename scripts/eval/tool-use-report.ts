@@ -443,7 +443,7 @@ export function formatDryRun(plan: DryRunPlan): string {
       return `- ${evalCase.id}: ${plan.runsPerCase} run(s), ${seedFiles} seed file(s)${fixtureNote}${mcpFixtureNote}, thinking ${level}`;
     }),
     `Budget: maxUsd ${plan.budget.maxUsd}, maxModelCalls ${plan.budget.maxModelCalls}, maxTokens ${plan.budget.maxTokens}`,
-    `Turn: timeoutMs ${plan.turn.timeoutMs}, maxTurnsPerPrompt ${plan.turn.maxTurnsPerPrompt}`,
+    `Turn: timeoutMs ${plan.turn.timeoutMs}`,
     ...parallelLines(plan.shards),
     `Results: ${plan.outDir}`,
     "prices: not fetched (dry run)",
