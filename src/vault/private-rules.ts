@@ -2,7 +2,7 @@
 // A line starting with "# " is a comment.
 
 import type { IgnoreMatcher } from "./ignore";
-import { createFileSystemDenyMatcher } from "./file-system-sandbox";
+import { createFileSystemDenyMatcher, createProtectedPathMatcher } from "./file-system-sandbox";
 
 export interface PropertyRule {
   key: string;
@@ -84,21 +84,41 @@ export function metadataIsPrivate(metadata: NoteMetadata, rules: Pick<PrivateRul
  * folders) and, through `lookup`, tag and property rules on notes. A path a
  * rule matches is private: the agent cannot read, list, search, or change it.
  */
-export function createPrivateMatcher(text: string, configDir?: string, lookup?: NoteMetadataLookup): IgnoreMatcher {
+export function createPrivateMatcher(text: string, configDir?: string, lookup?: NoteMetadataLookup): PrivateMatcher {
   const rules = parsePrivateRules(text);
   const globMatcher = createFileSystemDenyMatcher(rules.globs.join("\n"), configDir);
-  if (!lookup || (rules.tags.length === 0 && rules.properties.length === 0)) return globMatcher;
-  return (path) => {
-    if (globMatcher(path)) return true;
-    if (!/\.md$/iu.test(path)) return false;
-    const metadata = lookup(path);
-    return metadata !== null && metadataIsPrivate(metadata, rules);
-  };
+  const matcher: IgnoreMatcher = !lookup || (rules.tags.length === 0 && rules.properties.length === 0)
+    ? (path) => globMatcher(path)
+    : (path) => {
+        if (globMatcher(path)) return true;
+        if (!/\.md$/iu.test(path)) return false;
+        const metadata = lookup(path);
+        return metadata !== null && metadataIsPrivate(metadata, rules);
+      };
+  return Object.assign(matcher, { isProtected: createProtectedPathMatcher(configDir) });
 }
 
-/** What the model reads when it touches a private path: honest, names the setting. */
-export function privatePathMessage(path: string): string {
-  return `Blocked: "${path}" is private (excluded in settings). Do not try to read or change it another way.`;
+/**
+ * A private matcher that also knows which paths the built-in protected
+ * folders block (`.obsidian`, `.git`, `.trash`, the config dir), so the
+ * message can name the real cause.
+ */
+export type PrivateMatcher = IgnoreMatcher & { isProtected?: IgnoreMatcher };
+
+/**
+ * What the model reads when it touches a private path. It names the real
+ * cause (U5 #10): a built-in protected folder is not a user setting, and a
+ * message that blamed "settings" made the model tell the user so.
+ */
+export function privatePathMessage(path: string, matcher?: PrivateMatcher): string {
+  // A matcher without the marker (tests, a bare deny matcher) gives no cause: say both.
+  if (!matcher?.isProtected) {
+    return `Blocked: "${path}" is private (the Ignored paths setting or a built-in protected folder). Do not try to read or change it another way.`;
+  }
+  if (matcher.isProtected(path)) {
+    return `Blocked: "${path}" is protected by the plugin (vault metadata such as the Obsidian config folder, .git and .trash is never readable; this is built in, not a user setting). Do not try to read or change it another way.`;
+  }
+  return `Blocked: "${path}" is private (excluded in the Ignored paths setting). Do not try to read or change it another way.`;
 }
 
 /** The note facts from Obsidian's metadata cache: inline and frontmatter tags, and frontmatter. */

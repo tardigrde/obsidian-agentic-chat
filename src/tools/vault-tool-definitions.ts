@@ -19,7 +19,7 @@ export const VaultInspectParameters = Type.Object({
   action: Type.String({
     description: "list|search|active_note|local_graph|properties",
   }),
-  path: Type.Optional(Type.String({ description: "target path" })),
+  path: Type.Optional(Type.String({ description: "target path; omit for the vault root" })),
   query: Type.Optional(Type.String({ description: "search text" })),
   kind: Type.Optional(Type.String({ description: "both|files|content" })),
   includeContent: Type.Optional(Type.Boolean({ description: "include note text" })),

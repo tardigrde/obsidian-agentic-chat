@@ -27,7 +27,15 @@ export function normalizeVaultPath(input: string, options: VaultPathOptions = {}
   return normalized;
 }
 
+/**
+ * Spellings of the vault root a model tries for a folder (U5 #11): `/` was
+ * rejected as absolute, and the model had to retry with `.`. Only the bare
+ * root is accepted; `/Inbox` is still an absolute path and still fails.
+ */
+const ROOT_FOLDER_ALIASES = new Set(["/", "./", "@/", "@"]);
+
 export function normalizeFolderPath(input: string, options: VaultPathOptions = {}): string {
+  if (ROOT_FOLDER_ALIASES.has((input || "").trim())) return "";
   const normalized = normalizeVaultPath(input || "", options);
   return normalized === "." ? "" : normalized;
 }

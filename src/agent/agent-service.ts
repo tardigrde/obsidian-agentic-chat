@@ -51,6 +51,8 @@ import {
 import { AgentCompactionRuntime, type SummarizeFn } from "./compaction-runtime";
 import { AgentConversationCompaction, type ManualCompactionResult } from "./conversation-compaction";
 import { AgentSteeringQueue } from "./steering-queue";
+import { messageText, parseSubagentReport, SubagentReportDelivery } from "./subagent-reports";
+import type { SubagentDetails } from "../tools/subagent-tool";
 import { conversationMessages } from "./conversation-messages";
 import {
   AgentServiceListeners,
@@ -138,6 +140,7 @@ export class AgentService {
   private readonly compaction: AgentCompactionRuntime;
   private readonly conversationCompaction: AgentConversationCompaction;
   private readonly steering = new AgentSteeringQueue();
+  private readonly reports: SubagentReportDelivery;
   private readonly artifactStore?: ToolArtifactStoreLike;
   private readonly turns: AgentTurnConfiguration;
   private readonly runtimeResources: AgentRuntimeResourceState;
@@ -238,6 +241,20 @@ export class AgentService {
         beforeToolCall: (context, signal) => this.toolCalls.beforeToolCall(context, signal),
         afterToolCall: (context) => this.toolCalls.afterToolCall(context),
       },
+      background: {
+        onChildUpdate: (toolCallId, details) => this.listeners.emitSubagentUpdate(toolCallId, details),
+        deliverReport: (report) => this.reports.deliver(report),
+      },
+    });
+    this.reports = new SubagentReportDelivery({
+      getAgent: () => this.agent ?? undefined,
+      isDisposed: () => this.conversation.isDisposed,
+      isTurnStarting: () => this.promptTurns.isInFlight(),
+      startTurn: () =>
+        this.runPrompt((agent) => {
+          const messages = this.reports.takePending();
+          return messages.length > 0 ? agent.prompt(messages) : Promise.resolve();
+        }),
     });
     this.toolCalls = new AgentToolCallController({
       app: this.app,
@@ -254,7 +271,9 @@ export class AgentService {
       recordCheckpoint: (input) => this.actionAudit.recordCheckpoint(input),
       recordFileCheckpoint: (checkpoint) => this.fileCheckpoints.record(checkpoint),
       subagentRegistry: this.subagents.registry,
-      isPathIgnored: (path) => this.runtimeResources.isPathIgnored(path),
+      isPathIgnored: Object.assign((path: string) => this.runtimeResources.isPathIgnored(path), {
+        isProtected: (path: string) => this.runtimeResources.isPathProtected(path),
+      }),
     });
     this.conversation = new AgentConversation({
       sessionManager,
@@ -268,7 +287,11 @@ export class AgentService {
           this.toolCalls.clearSessionState();
           // A retained child belongs to the conversation that made it: no
           // `continue` across a session switch (its context and cost would leak).
-          this.subagents.registry.clearRetained();
+          // Running children stop too: a child reports only into the conversation that started it.
+          this.subagents.registry.clear();
+          // Reports waiting for a turn belong to the old conversation (review of #431).
+          this.reports.reset();
+          this.steering.takeDrainedReports();
         },
       },
       runtimeResources: this.runtimeResources,
@@ -564,7 +587,14 @@ export class AgentService {
     const trimmed = prompt.trim();
     if (!trimmed) return;
     const attached = images && images.length > 0 ? images : undefined;
-    await this.runPrompt((agent) => agent.prompt(trimmed, attached), expectedSessionToken);
+    this.reports.resume();
+    await this.runPrompt((agent) => {
+      // Reports that waited (a Stop drained them) go ahead of the user's message.
+      const waiting = this.reports.takePending();
+      return waiting.length > 0
+        ? agent.prompt([...waiting, createUserMessage(trimmed, attached)])
+        : agent.prompt(trimmed, attached);
+    }, expectedSessionToken);
   }
 
   /**
@@ -610,6 +640,7 @@ export class AgentService {
     }
 
     const message = createUserMessage(text, attached);
+    this.reports.resume();
     // The model will hold this text: a note in it counts as sent at once (U4).
     this.queuedTexts.push(text);
     this.sessionState.clearError();
@@ -695,7 +726,9 @@ export class AgentService {
   abort(): void {
     const agent = this.agent;
     if (!agent) return;
+    this.reports.pauseAfterStop();
     this.steering.stop(agent);
+    this.reports.keepDrained(this.steering.takeDrainedReports(), { startsTurn: true });
     void agent.waitForIdle().then(() => this.notifyChange());
   }
 
@@ -764,6 +797,8 @@ export class AgentService {
 
   private async disposeAfterStop(): Promise<void> {
     if (this.conversation.isDisposed) return;
+    // A child belongs to its tab's agent: closing the tab stops it.
+    this.subagents.registry.abortAll();
     try {
       await this.conversation.stopRunningTurn();
     } catch {
@@ -784,7 +819,22 @@ export class AgentService {
     // A fresh prompt starts a new epoch: the identical-batch streak of a
     // previous user turn does not carry into this one.
     this.resetTurnGuards();
-    await this.promptTurns.run(this.steering.settling(run), expectedSessionToken);
+    // Whether the turn really ran: a blocked preflight or a turn already starting
+    // returns without calling `run`, and must not start a report turn (no loop).
+    let ran = false;
+    try {
+      await this.promptTurns.run(
+        this.steering.settling((agent) => {
+          ran = true;
+          return run(agent);
+        }),
+        expectedSessionToken,
+      );
+    } finally {
+      // A report steered in after the last poll did not reach the model: it waits again.
+      this.reports.keepDrained(this.steering.takeDrainedReports(), { startsTurn: true });
+      this.reports.afterTurn(ran);
+    }
   }
 
   private async handleAgentEvent(event: AgentEvent): Promise<void> {
@@ -793,6 +843,11 @@ export class AgentService {
     // A dispatch's tool result now carries its children's usage (U4 #8).
     if (event.type === "message_end" && event.message.role === "toolResult") {
       this.sessionState.settleSubagentUsage((event.message as { toolCallId: string }).toolCallId);
+    }
+    // A background child's report carries its usage now: drop the live count (keyed by child id).
+    if (event.type === "message_end" && event.message.role === "user") {
+      const report = parseSubagentReport(messageText(event.message));
+      if (report) this.sessionState.settleSubagentUsage(report.childId);
     }
     this.observability.handleAgentEvent(event);
     await handleAgentRuntimeEvent(event, {
@@ -824,14 +879,17 @@ export class AgentService {
    */
   private enforceSpendCap(): void {
     const agent = this.agent;
+    const childrenRunning = this.subagents.registry.runningCount > 0;
     const reason = spendCapAbortReason({
-      isStreaming: agent?.state.isStreaming ?? false,
+      // Background children spend while no parent turn runs (U5 #1).
+      isStreaming: (agent?.state.isStreaming ?? false) || childrenRunning,
       spendCapUsd: this.getSettings().notifications.costCapUsd,
       sessionCostUsd: this.getSessionUsage().cost?.total ?? 0,
     });
     if (!reason) return;
     this.sessionState.setErrorMessage(reason);
-    if (agent) this.steering.stop(agent);
+    if (agent?.state.isStreaming) this.steering.stop(agent);
+    if (childrenRunning) this.subagents.registry.abortAll("Stopped by the spend cap");
   }
 
   /**
@@ -913,6 +971,22 @@ export class AgentService {
    * Steered text that never reached the model because the run ended or was
    * stopped first. Each text is returned once; the UI puts it back in the composer.
    */
+  /** The whole text of an artifact, e.g. a long subagent report (U5 #13). */
+  async readArtifactText(id: string): Promise<string> {
+    if (!this.artifactStore) throw new Error("No artifact store in this chat.");
+    return (await this.artifactStore.readArtifact(id)).text;
+  }
+
+  /** Whether a background child of this chat still runs (a replayed row without one is interrupted). */
+  isSubagentRunning(childId: string): boolean {
+    return this.subagents.registry.isRunning(childId);
+  }
+
+  /** Live status of background children, for their rows (U5 #1). */
+  onSubagentUpdate(listener: (toolCallId: string, details: SubagentDetails) => void): () => void {
+    return this.listeners.onSubagentUpdate(listener);
+  }
+
   takeUndeliveredSteers(): string[] {
     return this.steering.takeUndelivered();
   }

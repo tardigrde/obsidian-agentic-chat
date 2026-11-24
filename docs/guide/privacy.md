@@ -39,7 +39,7 @@ commas or new lines:
 - a property: `private=true`, or `private=` for any value
 
 The agent cannot read, list, search, or change a matching note. It is told
-"Blocked: ... is private (excluded in settings)", and a folder listing says how
+"Blocked: ... is private (excluded in the Ignored paths setting)", and a folder listing says how
 many private items it hides. A call on a private path is blocked before any
 approval card, so you are never asked to approve it. A private active note
 shows as a "🔒 private, not sent" chip and is never sent. Two exceptions still

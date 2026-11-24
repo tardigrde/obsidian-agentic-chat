@@ -45,7 +45,7 @@ export function getVaultFile(app: App, path: string, isIgnored: IgnoreMatcher): 
  * invited guessing. The model learns it is private, not what it holds.
  */
 export function assertVisible(isIgnored: IgnoreMatcher, path: string): void {
-  if (isIgnored(path)) throw new Error(privatePathMessage(path));
+  if (isIgnored(path)) throw new Error(privatePathMessage(path, isIgnored));
 }
 
 /** Strip edge slashes from adapter entries (loader parity: trimEdges). */

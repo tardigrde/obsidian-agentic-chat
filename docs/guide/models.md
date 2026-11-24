@@ -80,7 +80,7 @@ support ignore it.
 
 You pay your provider per token. The plugin shows:
 
-- per-message and per-session tokens and USD (`/usage`, `/status`)
+- per-message and per-session tokens and USD (`/usage`, `/doctor`)
 - a next-request estimate and a context-fill bar in the composer
 - a one-time **Cost alert (USD)** and a **Hard spend cap (USD)**
   (*Advanced → Notifications*, both off at `0`)

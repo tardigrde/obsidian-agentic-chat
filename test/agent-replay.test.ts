@@ -56,20 +56,26 @@ describe("AgentService replay harness", () => {
         ),
         replayTextTurn("Inbox has 3 open threads.", {
           label: "explorer child",
+          caller: "child",
           usage: { input: 2, output: 3, totalTokens: 5 },
         }),
-        replayTextTurn("All done.", { label: "parent final" }),
+        replayTextTurn("All done.", { label: "parent final", caller: "parent" }),
+        replayTextTurn("Noted.", { label: "parent after report", caller: "parent" }),
       ],
     });
 
-    expect(result.calls.map((call) => call.label)).toEqual(["parent dispatch", "explorer child", "parent final"]);
+    const labels = result.calls.map((call) => call.label);
+    expect(labels.slice(0, 2)).toEqual(["parent dispatch", "explorer child"]);
+    expect(labels).toContain("parent final");
     expect(result.calls[0].toolNames).toContain("subagent");
     expect(result.calls[1].systemPrompt).toMatch(/explorer subagent/i);
-    expect(result.calls[2].messageCount).toBeGreaterThan(result.calls[0].messageCount);
 
+    // U5 #1: the dispatch returns at once; the child's report arrives as its own message.
     const toolResult = result.messages.find((message) => message.role === "toolResult");
     expect(toolResult).toMatchObject({ role: "toolResult", toolCallId: "call-1", toolName: "subagent", isError: false });
-    expect(JSON.stringify(toolResult)).toContain("Inbox has 3 open threads.");
+    expect(JSON.stringify(toolResult)).toContain("Started subagent");
+    const report = result.messages.find((message) => message.role === "user" && JSON.stringify(message.content).includes("<subagent_report"));
+    expect(JSON.stringify(report)).toContain("Inbox has 3 open threads.");
     expect(result.service.getSessionUsage().totalTokens).toBe(5);
   });
 

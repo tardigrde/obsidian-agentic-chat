@@ -8,6 +8,7 @@ import { attachmentDisplayPath, parseVaultAttachmentRef } from "./attachment-ref
 import { FOLDER_PREFIX } from "./autocomplete";
 import { isTextContextAttachment, textContextSection, type ContextAttachment } from "./context-attachments";
 import { arrayBufferToBase64, imageMimeType, isImagePath } from "./image-attachments";
+import { shrinkImageForModel, type ImageCodec } from "./image-shrink";
 import { extractNoteSlice } from "./note-slices";
 import { stripPromptPreamble } from "../session/session-title";
 import { isSummaryMessage } from "../agent/compaction";
@@ -31,6 +32,8 @@ export interface ImageAttachmentOptions {
   app: App;
   attachments: ContextAttachment[];
   supportsImages: boolean;
+  /** Decoder for the shrink step; tests inject one (happy-dom has no canvas). */
+  imageCodec?: ImageCodec;
 }
 
 /**
@@ -137,7 +140,9 @@ export async function loadImageAttachments(options: ImageAttachmentOptions): Pro
     if (!(file instanceof TFile)) continue;
     try {
       const buffer = await options.app.vault.readBinary(file);
-      images.push({ type: "image", data: arrayBufferToBase64(buffer), mimeType: imageMimeType(file.extension) });
+      // Shrink before base64: the model request and the session file both get the small copy (U5 #8).
+      const shrunk = await shrinkImageForModel(buffer, imageMimeType(file.extension), options.imageCodec);
+      images.push({ type: "image", data: arrayBufferToBase64(shrunk.data), mimeType: shrunk.mimeType });
     } catch {
       // A missing/unreadable image just drops out; the text prompt still sends.
     }

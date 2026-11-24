@@ -1,3 +1,4 @@
+import type { SubagentTranscriptEntry } from "../tools/subagent-tool";
 import {
   ItemView,
   Notice,
@@ -8,6 +9,7 @@ import {
   type WorkspaceLeaf,
   setIcon,
 } from "obsidian";
+import { SubagentReportModal } from "./report-modal";
 import { keyboardOverlap } from "./keyboard-overlap";
 import type { AgentEvent, AgentMessage } from "@earendil-works/pi-agent-core";
 import type { ImageContent } from "@earendil-works/pi-ai";
@@ -159,6 +161,7 @@ export class ChatView extends ItemView {
       askUser: (tab, request, signal) => this.askUserForTab(tab, request, signal),
       confirmToolCall: (tab, request, signal) => this.confirmToolCallForTab(tab, request, signal),
       onActiveEvent: (event) => this.handleAgentEvent(event),
+      onActiveSubagentUpdate: (toolCallId, details) => this.transcript.updateSubagent(toolCallId, details),
       onBackgroundFinished: (tabNumber) => {
         this.notifier.notify("agentFinished", `Tab ${tabNumber} finished responding.`);
       },
@@ -715,6 +718,15 @@ export class ChatView extends ItemView {
         beginEdit: (index, text, el) => this.beginEdit(index, text, el),
         retryLast: () => void this.retryLast(),
         abortSubagentChild: (id) => this.service.abortSubagentChild(id),
+        openSubagentReport: (artifactId, title) => {
+          const service = this.service;
+          new SubagentReportModal(this.app, title, () => service.readArtifactText(artifactId)).open();
+        },
+        isSubagentRunning: (childId) => this.service.isSubagentRunning(childId),
+        loadSubagentTimeline: async (artifactId) => {
+          const parsed: unknown = JSON.parse(await this.service.readArtifactText(artifactId));
+          return Array.isArray(parsed) ? (parsed as SubagentTranscriptEntry[]) : [];
+        },
         chooseAutocomplete: (item) => this.chooseAutocomplete(item),
         submit: (source) => void this.submit(source),
         stopActiveTurn: () => this.stopActiveTurn(),

@@ -7,7 +7,7 @@
  *   user:<text>      a user bubble
  *   thought          a reasoning row
  *   step:<verb>      a tool row
- *   subagents        a segment's subagent section
+ *   report:<agent>   a subagent's report event (U5)
  *   approval         a waiting approval card
  *   text:<text>      assistant text (first 24 characters)
  *   ask              a question card
@@ -25,7 +25,7 @@ export function transcriptOrder(root: ParentNode): string[] {
     else if (hook === "thought") {
       if (!el.classList.contains("is-empty")) out.push("thought");
     } else if (hook === "step") out.push(`step:${short(el.querySelector(".agentic-chat-step-name")?.textContent)}`);
-    else if (hook === "subagents") out.push("subagents");
+    else if (hook === "subagent-event") out.push(`report:${short(el.querySelector("summary")?.textContent).split(" ")[1] ?? ""}`);
     else if (hook === "approval") out.push("approval");
     else if (hook === "ask-user") out.push("ask");
     else if (hook === "assistant-message") {

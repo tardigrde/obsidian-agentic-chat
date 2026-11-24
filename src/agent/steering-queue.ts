@@ -1,5 +1,6 @@
 import type { Agent, AgentMessage } from "@earendil-works/pi-agent-core";
 import type { PromptTurnRun } from "./prompt-turn-runtime";
+import { isSubagentReportMessage } from "./subagent-reports";
 
 /**
  * Owns the user text that was queued into a running turn but never reached the
@@ -11,6 +12,13 @@ import type { PromptTurnRun } from "./prompt-turn-runtime";
  */
 export class AgentSteeringQueue {
   private readonly undelivered: string[] = [];
+  /** Subagent reports drained with the queue: they go back to the report delivery, never to the composer. */
+  private readonly drainedReports: AgentMessage[] = [];
+
+  /** Each drained report is returned once. */
+  takeDrainedReports(): AgentMessage[] {
+    return this.drainedReports.splice(0);
+  }
 
   /** Each undelivered text is returned once; the UI puts it back in the composer. */
   takeUndelivered(): string[] {
@@ -55,6 +63,10 @@ export class AgentSteeringQueue {
       const queued = new Set([...steering, ...agent.peekQueuedMessages()]);
       agent.clearAllQueues();
       for (const message of queued) {
+        if (isSubagentReportMessage(message)) {
+          this.drainedReports.push(message);
+          continue;
+        }
         const text = queuedUserText(message);
         if (text) this.undelivered.push(text);
       }

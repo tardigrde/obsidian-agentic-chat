@@ -2,6 +2,7 @@ import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import type { Usage } from "@earendil-works/pi-ai";
 import { getCompactedUsage } from "./compaction";
 import { addUsage, emptyUsage, sumAssistantUsage } from "./usage";
+import { messageText, parseSubagentReport } from "./subagent-reports";
 
 /** Child usage as the subagent tool persists it on each child (`details.children[].usage`). */
 interface PersistedChildUsage {
@@ -20,6 +21,12 @@ export function sumSubagentResultUsage(messages: readonly AgentMessage[]): { usa
   const usage = emptyUsage();
   const dispatchIds = new Set<string>();
   for (const message of messages) {
+    // U5 #1: a background child's usage lands with its report, after the dispatch result.
+    if (message.role === "user") {
+      const report = parseSubagentReport(messageText(message));
+      if (report?.usage) addUsage(usage, subagentDetailsUsage({ kind: "subagent", children: [{ usage: report.usage }] }) ?? emptyUsage());
+      continue;
+    }
     if (message.role !== "toolResult") continue;
     const result = message as { toolCallId?: string; details?: unknown };
     const dispatch = subagentDetailsUsage(result.details);

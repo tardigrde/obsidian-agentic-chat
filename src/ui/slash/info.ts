@@ -3,9 +3,6 @@ import { buildDoctorReport, doctorDiagnosticsSummary, type DoctorInput } from ".
 import { modelCatalogStatus } from "../../llm/pricing-cache";
 import { sumSubagentResultUsage } from "../../agent/session-usage";
 import { BUILTIN_SKILL_NAMES } from "../../skills/builtin-skills";
-import { activeModelId } from "../../settings-schema";
-import { MODES } from "../../agent/modes";
-import { formatMcpDiagnosticRows, formatMcpDiagnosticSummary } from "../../agent/diagnostics";
 import { errorMessage } from "../../utils/errors";
 import { formatDetailedUsage } from "../format";
 import { visibleCommands } from "../commands";
@@ -47,26 +44,6 @@ export async function runDoctor(ctx: SlashContext): Promise<void> {
   } catch (error) {
     console.warn("Agentic Chat: could not save the /doctor summary to the session.", error);
   }
-}
-
-export function showStatus(ctx: SlashContext): void {
-  const { settings } = ctx.plugin;
-  const session = ctx.service.getSessionInfo();
-  const override = ctx.service.getModelOverride();
-  const diagnostics = ctx.service.getRuntimeDiagnostics();
-  ctx.clearEmptyState();
-  ctx.renderInfoMessage("Status", [
-    ["Provider", settings.provider],
-    ["Model", override ? `${override} (next message only)` : activeModelId(settings)],
-    ["Mode", MODES[settings.mode].label],
-    // The active level, i.e. the configured level clamped to what the model
-    // actually supports — the raw setting alone can overstate the next turn.
-    ["Thinking", ctx.service.getActiveThinkingLevel()],
-    ["Approval (mutating)", settings.approval.mutating],
-    ["Session", session ? `${session.messageCount} messages` : "(none)"],
-    ["MCP", formatMcpDiagnosticSummary(diagnostics.resources.mcpServers)],
-    ...formatMcpDiagnosticRows(diagnostics.resources.mcpServers),
-  ]);
 }
 
 export function showUsage(ctx: SlashContext): void {

@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { rm } from "node:fs/promises";
 import type { App } from "obsidian";
 import type { Model } from "@earendil-works/pi-ai";
@@ -11,6 +11,7 @@ import type { ToolArtifactStoreLike } from "../src/artifacts/tool-artifact-store
 import { DEFAULT_SETTINGS, type AgenticChatSettings } from "../src/settings-schema";
 import type { WebFetcher } from "../src/tools/web-fetch";
 import type { AgentToolCallController } from "../src/agent/tool-call-controller";
+import { createPrivateMatcher } from "../src/vault/private-rules";
 
 /** Arbitrary dispatch fixture — the name is test data, not a built-in role. */
 const PROFILE: AgentRole = {
@@ -155,7 +156,7 @@ describe("AgentSubagentRuntime", () => {
 
     const child = runtime.createChildAgent(PROFILE);
 
-    expect(child.state.systemPrompt).toBe("child prompt");
+    expect(child.state.systemPrompt).toContain("child prompt");
     expect(child.state.model.id).toBe("child/model");
     expect(child.state.tools.map((tool) => tool.name).sort()).toEqual(["read"]);
   });
@@ -271,7 +272,52 @@ describe("AgentSubagentRuntime", () => {
 
     const result = await runtime.createTool().execute("call-1", { agent: "researcher", task: "inspect notes" });
 
-    expect(JSON.stringify(result.content)).toContain("child result");
-    expect(usages).toEqual([5]);
+    // U5 #1: the call returns at once; the child's usage counts when its model call ends.
+    expect(JSON.stringify(result.content)).toContain('Started subagent \\"researcher\\" as sa-1');
+    await vi.waitFor(() => expect(usages).toEqual([5]));
+  });
+});
+
+describe("AgentSubagentRuntime: private rules are read live (review of #429)", () => {
+  it("blocks a retained child's skill read after the folder is added to Ignored paths", async () => {
+    const live: AgentRuntimeResources = {
+      ...resources(),
+      skills: [{ name: "notes", description: "Notes.", content: "# Secret steps", filePath: "Skills/notes/SKILL.md" }],
+    };
+    const runtime = new AgentSubagentRuntime({
+      app: { vault: {}, workspace: {} } as unknown as App,
+      getSettings: () => settings(),
+      getResources: () => live,
+      buildStreamFn: () => cannedChildStream("ok"),
+      recordUsage: () => undefined,
+      webFetch: noopWebFetch,
+      toolCalls: noopToolCalls,
+    });
+    const child = runtime.createChildAgent({ ...PROFILE, toolAllowlist: ["skill"] });
+    const skill = child.state.tools.find((tool) => tool.name === "skill");
+    expect(skill).toBeDefined();
+    await expect(skill!.execute("c1", { action: "read", name: "notes" } as never)).resolves.toBeDefined();
+
+    live.ignoreMatcher = createPrivateMatcher("Skills/");
+    await expect(skill!.execute("c2", { action: "read", name: "notes" } as never)).rejects.toThrow(/is private/);
+  });
+});
+
+describe("AgentSubagentRuntime: the child prompt (U5 #6)", () => {
+  it("gives a child the trust boundary and the vault's standing instructions, not only its role prompt", () => {
+    const runtime = new AgentSubagentRuntime({
+      app: { vault: {}, workspace: {} } as unknown as App,
+      getSettings: () => settings(),
+      getResources: () => ({ ...resources(), instructionsOverlay: "Vault rules: never open shared/." }),
+      buildStreamFn: () => cannedChildStream("ok"),
+      recordUsage: () => undefined,
+      webFetch: noopWebFetch,
+      toolCalls: noopToolCalls,
+    });
+    const prompt = runtime.createChildAgent(PROFILE).state.systemPrompt;
+    expect(prompt).toContain("child prompt");
+    expect(prompt).toContain("Vault rules: never open shared/.");
+    expect(prompt).toMatch(/untrusted DATA/);
+    expect(prompt.indexOf("child prompt")).toBeLessThan(prompt.indexOf("Vault rules"));
   });
 });

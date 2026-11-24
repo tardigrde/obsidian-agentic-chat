@@ -730,11 +730,14 @@ describe("AgentService", () => {
       { content: [{ type: "toolCall", id: "call-1", name: "subagent", arguments: { agent: "explorer", task: "summarize the inbox" } }], stopReason: "toolUse" },
       // Child turn: the explorer's reply (same injected stream serves the child).
       { content: [{ type: "text", text: "Inbox has 3 open threads." }], stopReason: "stop" },
-      // Parent turn 2: final answer after the subagent returns.
+      // Parent turn 2: the dispatch returned at once (U5 #1). The child finished
+      // first, so its report was steered into this same turn.
       { content: [{ type: "text", text: "All done." }], stopReason: "stop" },
     ]);
     const { service } = makeService(streamFn);
     await service.sendPrompt("Use a subagent to check my inbox");
+    await vi.waitFor(() => expect(service.getMessages().some((message) => message.role === "user" && JSON.stringify(message.content).includes("<subagent_report"))).toBe(true));
+    await vi.waitFor(() => expect(service.isStreaming()).toBe(false));
 
     expect(service.getProfiles().map((profile) => profile.name)).toContain("explorer");
     const toolResult = service.getMessages().find((message) => message.role === "toolResult") as
@@ -742,8 +745,10 @@ describe("AgentService", () => {
       | undefined;
     expect(toolResult?.isError).toBe(false);
     const resultText = (toolResult?.content ?? []).map((block) => block.text ?? "").join("");
-    expect(resultText).toContain("Inbox has 3 open threads.");
-    // Parent's two assistant turns (2 + 2) plus the child's folded-in usage (2).
+    expect(resultText).toContain('Started subagent "explorer" as sa-1');
+    const report = service.getMessages().find((message) => message.role === "user" && JSON.stringify(message.content).includes("<subagent_report"));
+    expect(JSON.stringify(report?.content)).toContain("Inbox has 3 open threads.");
+    // Two parent model calls (2 each) plus the child's usage, counted from its report (2).
     expect(service.getSessionUsage().totalTokens).toBe(6);
   });
 
