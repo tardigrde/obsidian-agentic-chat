@@ -1,7 +1,7 @@
 import type { Agent, AgentMessage } from "@earendil-works/pi-agent-core";
 import type { UserMessage } from "@earendil-works/pi-ai";
 import type { SubagentChildStatus, SubagentReport } from "../tools/subagent-tool";
-import { wrapToolOutput } from "../tools/tool-output-wrapper";
+import { unwrapToolOutput, wrapToolOutput } from "../tools/tool-output-wrapper";
 
 /**
  * A background child's report reaches the parent as a user-role message (U5
@@ -12,6 +12,7 @@ import { wrapToolOutput } from "../tools/tool-output-wrapper";
 const OPENING = /^<subagent_report((?: [a-z]+="[^"]*")+)>\n/u;
 const ATTRIBUTE = / ([a-z]+)="([^"]*)"/gu;
 const CLOSING = "\n</subagent_report>";
+const SOURCES_PREFIX = "\n\nVault files read: ";
 
 export interface ParsedSubagentReport {
   childId: string;
@@ -43,11 +44,27 @@ export function formatSubagentReport(report: SubagentReport): string {
       : "",
     child?.artifactId ? ` artifact="${attr(child.artifactId)}"` : "",
     child?.timelineArtifactId ? ` timeline="artifact:${attr(child.timelineArtifactId)}"` : "",
-    child?.sources?.length ? ` sources="${attr(child.sources.map((path) => path.replace(/\|/gu, " ")).join("|"))}"` : "",
   ].join("");
   const header = `<subagent_report id="${attr(report.childId)}" agent="${attr(report.agent)}" status="${attr(child?.status ?? "done")}" call="${attr(report.toolCallId)}"${extra}>`;
   // The body is the child's output: data from notes and the web, never instructions.
-  return `${header}\n${wrapToolOutput(report.text, "subagent")}${CLOSING}`;
+  // Vault file names are data too (a note can be named like an instruction): they go
+  // inside the wrapper, never into the header attributes (review of #431).
+  const sources = child?.sources?.length ? `${SOURCES_PREFIX}${JSON.stringify(child.sources)}` : "";
+  return `${header}\n${wrapToolOutput(`${report.text}${sources}`, "subagent")}${CLOSING}`;
+}
+
+/** Split the vault files the child read off the end of the unwrapped payload; the body stays wrapped. */
+function splitSources(wrappedBody: string): { body: string; sources?: string[] } {
+  const inner = unwrapToolOutput(wrappedBody);
+  const at = inner.lastIndexOf(SOURCES_PREFIX);
+  if (at === -1 || inner.includes("\n", at + SOURCES_PREFIX.length)) return { body: wrappedBody };
+  try {
+    const parsed: unknown = JSON.parse(inner.slice(at + SOURCES_PREFIX.length));
+    if (!Array.isArray(parsed) || !parsed.every((path) => typeof path === "string")) return { body: wrappedBody };
+    return { body: wrapToolOutput(inner.slice(0, at), "subagent"), sources: parsed.filter(Boolean) };
+  } catch {
+    return { body: wrappedBody };
+  }
 }
 
 export function parseSubagentReport(text: string): ParsedSubagentReport | null {
@@ -65,12 +82,13 @@ export function parseSubagentReport(text: string): ParsedSubagentReport | null {
     const value = Number(attrs.get(name));
     return Number.isFinite(value) ? value : 0;
   };
+  const { body, sources } = splitSources(text.slice(match[0].length, text.length - CLOSING.length));
   return {
     childId: id,
     agent,
     status: status as SubagentChildStatus["status"],
     toolCallId: call,
-    body: text.slice(match[0].length, text.length - CLOSING.length),
+    body,
     ...(attrs.has("ms") && Number.isFinite(ms) ? { durationMs: ms } : {}),
     ...(attrs.has("cost") && Number.isFinite(cost) ? { costUsd: cost } : {}),
     ...(attrs.has("tokens")
@@ -78,7 +96,7 @@ export function parseSubagentReport(text: string): ParsedSubagentReport | null {
       : {}),
     ...(attrs.get("artifact") ? { artifactId: attrs.get("artifact") } : {}),
     ...(attrs.get("timeline")?.startsWith("artifact:") ? { timelineArtifactId: (attrs.get("timeline") as string).slice("artifact:".length) } : {}),
-    ...(attrs.get("sources") ? { sources: (attrs.get("sources") as string).split("|").filter(Boolean) } : {}),
+    ...(sources?.length ? { sources } : {}),
   };
 }
 
@@ -152,7 +170,11 @@ export class SubagentReportDelivery {
 
   /** Reports drained from the steering queue (a Stop, or a steer after the last poll). */
   keepDrained(messages: AgentMessage[], options: { startsTurn: boolean }): void {
-    for (const message of messages) this.pending.push({ message, startsTurn: options.startsTurn });
+    for (const message of messages) {
+      // A stopped child's report never starts a turn, even when it was drained from a turn that ended (review of #431).
+      const stopped = parseSubagentReport(messageText(message))?.status === "aborted";
+      this.pending.push({ message, startsTurn: options.startsTurn && !stopped });
+    }
   }
 
   /** The user pressed Stop: no report starts a turn by itself until the user sends again. */

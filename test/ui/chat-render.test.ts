@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { formatSubagentReport } from "../../src/agent/subagent-reports";
 import { mountChatView, seedFile, settle, type MountedChatView } from "./support/mount-chat-view";
 
 /**
@@ -274,7 +275,19 @@ describe("subagent row (U5 #2, #3): one row per child in the activity block", ()
       type: "message_end",
       message: {
         role: "user",
-        content: [{ type: "text", text: '<subagent_report id="sa-2" agent="explorer" status="done" call="t-y" sources="Inbox/A.md|Notes/B.md">\nfound\n</subagent_report>' }],
+        content: [
+          {
+            type: "text",
+            text: formatSubagentReport({
+              childId: "sa-2",
+              agent: "explorer",
+              task: "t",
+              toolCallId: "t-y",
+              text: "found",
+              details: { kind: "subagent", children: [{ agent: "explorer", task: "t", status: "done", sources: ["Inbox/A.md", "Notes/B.md"] }] },
+            }),
+          },
+        ],
       },
     });
     ui.emit({ type: "message_start", message: { role: "assistant", content: [] } });
