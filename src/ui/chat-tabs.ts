@@ -41,6 +41,8 @@ export interface ChatTabsDeps {
   askUser: (tab: ChatTab, request: AskUserRequest, signal?: AbortSignal) => Promise<string>;
   confirmToolCall: (tab: ChatTab, request: ToolApprovalRequest, signal?: AbortSignal) => Promise<UserApprovalChoice>;
   onActiveEvent: (event: AgentEvent) => void;
+  /** A background child of the active tab changed (U5 #1). */
+  onActiveSubagentUpdate: (toolCallId: string, details: unknown) => void;
   onBackgroundFinished: (tabNumber: number) => void;
   isViewClosed: () => boolean;
   header: () => TabHeaderElements | undefined;
@@ -125,9 +127,14 @@ export class ChatTabs {
     tabRef.current = tab;
     const offEvent = service.onEvent((event) => this.handleTabEvent(tab, event));
     const offChange = service.onChange(() => this.handleTabChange(tab));
+    // A background child's row updates only in the tab on screen; another tab re-renders on switch.
+    const offSubagent = service.onSubagentUpdate((id, details) => {
+      if (tab === this.activeTab) this.deps.onActiveSubagentUpdate(id, details);
+    });
     tab.unsubscribe = () => {
       offEvent();
       offChange();
+      offSubagent();
     };
     return tab;
   }

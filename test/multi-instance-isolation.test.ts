@@ -115,24 +115,19 @@ describe("multi-instance isolation", () => {
       startedB += 1;
     });
 
-    const first = runtimeA.createTool().execute("shared-call", { agent: "researcher", task: "A" });
-    const second = runtimeB.createTool().execute("shared-call", { agent: "researcher", task: "B" });
+    // U5 #1: children run in the background; both runtimes name their first child "sa-1".
+    await runtimeA.createTool().execute("shared-call", { agent: "researcher", task: "A" });
+    await runtimeB.createTool().execute("shared-call", { agent: "researcher", task: "B" });
     await waitFor(() => startedA === 1 && startedB === 1, "both children to start");
+    expect(runtimeA.registry.isRunning("sa-1") && runtimeB.registry.isRunning("sa-1")).toBe(true);
 
-    runtimeA.abortChild("shared-call");
-    const firstResult = await first;
-    expect(firstResult.details.children[0].status).toBe("aborted");
-
-    let secondSettled = false;
-    void second.then(() => {
-      secondSettled = true;
-    });
+    runtimeA.abortChild("sa-1");
+    await waitFor(() => !runtimeA.registry.isRunning("sa-1"), "child A to stop");
     await new Promise((resolve) => setTimeout(resolve, 25));
-    expect(secondSettled).toBe(false);
+    expect(runtimeB.registry.isRunning("sa-1")).toBe(true);
 
-    runtimeB.abortChild("shared-call");
-    const secondResult = await second;
-    expect(secondResult.details.children[0].status).toBe("aborted");
+    runtimeB.abortChild("sa-1");
+    await waitFor(() => !runtimeB.registry.isRunning("sa-1"), "child B to stop");
   });
 
   it("keeps loaded deferred tools and clearSessionState per runtime resource state", async () => {

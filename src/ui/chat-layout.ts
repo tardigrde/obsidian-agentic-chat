@@ -1,3 +1,4 @@
+import type { SubagentTranscriptEntry } from "../tools/subagent-tool";
 import { setIcon, type App, type Component } from "obsidian";
 import type { AcItem } from "./autocomplete";
 import { AutocompleteMenu } from "./autocomplete-menu";
@@ -12,6 +13,9 @@ export interface ChatLayoutCallbacks {
   beginEdit(index: number, text: string, el: HTMLElement): void;
   retryLast(): void;
   abortSubagentChild(id: string): void;
+  openSubagentReport(artifactId: string, title: string): void;
+  loadSubagentTimeline(artifactId: string): Promise<SubagentTranscriptEntry[]>;
+  isSubagentRunning(childId: string): boolean;
   chooseAutocomplete(item: AcItem): void;
   submit(source: ComposerSubmitSource): void;
   stopActiveTurn(): void;
@@ -133,6 +137,9 @@ export function buildLayout(deps: ChatLayoutDeps): ChatLayoutElements {
     beginEdit: (index, text, el) => callbacks.beginEdit(index, text, el),
     retryLast: () => callbacks.retryLast(),
     abortSubagentChild: (id) => callbacks.abortSubagentChild(id),
+    openSubagentReport: (artifactId, title) => callbacks.openSubagentReport(artifactId, title),
+    loadSubagentTimeline: (artifactId) => callbacks.loadSubagentTimeline(artifactId),
+    isSubagentRunning: (childId) => callbacks.isSubagentRunning(childId),
     isStreaming: () => callbacks.isStreaming(),
   });
   deps.registerDomEvent(messagesEl, "wheel", () => transcript.markUserScrollIntent());

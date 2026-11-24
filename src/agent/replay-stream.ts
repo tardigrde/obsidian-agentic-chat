@@ -1,3 +1,4 @@
+import { CHILD_PROMPT_OPENING } from "./subagents";
 import type { StreamFn } from "@earendil-works/pi-agent-core";
 import {
   createAssistantMessageEventStream,
@@ -34,6 +35,12 @@ export interface ReplayTurn {
   updateDelayMs?: number;
   /** Hold the terminal event until the harness releases it. */
   hold?: boolean;
+  /**
+   * Who takes this turn. Background children (U5 #1) call the model while the
+   * parent goes on, so the order of calls is not the order of the script: a
+   * marked turn goes to the next call of that kind. Unmarked turns go in order.
+   */
+  caller?: "parent" | "child";
 }
 
 export interface ReplayStreamCall {
@@ -71,15 +78,20 @@ export function createReplayStreamController(
   turns: readonly ReplayTurn[],
   options: ReplayStreamOptions = {},
 ): ReplayStreamController {
-  let nextTurn = Math.max(0, options.initialTurnIndex ?? 0);
+  const used = new Set<number>();
+  for (let index = 0; index < Math.max(0, options.initialTurnIndex ?? 0); index += 1) used.add(index);
+  let callCount = used.size;
   const calls: ReplayStreamCall[] = [];
   const now = options.now ?? (() => Date.now());
 
   const streamFn: StreamFn = ((model, context, streamOptions) => {
     const stream = createAssistantMessageEventStream();
-    const callIndex = nextTurn;
-    const scripted = selectTurn(turns, callIndex, options.missingTurn ?? "error");
-    nextTurn += 1;
+    const caller = getCurrentSystemPrompt(context.messages).startsWith(CHILD_PROMPT_OPENING) ? "child" : "parent";
+    const picked = turns.findIndex((turn, index) => !used.has(index) && (turn.caller === undefined || turn.caller === caller));
+    const callIndex = picked >= 0 ? picked : callCount;
+    if (picked >= 0) used.add(picked);
+    callCount += 1;
+    const scripted = picked >= 0 ? turns[picked] : selectTurn(turns, turns.length, options.missingTurn ?? "error");
 
     const call: ReplayStreamCall = {
       index: callIndex,
@@ -110,7 +122,7 @@ export function createReplayStreamController(
   return {
     streamFn,
     calls,
-    remainingTurns: () => Math.max(turns.length - nextTurn, 0),
+    remainingTurns: () => Math.max(turns.length - used.size, 0),
   };
 }
 

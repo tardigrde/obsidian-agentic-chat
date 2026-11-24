@@ -129,36 +129,32 @@ describe("U4 #4: a settled approval becomes a line on its step row", () => {
   });
 });
 
-describe("U4 #5: subagents get their own section", () => {
-  it("one collapsed section per segment, one row per child with Stop while it runs", async () => {
+describe("U5 #2, #3: a subagent is one row in the activity block", () => {
+  it("no separate section; the row runs in event order; its report comes later as an event", async () => {
     ui = await mountChatView();
     ui.emit({ type: "agent_start" });
     ui.emit({ type: "message_start", message: { role: "assistant", content: [] } });
     ui.emit({ type: "tool_execution_start", toolCallId: "s1", toolName: "subagent", args: { agent: "explorer", task: "map the vault" } });
-    const running = [{ agent: "explorer", task: "map the vault", status: "running", stopId: "stop-1", transcript: [{ type: "text", text: "looking" }] }];
-    ui.emit({ type: "tool_execution_update", toolCallId: "s1", partialResult: { details: { kind: "subagent", children: running } } });
-    await settle();
-
-    const block = ui.$('[data-ac="subagents"]');
-    expect(block).not.toBeNull();
-    expect(block?.closest('[data-ac="activity"]')).toBeNull();
-    expect(block?.querySelector(".agentic-chat-subagent-block-summary")?.textContent).toBe("Subagents · 1 running");
-    expect(block?.querySelector('[data-ac="subagents-head"]')?.getAttribute("aria-expanded")).toBe("false");
-    expect(block?.querySelectorAll('[data-ac="subagent-row"]')).toHaveLength(1);
-    expect(block?.querySelector(".agentic-chat-subagent-stop")).not.toBeNull();
-    expect(order()).toEqual(["step:Subagent", "subagents"]);
-
-    const done = [{ agent: "explorer", task: "map the vault", status: "done", summary: "found 3 notes", durationMs: 4_000, usage: { input: 1, output: 1, totalTokens: 2, costUsd: 0.012 } }];
-    ui.emit({ type: "tool_execution_end", toolCallId: "s1", isError: false, result: { content: [{ type: "text", text: "ok" }], details: { kind: "subagent", children: done } } });
+    const running = [{ agent: "explorer", task: "map the vault", status: "running", childId: "sa-1", stopId: "sa-1", transcript: [{ type: "text", text: "looking" }] }];
+    ui.emit({ type: "tool_execution_end", toolCallId: "s1", isError: false, result: { content: [{ type: "text", text: "Started" }], details: { kind: "subagent", children: running } } });
     ui.emit({ type: "message_end", message: { role: "assistant", content: [] } });
     ui.emit({ type: "agent_end" });
     await settle();
-    expect(block?.querySelector(".agentic-chat-subagent-block-summary")?.textContent).toBe("Subagents · 1 done");
-    expect(block?.classList.contains("is-open")).toBe(false);
-    expect(block?.querySelector(".agentic-chat-subagent-stop")).toBeNull();
-    const row = block?.querySelector<HTMLDetailsElement>('[data-ac="subagent-row"]');
-    expect(row?.querySelector(".agentic-chat-subagent-time")?.textContent).toBe("4s");
-    expect(row?.querySelector(".agentic-chat-subagent-meta")?.textContent).toBe("$0.01");
-    expect(row?.querySelector(".agentic-chat-subagent-log")?.textContent).toContain("found 3 notes");
+
+    expect(ui.$(".agentic-chat-subagent-block")).toBeNull();
+    const row = ui.$('[data-ac="step"].is-subagent');
+    expect(row?.closest('[data-ac="activity"]')).not.toBeNull();
+    expect(row?.classList.contains("is-child-running")).toBe(true);
+    expect(order()).toEqual(["step:Subagent"]);
+
+    ui.emit({
+      type: "message_end",
+      message: {
+        role: "user",
+        content: [{ type: "text", text: '<subagent_report id="sa-1" agent="explorer" status="done" call="s1">\nfound 3 notes\n</subagent_report>' }],
+      },
+    });
+    await settle();
+    expect(order()).toEqual(["step:Subagent", "report:explorer"]);
   });
 });

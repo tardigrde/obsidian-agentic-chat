@@ -4,7 +4,8 @@ import { isAskUserDetails, middleEllipsis, SOURCE_TOOLS, activeNotePathFromText 
 import { callPath, formatElapsed, formatShortElapsed, HIDE_RESULT_TOOLS, safeJson, truncateText } from "./format";
 import { failedCount, runningLabel, stepRowParts, summarizeSteps, type StepStatus } from "./activity-summary";
 import { renderAskUserStep, renderCallSection } from "./step-card";
-import { SubagentBlock, subagentChildren, subagentResultForcesError } from "./subagent-tree";
+import { SubagentChildView, subagentChildren } from "./subagent-tree";
+import type { SubagentTranscriptEntry } from "../tools/subagent-tool";
 import { acHook } from "./test-hooks";
 
 /** How the user settled an approval, as recorded on the step row. */
@@ -27,6 +28,10 @@ export interface ActivityLineOptions {
   /** A folder path renders as plain text with a folder icon, never as a note link. */
   isFolder?: (path: string) => boolean;
   onStopSubagentChild?: (stopId: string) => void;
+  /** Open a subagent report kept as an artifact (U5 #13). */
+  onOpenSubagentReport?: (artifactId: string, title: string) => void;
+  /** Load a stored child timeline (U5 #12). */
+  loadSubagentTimeline?: (artifactId: string) => Promise<SubagentTranscriptEntry[]>;
   /** Called after the line changes height (scroll pinning). */
   onChange?: () => void;
 }
@@ -145,7 +150,8 @@ export class ActivityLine {
   private readonly startedAt = performance.now();
   private timer: number | null = null;
   private iconState: string | null = null;
-  private subagents: SubagentBlock | null = null;
+  /** Step id -> the background child drawn in that row (U5 #2). */
+  private readonly childViews = new Map<string, SubagentChildView>();
 
   constructor(
     parent: HTMLElement,
@@ -274,8 +280,7 @@ export class ActivityLine {
     const details = (partial as { details?: unknown } | undefined)?.details;
     const children = subagentChildren(details);
     if (children.length > 0) {
-      // The children live in the segment's own subagent section (U4 #5).
-      this.subagentBlock().update(id, children);
+      this.childView(step).update(children[0]);
     } else if (isAskUserDetails(details)) {
       // The question card waits at the end of the transcript; the step stays a
       // collapsed row, so the turn's top line never shows it above earlier text (U3 #15).
@@ -288,10 +293,11 @@ export class ActivityLine {
   endStep(id: string, result: string, isError: boolean, resultObject?: unknown): void {
     const step = this.steps.get(id);
     if (!step) return;
-    const failed = isError || (step.name === SUBAGENT_TOOL_NAME && subagentResultForcesError(resultObject));
-    if (step.name === SUBAGENT_TOOL_NAME) {
+    // The dispatch call returns at once; the child's own status lives on its row.
+    const failed = isError;
+    if (step.name === SUBAGENT_TOOL_NAME && !isError) {
       const children = subagentChildren((resultObject as { details?: unknown } | undefined)?.details);
-      if (children.length > 0) this.subagentBlock().update(id, children);
+      if (children.length > 0) this.childView(step).update(children[0]);
     }
     step.status = failed ? "error" : "done";
     step.row.removeClass("is-running");
@@ -313,7 +319,7 @@ export class ActivityLine {
       if (path) this.sourcePathsValue.delete(path);
       this.setStepOpen(step, true);
     }
-    if (failed || !HIDE_RESULT_TOOLS.has(step.name)) {
+    if (failed || (!HIDE_RESULT_TOOLS.has(step.name) && !this.childViews.has(id))) {
       const section = step.detail.createDiv({ cls: "agentic-chat-step-result" });
       section.createDiv({ cls: "agentic-chat-step-section-label", text: failed ? "Error" : "Result" });
       section.createEl("pre", { text: truncateText(result, 4_000) });
@@ -347,7 +353,6 @@ export class ActivityLine {
       }
     }
     this.stateValue = options.error ? "error" : "done";
-    this.subagents?.finish();
     this.refresh();
   }
 
@@ -383,16 +388,52 @@ export class ActivityLine {
   dispose(): void {
     if (this.timer !== null) window.clearInterval(this.timer);
     this.timer = null;
-    this.subagents?.dispose();
+    for (const view of this.childViews.values()) view.dispose();
   }
 
-  private subagentBlock(): SubagentBlock {
-    this.subagents ??= new SubagentBlock(this.el, {
-      live: this.options.live,
-      onStopSubagentChild: this.options.onStopSubagentChild,
-      onChange: () => this.options.onChange?.(),
-    });
-    return this.subagents;
+  /**
+   * A background child changed after its dispatch call returned (live tick,
+   * or its report arrived). False when this segment has no such step.
+   */
+  updateSubagent(id: string, details: unknown): boolean {
+    const step = this.steps.get(id);
+    const child = subagentChildren(details)[0];
+    if (!step || !child) return false;
+    this.childView(step).update(child);
+    this.syncExpandable(step);
+    this.refresh();
+    return true;
+  }
+
+  /** Settle replayed rows whose child no longer runs (review of #431). */
+  settleOrphanedChildren(isRunning: (childId: string) => boolean): void {
+    for (const view of this.childViews.values()) {
+      const id = view.childId;
+      if (view.isRunning && (!id || !isRunning(id))) view.markInterrupted();
+    }
+  }
+
+  /** Whether a background child still runs in this segment (its row keeps a clock). */
+  get hasRunningChild(): boolean {
+    return [...this.childViews.values()].some((view) => view.isRunning);
+  }
+
+  private childView(step: StepEntry): SubagentChildView {
+    let view = this.childViews.get(step.id);
+    if (!view) {
+      view = new SubagentChildView(
+        { row: step.row, icon: step.icon, head: step.head, time: step.time, detail: step.detail },
+        {
+          live: this.options.live,
+          onStopSubagentChild: this.options.onStopSubagentChild,
+          onOpenReport: this.options.onOpenSubagentReport,
+          loadTimeline: this.options.loadSubagentTimeline,
+          onChange: () => this.options.onChange?.(),
+        },
+      );
+      this.childViews.set(step.id, view);
+    }
+    return view;
   }
 
   private toggleStep(step: StepEntry): void {
@@ -411,6 +452,8 @@ export class ActivityLine {
   }
 
   private syncStepIcon(step: StepEntry): void {
+    // A subagent row's icon follows its child, which outlives the dispatch call.
+    if (this.childViews.has(step.id)) return;
     renderStatusIcon(step.icon, step.status === "running" ? "running" : step.status);
   }
 

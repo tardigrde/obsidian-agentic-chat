@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest";
+import { messageText } from "../src/agent/subagent-reports";
+import { describe, expect, it, vi } from "vitest";
 import type { App } from "obsidian";
 import type { StreamFn } from "@earendil-works/pi-agent-core";
 import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
@@ -199,8 +200,19 @@ describe("subagent dispatch matrix (gateSubagentDispatch × dispatchCanMutate ×
     return { isError: tr.isError, text };
   }
 
+  /** U5 #1: the child's reply arrives later, as a <subagent_report> message. */
+  async function reportText(service: AgentService): Promise<string> {
+    let text = "";
+    await vi.waitFor(() => {
+      text = service.getMessages().map(messageText).find((t) => t.startsWith("<subagent_report")) ?? "";
+      expect(text).not.toBe("");
+    });
+    await vi.waitFor(() => expect(service.isStreaming()).toBe(false));
+    return text;
+  }
+
   it("safe: a read-only explorer dispatch does not prompt (S8: explorer read-only, inherits parent)", async () => {
-    const streamFn = scriptedStreamFn([dispatch("explorer"), childReply("explorer reply"), parentFollowup("all set")]);
+    const streamFn = scriptedStreamFn([dispatch("explorer"), childReply("explorer reply"), parentFollowup("all set"), parentFollowup("noted")]);
     const { service, confirmCalls } = makeService(streamFn, {
       mode: "safe",
       approval: { mutating: "ask", perTool: {} },
@@ -208,11 +220,12 @@ describe("subagent dispatch matrix (gateSubagentDispatch × dispatchCanMutate ×
     await service.sendPrompt("edit with a subagent");
     expect(confirmCalls.count).toBe(0);
     expect(toolResult(service)?.isError).toBe(false);
-    expect(toolResult(service)?.text).toContain("explorer reply");
+    expect(toolResult(service)?.text).toContain("Started subagent");
+    expect(await reportText(service)).toContain("explorer reply");
   });
 
   it("safe: a read-only fan-out runs with no prompt", async () => {
-    const streamFn = scriptedStreamFn([dispatch("explorer"), childReply("found 3 notes"), parentFollowup("done")]);
+    const streamFn = scriptedStreamFn([dispatch("explorer"), childReply("found 3 notes"), parentFollowup("done"), parentFollowup("noted")]);
     const { service, confirmCalls } = makeService(streamFn, {
       mode: "safe",
       approval: { mutating: "ask", perTool: {} },
@@ -220,11 +233,12 @@ describe("subagent dispatch matrix (gateSubagentDispatch × dispatchCanMutate ×
     await service.sendPrompt("research with a subagent");
     expect(confirmCalls.count).toBe(0);
     expect(toolResult(service)?.isError).toBe(false);
-    expect(toolResult(service)?.text).toContain("found 3 notes");
+    expect(toolResult(service)?.text).toContain("Started subagent");
+    expect(await reportText(service)).toContain("found 3 notes");
   });
 
   it("yolo auto-approves a read-only explorer dispatch (S8: explorer has no mutating tools, gate is vacuous by design)", async () => {
-    const streamFn = scriptedStreamFn([dispatch("explorer"), childReply("explorer reply"), parentFollowup("done")]);
+    const streamFn = scriptedStreamFn([dispatch("explorer"), childReply("explorer reply"), parentFollowup("done"), parentFollowup("noted")]);
     const { service, confirmCalls } = makeService(streamFn, {
       mode: "yolo",
       approval: { mutating: "deny", perTool: {} },
@@ -232,11 +246,12 @@ describe("subagent dispatch matrix (gateSubagentDispatch × dispatchCanMutate ×
     await service.sendPrompt("edit with a subagent in yolo");
     expect(confirmCalls.count).toBe(0);
     expect(toolResult(service)?.isError).toBe(false);
-    expect(toolResult(service)?.text).toContain("explorer reply");
+    expect(toolResult(service)?.text).toContain("Started subagent");
+    expect(await reportText(service)).toContain("explorer reply");
   });
 
   it("safe + mutating denied: a read-only dispatch is not blocked (S8: explorer has no mutating tools)", async () => {
-    const streamFn = scriptedStreamFn([dispatch("explorer"), childReply("explorer reply"), parentFollowup("all set")]);
+    const streamFn = scriptedStreamFn([dispatch("explorer"), childReply("explorer reply"), parentFollowup("all set"), parentFollowup("noted")]);
     const { service, confirmCalls } = makeService(streamFn, {
       mode: "safe",
       approval: { mutating: "deny", perTool: {} },
@@ -244,7 +259,8 @@ describe("subagent dispatch matrix (gateSubagentDispatch × dispatchCanMutate ×
     await service.sendPrompt("edit with a subagent");
     expect(confirmCalls.count).toBe(0);
     expect(toolResult(service)?.isError).toBe(false);
-    expect(toolResult(service)?.text).toContain("explorer reply");
+    expect(toolResult(service)?.text).toContain("Started subagent");
+    expect(await reportText(service)).toContain("explorer reply");
   });
 });
 
