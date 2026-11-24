@@ -118,7 +118,9 @@ Head: $HEAD
 Reviewer: $REVIEWER
 Fast lane: PASS (<n> passed, <n> files) | CI (ci + e2e green at this head)
 Behavior change: none | yes (<one line>)
-Then findings with file:line. A FAIL needs a concrete failure scenario.
+Then at most 5 findings, one line each: file:line and the risk. No other headings, no pasted
+logs, no text that repeats the lines above. A FAIL needs a concrete failure scenario in one or
+two lines. Keep the whole verdict under about 15 lines.
 EOF
   status=0
   run "$W" "review $PR" "$(config "$OUT")" "$PROMPT" "$LOG" || status=$?

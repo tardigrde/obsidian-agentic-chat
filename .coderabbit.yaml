@@ -1,0 +1,30 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+#
+# CodeRabbit is an advisory finder here, not a gate. Keep its output short:
+# agents and the owner read every comment, so a long walkthrough costs tokens
+# each round. Findings stay; summaries, diagrams, and prompt blocks go.
+language: en-US
+tone_instructions: "Be terse. One short paragraph per finding: the bug, the failing input, the fix. No praise, no summaries."
+reviews:
+  profile: quiet
+  high_level_summary: false
+  review_status: false
+  review_details: false
+  review_progress: false
+  collapse_walkthrough: true
+  changed_files_summary: false
+  sequence_diagrams: false
+  estimate_code_review_effort: false
+  assess_linked_issues: false
+  related_issues: false
+  related_prs: false
+  suggested_labels: false
+  suggested_reviewers: false
+  poem: false
+  in_progress_fortune: false
+  enable_prompt_for_ai_agents: false
+  auto_review:
+    drafts: false
+    auto_pause_after_reviewed_commits: 2
+chat:
+  art: false
