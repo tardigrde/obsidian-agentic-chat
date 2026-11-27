@@ -1,6 +1,6 @@
 ---
 name: Delete Comment
-description: Use for a code-comment cleanup pass: inventory every comment, classify tautology/excuse/stale/decision-record, delete the noise, file the hacks, move decisions to ADRs, and ratchet the count down.
+description: "Use for a code-comment cleanup pass: inventory every comment, classify tautology/excuse/stale/decision-record, delete the noise, file the hacks, move decisions to ADRs, and ratchet the count down."
 ---
 
 # Delete Comment
