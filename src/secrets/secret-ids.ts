@@ -39,3 +39,48 @@ export function legacySecretId(input: string): string {
 export function mcpSecretId(serverId: string, kind: string): string {
   return normalizeSecretId(`agentic-chat-mcp-${serverId}-${kind}`);
 }
+
+type McpSecretSlot = {
+  /** `server` is the MCP record itself; `oauth` is its `oauth` member. */
+  readonly scope: "server" | "oauth";
+  readonly valueKey: string;
+  readonly secretIdKey: string;
+  readonly secretKind: string;
+};
+
+/** Every secret-backed MCP field, for hydration, storage, and legacy migration. */
+export const MCP_SECRET_SLOTS: readonly McpSecretSlot[] = [
+  {
+    scope: "server",
+    valueKey: "authHeaderValue",
+    secretIdKey: "authHeaderValueSecretId",
+    secretKind: "auth-header-value",
+  },
+  {
+    scope: "oauth",
+    valueKey: "clientSecret",
+    secretIdKey: "clientSecretSecretId",
+    secretKind: "oauth-client-secret",
+  },
+  {
+    scope: "oauth",
+    valueKey: "accessToken",
+    secretIdKey: "accessTokenSecretId",
+    secretKind: "oauth-access-token",
+  },
+  {
+    scope: "oauth",
+    valueKey: "refreshToken",
+    secretIdKey: "refreshTokenSecretId",
+    secretKind: "oauth-refresh-token",
+  },
+];
+
+/** Fill the missing secret ids of one scope of an MCP record. */
+export function ensureMcpScopeRefs(serverId: string, record: object, scope: McpSecretSlot["scope"]): void {
+  const target = record as Record<string, string>;
+  for (const slot of MCP_SECRET_SLOTS) {
+    if (slot.scope !== scope) continue;
+    target[slot.secretIdKey] ||= mcpSecretId(serverId, slot.secretKind);
+  }
+}
