@@ -392,20 +392,25 @@ describe("agentic-chat mobile viewport", function () {
     ).toBe("none");
 
     await $('[data-ac="mode-toggle"]').click();
-    await browser.waitUntil(async () => (await iconClass()).includes("lucide-zap"), {
-      timeout: 5_000,
-      timeoutMsg: "the mode icon did not switch to zap in YOLO",
-    });
-    if (process.env.AGENTIC_CHAT_SCREENSHOT_DIR) {
-      await browser.saveScreenshot(`${process.env.AGENTIC_CHAT_SCREENSHOT_DIR}/mobile-mode-yolo.png`);
+    try {
+      await browser.waitUntil(async () => (await iconClass()).includes("lucide-zap"), {
+        timeout: 5_000,
+        timeoutMsg: "the mode icon did not switch to zap in YOLO",
+      });
+      if (process.env.AGENTIC_CHAT_SCREENSHOT_DIR) {
+        await browser.saveScreenshot(`${process.env.AGENTIC_CHAT_SCREENSHOT_DIR}/mobile-mode-yolo.png`);
+      }
+    } finally {
+      // Leave Safe for the approval tests that follow, even when an assertion
+      // or the screenshot above fails.
+      if ((await iconClass()).includes("lucide-zap")) {
+        await $('[data-ac="mode-toggle"]').click();
+        await browser.waitUntil(async () => (await iconClass()).includes("lucide-shield-check"), {
+          timeout: 5_000,
+          timeoutMsg: "the mode icon did not return to shield-check in Safe",
+        });
+      }
     }
-
-    // Leave Safe for the approval tests that follow.
-    await $('[data-ac="mode-toggle"]').click();
-    await browser.waitUntil(async () => (await iconClass()).includes("lucide-shield-check"), {
-      timeout: 5_000,
-      timeoutMsg: "the mode icon did not return to shield-check in Safe",
-    });
   });
 
   it("lifts the composer above the keyboard in the sidebar drawer (U7 #1)", async function () {

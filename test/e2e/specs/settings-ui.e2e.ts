@@ -252,6 +252,9 @@ describe("agentic-chat settings UI", function () {
       expect(result.problems).toEqual([]);
     }
     expect(seenBlocks).toBeGreaterThan(0);
+    if (process.env.AGENTIC_CHAT_SCREENSHOT_DIR) {
+      await browser.saveScreenshot(`${process.env.AGENTIC_CHAT_SCREENSHOT_DIR}/settings-blocks.png`);
+    }
   });
 
   it("persists provider, API key, base URL, and model through the Models tab", async function () {
@@ -302,6 +305,9 @@ describe("agentic-chat settings UI", function () {
 
     expect(await readSettingPlaceholder("OpenRouter API key")).toBe("••••••••");
     expect(await readSettingText("OpenRouter API key")).toBe("");
+    if (process.env.AGENTIC_CHAT_SCREENSHOT_DIR) {
+      await browser.saveScreenshot(`${process.env.AGENTIC_CHAT_SCREENSHOT_DIR}/settings-secret-placeholder.png`);
+    }
 
     // Leave the provider state the later persistence tests expect.
     await setSettingSelect("Model provider", "openai-compatible");
