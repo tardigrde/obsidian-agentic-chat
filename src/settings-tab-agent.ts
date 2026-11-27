@@ -133,7 +133,8 @@ export function approvalDefinitions(settings: AgenticChatSettings, host: Setting
     row("Per-tool overrides", (setting) => {
       setting
         .setDesc(
-          "Override allow/ask/deny for individual tools. 'Default' follows the rule above (read-only tools always run).",
+          "Override allow/ask/deny for individual tools ('Default' follows the rule above; read-only tools always run). " +
+          "Dispatch is allow/deny only, and a recursive delete always asks unless deletes are explicitly allowed.",
         )
         .setHeading();
     }),
@@ -141,7 +142,14 @@ export function approvalDefinitions(settings: AgenticChatSettings, host: Setting
   for (const tool of perToolApprovalRows(settings)) {
     items.push(
       row(tool.label, (setting) => {
-        const detail = tool.toolName === "subagent" ? "dispatch never prompts; deny blocks it" : tool.mutating ? "mutating" : "read-only";
+        const detail =
+          tool.toolName === "subagent"
+            ? "dispatch never prompts; deny blocks it"
+            : tool.toolName === "delete"
+              ? "mutating; recursive delete always asks unless allowed"
+              : tool.mutating
+                ? "mutating"
+                : "read-only";
         setting.setDesc(`${tool.toolName} · ${detail}`).addDropdown((dropdown) => {
           dropdown
             .addOption("default", defaultApprovalOptionLabel(settings.approval, tool.mutating))

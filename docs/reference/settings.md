@@ -37,7 +37,7 @@ Keys live in Obsidian secret storage. `data.json` stores secret ids, not values.
 | Setting | Default | Notes |
 | --- | --- | --- |
 | Before mutating tools | ask | Global allow, ask, or deny for vault-changing tools. |
-| Per-tool overrides | default | One row for every built-in tool: allow, ask, or deny. The **Default** label shows what an unset tool really follows (read-only tools default allow; mutating tools follow the global policy). Deny wins over everything, including YOLO. |
+| Per-tool overrides | default | One row for every built-in tool: allow, ask, or deny (dispatch is allow/deny only; a recursive delete always asks unless deletes are explicitly allowed). The **Default** label shows what an unset tool really follows (read-only tools default allow; mutating tools follow the global policy). Deny wins over everything, including YOLO. |
 
 ## Advanced
 
