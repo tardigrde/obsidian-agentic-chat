@@ -26,7 +26,7 @@ Keys live in Obsidian secret storage. `data.json` stores secret ids, not values.
 
 | Setting | Default | Notes |
 | --- | --- | --- |
-| Permission mode | Safe | Safe follows the approval gates. YOLO auto-approves most mutating tools until you switch back; recursive folder deletes and `create_skill` still ask. |
+| Permission mode | Safe | Safe follows the approval gates. YOLO auto-approves most mutating tools until you switch back; recursive folder deletes still ask. |
 | Thinking level | `off` | `off`, `minimal`, `low`, `medium`, `high`, or `xhigh`. Only models that support reasoning effort are affected. `off` sends no reasoning parameter, so the provider decides; the eval suite pins `low` for a reproducible measurement. |
 | System prompt | built-in | Sent at the start of every conversation. |
 | Standing instructions | vault root | `AGENTS.md`, with `CLAUDE.md` and `GEMINI.md` as fallbacks. Loaded every turn and truncated after 16,000 characters with a notice. |
@@ -37,7 +37,7 @@ Keys live in Obsidian secret storage. `data.json` stores secret ids, not values.
 | Setting | Default | Notes |
 | --- | --- | --- |
 | Before mutating tools | ask | Global allow, ask, or deny for vault-changing tools. |
-| Per-tool overrides | default | Per-tool allow, ask, or deny. Deny wins over everything, including YOLO. |
+| Per-tool overrides | default | One row for every built-in tool: allow, ask, or deny. The **Default** label shows what an unset tool really follows (read-only tools default allow; mutating tools follow the global policy). Deny wins over everything, including YOLO. |
 
 ## Advanced
 
@@ -66,7 +66,7 @@ The master switch controls background toasts. Errors always show. **Cost alert (
 
 ### Agent plugins
 
-Plugin management and diagnostics. Buttons: **Install plugin…** and **New skill…**. The installed plugin list shows enable toggles, spec status, component counts, and open-folder shortcuts. See [Install](../guide/install.md#installing-agent-plugins).
+Plugin management and diagnostics. Buttons: **Install plugin…** and **New skill…**. The installed plugin list shows enable toggles, spec status, component counts, and open-folder shortcuts. Packages you install or create start enabled. A package found in the plugins folder without an enable record starts disabled; the plugin shows one notice naming those packages, and you turn them on here. See [Install](../guide/install.md#installing-agent-plugins).
 
 ### Subagents
 

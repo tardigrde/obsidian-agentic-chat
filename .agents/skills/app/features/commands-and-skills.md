@@ -7,8 +7,8 @@
 - Local commands that never call the model.
 - Model-facing commands that inject a prompt or control the active turn.
 - Skills: built-in, plugin-provided, and bare `/skill-name` invocation.
-- Skill tools: `skill` (actions `read` and `read_file`, always loaded) and
-  `create_skill` (deferred; the model loads it with `search_tools`).
+- Skill tool: `skill` (actions `read` and `read_file`, always loaded). There is
+  no model-facing skill writer; skills are created in the New skill wizard.
 - The New skill wizard on the Advanced settings tab (Agent plugins).
 - Built-in skills served from code (no vault copy); a vault skill of the same name overrides.
 
@@ -78,7 +78,7 @@ await $(".agentic-chat-info").waitForExist();
 | `skill` tool, action `read` | `src/tools/skill-tool.ts#createSkillTool` | `test/skill-tool.test.ts#skill tool: action read` (unit only) | `partial` |
 | `skill` tool, action `read_file` | `src/tools/skill-tool.ts#readSkillFile` | `test/skill-tool.test.ts#skill tool: action read_file` (unit only) | `partial` |
 | Retired `read_skill`, `read_skill_file`, `load_skill`, `unload_skill` tools | `src/agent/runtime-resources.ts#buildAgentParentTools` | `test/feature-cut-2026-11.test.ts#feature cut 2026-11: tool consolidation` (unit only) | `partial` |
-| `create_skill` (deferred; loaded by `search_tools`) | `src/tools/skill-tools.ts#createCreateSkillTool` | `test/skill-create-tool.test.ts#create_skill tool` (unit only) | `partial` |
+| `create_skill` removed | `src/ui/new-skill-modal.ts#onOpen` | `test/ui/chat-render.test.ts#renders an old session's removed create_skill call with the generic tool name`; `test/settings-definitions.test.ts#keys every per-tool approval row by a real catalog tool and shows its real default` | `partial` |
 | New skill modal | `src/ui/new-skill-modal.ts#onOpen` | no committed check | `NONE` |
 | Built-in skills served from code, never copied to the vault | `src/skills/builtin-skills.ts#builtinSkills` | `test/plugins-service-import.test.ts#the plugin never writes a builtins package to the vault` (unit only) | `partial` |
 | Retired standalone inspect tools (`ls`, `search`, `find`, `grep`, `get_active_note`, `get_backlinks`, `get_links`, `local_graph`, `get_properties`) | `src/tools/tool-contracts.ts#BUILTIN_TOOL_NAMES` | `test/tool-contracts.test.ts#drives tool registration order; the old standalone inspect tools are gone` (unit only) | `partial` |
@@ -96,6 +96,7 @@ await $(".agentic-chat-info").waitForExist();
 - An unknown `/word` (a letter, then letters, digits, `-`, `_`, `.`) shows
   "Unknown command" and makes no model call. Text with a `/` after the first
   word, such as a path, still goes to the model.
-- The approval modal cannot remember approvals for `create_skill`.
+- The New skill wizard is the only way the model/UI creates a skill package;
+  there is no `create_skill` tool to remember an approval for.
 - The `.agentic-chat-info` element may exist from an earlier command. Assert the
   new text.

@@ -27,6 +27,7 @@ import {
   waitForAgenticChatSetting,
   waitForSetting,
 } from "../support/settings-ui";
+import { TOOL_CATALOG } from "../../../src/tools/tool-catalog";
 
 interface SettingsSnapshot {
   provider: string;
@@ -61,7 +62,7 @@ interface SettingsSnapshot {
       source: string;
     }>;
   };
-  plugins: { folder: string; sources?: Record<string, string>; mcpState?: Record<string, McpServerStateSnapshot> };
+  plugins: { folder: string; enabled?: Record<string, boolean>; sources?: Record<string, string>; mcpState?: Record<string, McpServerStateSnapshot> };
   ignoredGlobs: string;
 }
 
@@ -257,6 +258,36 @@ describe("agentic-chat settings UI", function () {
       const storedAfter = await readStoredData();
       expect(storedAfter.openaiCompatibleApiKey).toBeUndefined();
       expect("openaiCompatibleApiKey" in storedAfter).toBe(false);
+    }
+  });
+
+  it("shows one approval row per tool with the real default label", async function () {
+    this.timeout(15_000);
+    await selectSettingsTab("Agent");
+    await setSettingSelect("Before mutating tools", "ask");
+    await waitForSetting("Search tools");
+
+    const labels = TOOL_CATALOG.map((entry) => entry.label);
+    const rows = await browser.execute((toolLabels: string[]) => {
+      const root =
+        document.querySelector(".agentic-chat-settings-tabbody") ??
+        document.querySelector(".setting-page-content") ??
+        document;
+      return Array.from(root.querySelectorAll<HTMLElement>(".setting-item:not(.agentic-chat-settings-block)"))
+        .map((item) => {
+          const name = item.querySelector<HTMLElement>(".setting-item-name")?.innerText.trim() ?? "";
+          const select = item.querySelector<HTMLSelectElement>("select");
+          if (!select || !toolLabels.includes(name)) return null;
+          return { name, value: select.value, label: select.selectedOptions[0]?.textContent?.trim() ?? "" };
+        })
+        .filter((row): row is { name: string; value: string; label: string } => row !== null);
+    }, labels);
+
+    expect(rows.map((row) => row.name).sort()).toEqual([...labels].sort());
+    for (const tool of TOOL_CATALOG) {
+      const row = rows.find((candidate) => candidate.name === tool.label);
+      expect(row?.value).toBe("default");
+      expect(row?.label).toBe(`Default (${tool.mutating ? "ask" : "allow"})`);
     }
   });
 
@@ -511,6 +542,23 @@ describe("agentic-chat settings UI", function () {
             return text.includes("my-tool") && text.includes("Source:");
           }),
         { timeout: 5_000, timeoutMsg: "Installed package row did not render in Advanced" },
+      );
+
+      // A package the user installs starts enabled, and the toggle persists an
+      // explicit true instead of deleting the key.
+      await waitForAgenticChatSetting(
+        (settings) => (settings as unknown as SettingsSnapshot).plugins.enabled?.["my-tool"] === true,
+        "Installed package was not recorded as enabled",
+      );
+      await setSettingToggle("my-tool", false);
+      await waitForAgenticChatSetting(
+        (settings) => (settings as unknown as SettingsSnapshot).plugins.enabled?.["my-tool"] === false,
+        "Disabling the installed package did not persist false",
+      );
+      await setSettingToggle("my-tool", true);
+      await waitForAgenticChatSetting(
+        (settings) => (settings as unknown as SettingsSnapshot).plugins.enabled?.["my-tool"] === true,
+        "Re-enabling the installed package did not persist true",
       );
     } finally {
       await new Promise<void>((resolve) => server.close(() => resolve()));

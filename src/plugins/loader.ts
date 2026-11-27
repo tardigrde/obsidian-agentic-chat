@@ -53,7 +53,7 @@ export interface LoadedPlugin {
 export interface PluginLoadOptions {
   /** Vault folder scanned for plugins (default ".agentic-plugins"). */
   folder?: string;
-  /** Per-plugin enable map from settings; missing keys default to enabled. */
+  /** Per-plugin enable map from settings; only an explicit true enables a package. */
   enabledPlugins?: Record<string, boolean>;
 }
 
@@ -123,7 +123,7 @@ async function loadPluginDir(
       rootPath,
       name: dirName,
       manifestProblem: validation.fatal,
-      enabled: enabledPlugins[dirName] !== false,
+      enabled: enabledPlugins[dirName] === true,
       skills: [],
       skillReports: [],
       mcpValidation: null,
@@ -139,7 +139,7 @@ async function loadPluginDir(
   const { skills, skillReports } = await loadPluginSkills(app, rootPath, reports);
   const { mcpValidation, mcpServers } = await loadPluginMcp(app, rootPath, parsed.name, reports);
 
-  const enabled = enabledPlugins[parsed.name] !== false;
+  const enabled = enabledPlugins[parsed.name] === true;
   // "partial" whenever a component was skipped or rejected: skill reports,
   // error reports (e.g. mcp.json is not a file), an invalid mcp.json, or any
   // server entry that is invalid or uses an unsupported transport. An empty

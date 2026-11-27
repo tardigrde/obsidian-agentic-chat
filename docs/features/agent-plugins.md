@@ -31,9 +31,9 @@ A plugin with only `plugin.json` is also valid. Per section 6.2, a missing compo
 The settings UI writes real packages:
 
 - **Advanced tab > MCP tools > Add MCP server**: enter a server name and an HTTPS (or loopback HTTP) endpoint, then click **Add MCP server**. The plugin creates a package with that server's `plugin.json` and `mcp.json`. Approval and enable state sit on the server card; authentication, endpoint and tool filters are under its **Advanced** fold. A server in a one-server package can be removed from its card (it asks first). The package owns the endpoint and literal headers.
-- **Advanced tab > Agent plugins > New skill…**: create a single-skill package (`skills/<name>/SKILL.md`) with a template. The `create_skill` tool does the same in chat. It defaults to ask, and YOLO never auto-approves it; a per-tool allow can override the default. It replaces a same-named package only after you confirm. `/undo` cannot revert a created package.
+- **Advanced tab > Agent plugins > New skill…**: create a single-skill package (`skills/<name>/SKILL.md`) with a template. It replaces a same-named package only after you confirm. `/undo` cannot revert a created package.
 
-One limitation remains. Generic file tools (`read`, `ls`) fall back to disk when the vault index is stale, for example for dot-folders created outside the session. `edit`, `rename`, and `delete` use the index only. If you edit an installed skill's files, restart Obsidian to re-index first. Skill creation always works through `create_skill` or the wizard.
+One limitation remains. Generic file tools (`read`, `ls`) fall back to disk when the vault index is stale, for example for dot-folders created outside the session. `edit`, `rename`, and `delete` use the index only. If you edit an installed skill's files, restart Obsidian to re-index first. Skill creation always works through the wizard.
 
 ## Importing plugins
 
@@ -41,7 +41,7 @@ One limitation remains. Generic file tools (`read`, `ls`) fall back to disk when
 
 - The importer converts Claude, Codex, and Copilot or VS Code packages to Agent Plugins 1.0. It copies skills whole, converts `mcpServers` to `mcp.json`, and drops unsupported fields with warnings.
 - Imported packages show their source (`Source:`, for example `github:user/repo`). **Remove** on the Advanced tab (Agent plugins) deletes the package and any MCP servers it contributed.
-- Importing over an existing name updates it in place.
+- Importing over an existing name updates it in place. A package you disabled stays disabled; re-installing does not turn it back on.
 - Marketplace catalogs (`marketplace.json`) appear as a pick list. `./`-relative entries install directly. Git and archive entries list their fetch instructions.
 
 ## Built-in skill package
@@ -50,7 +50,7 @@ The self-knowledge, deep-research (web mode), and install-plugin skills ship ins
 
 ## Managing plugins
 
-- **Advanced tab > Agent plugins > Installed plugins**: per-plugin enable toggles, spec status, component counts, and open-folder shortcuts.
+- **Advanced tab > Agent plugins > Installed plugins**: per-plugin enable toggles, spec status, component counts, and open-folder shortcuts. A package you install or create starts enabled. A package found in the plugins folder without an enable record starts disabled, so an existing vault is not activated by surprise; one notice names those packages, and you turn them on here.
 - **`/doctor`** in chat: one health panel. It shows aggregate status, then audits every package (manifest validation, skill counts, MCP server counts, skipped transports, spec violations) and adds full runtime diagnostics.
 
 ## Spec compliance

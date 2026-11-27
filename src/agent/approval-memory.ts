@@ -12,6 +12,7 @@ export function approvalPolicyForRememberedChoice(choice: RememberableApprovalCh
   return choice.approved ? "allow" : "deny";
 }
 
+/** Persist an "Always allow" / "Always deny" choice in the shared per-tool map. */
 export function applyRememberedApprovalChoice(
   settings: AgenticChatSettings,
   toolName: string,
@@ -19,21 +20,6 @@ export function applyRememberedApprovalChoice(
 ): boolean {
   const policy = approvalPolicyForRememberedChoice(choice);
   if (!policy) return false;
-  if (isNeverRememberedAllowTool(toolName) && policy === "allow") {
-    // A persistent skill write (create_skill) must
-    // never be silently auto-allowed: one fatigued "don't ask again" would
-    // disarm the injection gate for all future calls. Remember deny, not allow.
-    return false;
-  }
   setPerToolApproval(settings.approval, toolName, policy);
   return true;
-}
-
-/**
- * Tools whose "Always allow" is never stored: a persistent skill package, and a
- * web download (it has no row in the per-tool settings, so a remembered allow
- * could never be seen or revoked there).
- */
-function isNeverRememberedAllowTool(toolName: string): boolean {
-  return toolName === "create_skill" || toolName === "download_file";
 }

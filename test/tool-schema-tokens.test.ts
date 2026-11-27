@@ -13,19 +13,13 @@ import { noopArtifactStore } from "./support/fake-adapter";
 
 const noopFetcher: WebFetcher = async () => ({ status: 200, text: "", headers: {} });
 
-function parentTools(withScaffolder: boolean): AgentTool[] {
+function parentTools(): AgentTool[] {
   const subagentTool = createSubagentTool({
     getProfiles: () => [],
     createChildAgent: () => {
       throw new Error("n/a");
     },
   }) as unknown as AgentTool;
-  const scaffolder = {
-    packageExists: async () => false,
-    async scaffoldSkill() {
-      return { rootPath: ".agentic-plugins/x", name: "x", updated: false, skills: 1 };
-    },
-  };
   const { active } = buildAgentParentTools({
     app: { vault: {}, workspace: {} } as unknown as App,
     settings: { ...DEFAULT_SETTINGS, web: { ...DEFAULT_SETTINGS.web, enabled: true } },
@@ -43,14 +37,13 @@ function parentTools(withScaffolder: boolean): AgentTool[] {
     artifactStore: noopArtifactStore,
     askUser: async () => "answer",
     subagentTool,
-    ...(withScaffolder ? { skillScaffolder: scaffolder } : {}),
   });
   return active;
 }
 
 describe("tool schema token ceiling", () => {
   it("keeps the active parent tool set under 2500 model-visible schema tokens", () => {
-    const tokens = estimateToolDefinitionTokens(parentTools(false));
+    const tokens = estimateToolDefinitionTokens(parentTools());
     // 16 always-loaded tools with web access on, measured at 3.5 chars/token (about
     // 2284 on 2026-11-16 for 15 tools, down from 2663 for the 20 tools before tool
     // consolidation). download_file (U7 #10) adds about 115 tokens, and only while
@@ -59,17 +52,13 @@ describe("tool schema token ceiling", () => {
   });
 
   it("uses pi-ai's text ratio, so the context bar sums one unit", () => {
-    const tools = parentTools(false);
+    const tools = parentTools();
     const modelVisible = tools.map((tool) => ({
       name: tool.name,
       description: tool.description ?? "",
       parameters: tool.parameters ?? {},
     }));
     expect(estimateToolDefinitionTokens(tools)).toBe(estimateTextTokens(JSON.stringify(modelVisible)));
-  });
-
-  it("does not grow the active set with create_skill: it is deferred behind search_tools", () => {
-    expect(estimateToolDefinitionTokens(parentTools(true))).toBe(estimateToolDefinitionTokens(parentTools(false)));
   });
 
   it("keeps the default vault surface under 1000 tokens (eval max_tool_schema_tokens is 1200)", () => {

@@ -1,12 +1,34 @@
 import type { DropdownComponent, SettingDefinitionItem } from "obsidian";
-import { type ApprovalPolicy, setPerToolApproval } from "./agent/approval";
+import { type ApprovalPolicy, type ApprovalSettings, setPerToolApproval } from "./agent/approval";
 import { type AgentMode, MODE_ORDER, MODES } from "./agent/modes";
 import { DEFAULT_SYSTEM_PROMPT } from "./agent/system-prompt";
 import { boundedNumberRow, controlDef, headingRow, row } from "./settings-definition-kit";
 import { MAX_PARALLEL_SUBAGENTS, MAX_RESPONSE_TOKENS, MIN_PARALLEL_SUBAGENTS, type AgenticChatSettings } from "./settings-schema";
-import { MUTATING_TOOLS } from "./tools/tool-contracts";
-import { createVaultTools } from "./tools/vault-tools";
+import { TOOL_CATALOG } from "./tools/tool-catalog";
 import { clampRowNumber, type SettingsTabHost } from "./settings-tab-host";
+
+export interface PerToolApprovalRow {
+  toolName: string;
+  label: string;
+  mutating: boolean;
+  /** The label on the dropdown's `default` option: the policy an unset tool really follows. */
+  defaultLabel: string;
+}
+
+/** Read-only tools run unless overridden; mutating tools follow the global policy. */
+export function defaultApprovalOptionLabel(approval: ApprovalSettings, mutating: boolean): string {
+  return `Default (${mutating ? approval.mutating : "allow"})`;
+}
+
+/** One approval row per catalog tool, keyed by the tool name the gate reads. */
+export function perToolApprovalRows(settings: AgenticChatSettings): PerToolApprovalRow[] {
+  return TOOL_CATALOG.map((tool) => ({
+    toolName: tool.name,
+    label: tool.label,
+    mutating: tool.mutating,
+    defaultLabel: defaultApprovalOptionLabel(settings.approval, tool.mutating),
+  }));
+}
 
 export function agentDefinitions(settings: AgenticChatSettings, host: SettingsTabHost): SettingDefinitionItem[] {
   return [
@@ -116,19 +138,18 @@ export function approvalDefinitions(settings: AgenticChatSettings, host: Setting
         .setHeading();
     }),
   );
-  for (const tool of createVaultTools(host.app)) {
-    const mutating = MUTATING_TOOLS.has(tool.name);
+  for (const tool of perToolApprovalRows(settings)) {
     items.push(
       row(tool.label, (setting) => {
-        setting.setDesc(`${tool.name} · ${mutating ? "mutating" : "read-only"}`).addDropdown((dropdown) => {
+        setting.setDesc(`${tool.toolName} · ${tool.mutating ? "mutating" : "read-only"}`).addDropdown((dropdown) => {
           dropdown
-            .addOption("default", "Default")
+            .addOption("default", defaultApprovalOptionLabel(settings.approval, tool.mutating))
             .addOption("allow", "Allow")
             .addOption("ask", "Ask")
             .addOption("deny", "Deny")
-            .setValue(settings.approval.perTool[tool.name] ?? "default")
+            .setValue(settings.approval.perTool[tool.toolName] ?? "default")
             .onChange(async (value) => {
-              setPerToolApproval(settings.approval, tool.name, value as ApprovalPolicy | "default");
+              setPerToolApproval(settings.approval, tool.toolName, value as ApprovalPolicy | "default");
               await host.save();
             });
         });

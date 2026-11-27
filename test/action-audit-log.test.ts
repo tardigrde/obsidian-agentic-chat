@@ -175,17 +175,8 @@ describe("AgentActionAuditRecorder", () => {
     expect(redacted.content).toBe("[content 14 chars]");
   });
 
-  it("attributes create_skill audit to its package paths", () => {
-    const args = { name: "my-skill", description: "D", body: "# Body" };
-    expect(touchedFilesForTool("create_skill", args)).toEqual([
-      ".agentic-plugins/my-skill/plugin.json",
-      ".agentic-plugins/my-skill/skills/my-skill/SKILL.md",
-    ]);
-    expect(diffSummaryForTool("create_skill", args)).toMatchObject({
-      kind: "write",
-      path: ".agentic-plugins/my-skill/skills/my-skill/SKILL.md",
-      afterCharLength: "# Body".length,
-    });
-    expect(touchedFilesForTool("create_skill", {})).toEqual([]);
+  it("leaves an unknown tool without touched files or a diff summary", () => {
+    expect(touchedFilesForTool("create_skill", { name: "my-skill" })).toEqual([]);
+    expect(diffSummaryForTool("create_skill", { name: "my-skill", body: "# Body" })).toBeUndefined();
   });
 });

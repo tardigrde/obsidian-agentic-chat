@@ -36,7 +36,11 @@ export class App {
 }
 
 export class Notice {
-  constructor(public message: string) {}
+  /** Every notice constructed in a test file, for counting and message assertions. */
+  static readonly instances: Notice[] = [];
+  constructor(public message: string) {
+    Notice.instances.push(this);
+  }
   setMessage(message: string): this {
     this.message = message;
     return this;

@@ -197,7 +197,6 @@ describe("loadAgentRoles", () => {
       "web_search",
       "fetch_url",
       "artifact",
-      "skill",
     ]);
   });
 
