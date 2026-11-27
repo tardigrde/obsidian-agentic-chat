@@ -606,11 +606,7 @@ describe("agentic-chat runtime mode", function () {
   it("has no Permission mode setting row and starts in Safe", async function () {
     await openAgenticChatSettings();
     await selectSettingsTab("Agent");
-    await browser.waitUntil(
-      async () =>
-        await browser.execute(() => !Array.from(document.querySelectorAll("*")).some((el) => el.textContent === "Permission mode")),
-      { timeout: 5_000, timeoutMsg: "the retired Permission mode row is still rendered" },
-    );
+    expect(await readSettingsBodyText()).not.toContain("Permission mode");
     await closeAgenticChatSettings();
 
     expect(await readToggleState()).toMatchObject({
