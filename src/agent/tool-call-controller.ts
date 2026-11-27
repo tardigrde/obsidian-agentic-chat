@@ -346,10 +346,7 @@ export class AgentToolCallController {
   private resolveMcpServerApproval(settings: AgenticChatSettings, toolName: string): ApprovalPolicy | undefined {
     const serverId = mcpServerIdFromToolName(toolName);
     if (!serverId) return undefined;
-    const state = settings.plugins.mcpState[serverId];
-    if (state && state.approval) return state.approval;
-    const server = settings.mcp.servers.find((candidate) => candidate.id === serverId);
-    return server?.approval;
+    return settings.plugins.mcpState[serverId]?.approval;
   }
 
   /**

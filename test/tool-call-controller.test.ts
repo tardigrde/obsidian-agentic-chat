@@ -12,7 +12,7 @@ import {
 import { SubagentRegistry } from "../src/tools/subagent-tool";
 import type { AgentRole } from "../src/agent/subagents";
 import { DEFAULT_SETTINGS, type AgenticChatSettings } from "../src/settings-schema";
-import { createMcpServerSettings } from "../src/mcp/settings";
+import { createMcpServerSettings, createMcpServerState } from "../src/mcp/settings";
 import { FakeVault } from "./helpers/fake-vault";
 
 function makeController(
@@ -281,16 +281,11 @@ describe("AgentToolCallController", () => {
     const tool = { name: "mcp__docs__resolve_library_id", label: "Docs MCP: Resolve library" } as AgentTool;
     const { controller, requests } = makeController({
       settings: {
-        mcp: {
-          enabled: true,
-          proxyUrl: "",
-          noProxy: "localhost,127.0.0.1,::1",
-          servers: [
-            {
-              ...createMcpServerSettings({ id: "docs", name: "Docs MCP", url: "https://mcp.example.com/mcp" }),
-              approval: "ask",
-            },
-          ],
+        plugins: {
+          ...DEFAULT_SETTINGS.plugins,
+          mcpState: {
+            docs: createMcpServerState("docs", { enabled: true, approval: "ask" }),
+          },
         },
       },
       tools: [tool],
@@ -310,18 +305,8 @@ describe("AgentToolCallController", () => {
 
   it("honors MCP deny policy and per-tool allow overrides", async () => {
     const toolName = "mcp__docs__resolve_library_id";
-    const baseMcp = {
-      enabled: true,
-      proxyUrl: "",
-      noProxy: "localhost,127.0.0.1,::1",
-      servers: [
-        {
-          ...createMcpServerSettings({ id: "docs", name: "Docs MCP", url: "https://mcp.example.com/mcp" }),
-          approval: "deny" as const,
-        },
-      ],
-    };
-    const denied = makeController({ settings: { mcp: baseMcp } });
+    const mcpState = { docs: createMcpServerState("docs", { enabled: true, approval: "deny" }) };
+    const denied = makeController({ settings: { plugins: { ...DEFAULT_SETTINGS.plugins, mcpState } } });
 
     await expect(
       denied.controller.beforeToolCall({ toolCall: { id: "call-1", name: toolName }, args: {} }),
@@ -332,8 +317,8 @@ describe("AgentToolCallController", () => {
 
     const allowed = makeController({
       settings: {
-        mcp: baseMcp,
         approval: { mutating: "ask", perTool: { [toolName]: "allow" } },
+        plugins: { ...DEFAULT_SETTINGS.plugins, mcpState },
       },
     });
     await expect(

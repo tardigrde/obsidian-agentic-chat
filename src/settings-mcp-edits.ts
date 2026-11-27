@@ -40,10 +40,7 @@ export function nextMcpServerId(
   base: string,
   current?: McpServerSettings,
 ): string {
-  const used = new Set([
-    ...settings.mcp.servers.filter((entry) => entry !== current).map((entry) => entry.id),
-    ...Object.keys(settings.plugins.mcpState).filter((id) => id !== current?.id),
-  ]);
+  const used = new Set(Object.keys(settings.plugins.mcpState).filter((id) => id !== current?.id));
   return nextUniqueMcpServerId(base, used);
 }
 

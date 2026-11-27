@@ -13,7 +13,7 @@ import { DEFAULT_SYSTEM_PROMPT } from "./agent/system-prompt";
 import { isRecord } from "./utils/records";
 import { DEFAULT_PLUGIN_SETTINGS, healPluginMcpState, type PluginSettings } from "./plugins/settings";
 import { DEFAULT_PLUGINS_FOLDER } from "./plugins/loader";
-import { healMcpSettings, mcpServerStateFromServer, type McpSettings } from "./mcp/settings";
+import { healMcpSettings, type McpSettings } from "./mcp/settings";
 import { WEB_SEARCH_PROVIDERS, type WebSearchProvider } from "./tools/web-search";
 import {
   OPENAI_COMPATIBLE_API_KEY_SECRET_ID,
@@ -218,7 +218,6 @@ export const DEFAULT_SETTINGS: AgenticChatSettings = {
   mcp: {
     enabled: false,
     ...DEFAULT_PROXY_SETTINGS,
-    servers: [],
   },
   observability: DEFAULT_OBSERVABILITY_SETTINGS,
 };
@@ -268,7 +267,6 @@ export function mergeSettings(stored: Partial<AgenticChatSettings> | null | unde
   const remaining = dropRetiredSettingKeys(stored);
   const healedMcp = healMcpSettings(sanitizeProxyLeaves(stored?.mcp));
   const healedPlugins = healPluginSettings(stored?.plugins);
-  migrateLegacyPluginServers(healedMcp, healedPlugins);
   const merged: AgenticChatSettings = {
     ...DEFAULT_SETTINGS,
     ...remaining,
@@ -393,31 +391,6 @@ function dropRetiredSettingKeys(
   return remaining;
 }
 
-/**
- * One-time migration S10: legacy plugin servers persisted in mcp.servers → plugins.mcpState map.
- * Client state (enabled/approval/auth/knownTools/oauth) moves by stable id; shape stays in mcp.json.
- * User servers (source=user) stay in mcp.servers for backward compat until they are re-created as plugins.
- */
-function migrateLegacyPluginServers(healedMcp: McpSettings, healedPlugins: PluginSettings): void {
-  if (healedMcp.servers.length === 0) return;
-  let migrated = false;
-  const remainingServers: McpSettings["servers"] = [];
-  for (const server of healedMcp.servers) {
-    if (server.source !== "plugin") {
-      remainingServers.push(server);
-      continue;
-    }
-    // Move client state once; an already-migrated copy is dropped to avoid divergence.
-    if (!healedPlugins.mcpState[server.id]) {
-      healedPlugins.mcpState[server.id] = mcpServerStateFromServer(server);
-    }
-    migrated = true;
-  }
-  if (migrated) {
-    healedMcp.servers = remainingServers;
-  }
-}
-
 /** Retired feature keys removed from persisted data.json on load. */
 const RETIRED_SETTING_KEYS = [
   "projects",
@@ -483,6 +456,18 @@ export function retiredSettingsNotices(stored: unknown): string[] {
   }
   if (isRecord(stored.embeddings) && stored.embeddings.enabled === true) {
     notices.push("The semantic index was removed in this version. No tool read it. The agent uses vault search.");
+  }
+  const mcp = stored.mcp;
+  if (isRecord(mcp) && Array.isArray(mcp.servers)) {
+    for (const server of mcp.servers) {
+      if (!isRecord(server) || server.source === "plugin") continue;
+      const name = typeof server.name === "string" && server.name.trim() ? server.name.trim() : "Unnamed server";
+      const url = typeof server.url === "string" && server.url.trim() ? server.url.trim() : "(no URL)";
+      notices.push(
+        `The MCP server "${name}" (${url}) was not carried over: server endpoints now live in plugin packages. ` +
+          "Add it again in Settings → Advanced → MCP.",
+      );
+    }
   }
   return notices;
 }

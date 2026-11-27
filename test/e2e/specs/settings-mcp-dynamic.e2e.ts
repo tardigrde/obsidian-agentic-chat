@@ -17,7 +17,7 @@ import {
 } from "../support/settings-ui";
 
 interface SettingsSnapshot {
-  mcp: { enabled: boolean; servers: Array<{ id: string; name: string; url: string; source: string }> };
+  mcp: { enabled: boolean };
   plugins: {
     folder: string;
     mcpState?: Record<string, { knownTools?: Array<{ name: string }> }>;
@@ -98,12 +98,11 @@ describe("settings MCP dynamic rows", function () {
       if (existing) await app.vault.delete(existing, true);
       const plugin = (app as unknown as {
         plugins?: {
-          plugins?: Record<string, { settings?: { mcp?: { enabled?: boolean; servers?: unknown[] } }; saveSettings?: () => Promise<void> }>;
+          plugins?: Record<string, { settings?: { mcp?: { enabled?: boolean } }; saveSettings?: () => Promise<void> }>;
         };
       }).plugins?.plugins?.["agentic-chat"];
       if (plugin?.settings?.mcp) {
         plugin.settings.mcp.enabled = false;
-        plugin.settings.mcp.servers = [];
         await plugin.saveSettings?.();
       }
     }, PACKAGE_PATH);
@@ -184,7 +183,7 @@ describe("settings MCP dynamic rows", function () {
       { timeout: 10_000, timeoutMsg: "Removing the package left its MCP state behind" },
     );
     const settingsAfter = await readAgenticChatSettings<SettingsSnapshot>();
-    expect(settingsAfter.mcp.servers.some((server) => server.url === url)).toBe(false);
+    expect("servers" in settingsAfter.mcp).toBe(false);
   });
 
   it("shows the OAuth banner for a bare MCP server whose 401 advertises resource_metadata (no auto-redirect)", async function () {
@@ -196,36 +195,35 @@ describe("settings MCP dynamic rows", function () {
     const setServer = async (add: boolean): Promise<void> => {
       await browser.executeObsidian(async ({ app }, shouldAdd) => {
         const plugin = (app as unknown as {
-          plugins: { plugins: Record<string, { settings: { mcp: { enabled: boolean; servers: Array<Record<string, unknown>> } }; saveSettings: () => Promise<void> }> };
+          plugins: {
+            plugins: Record<
+              string,
+              {
+                settings: { mcp: { enabled: boolean }; plugins: { mcpState: Record<string, Record<string, unknown>> } };
+                pluginService?: { generateMcpServerPackage: (input: { serverName: string; url: string }) => Promise<{ rootPath: string }> };
+                saveSettings: () => Promise<void>;
+              }
+            >;
+          };
         }).plugins.plugins["agentic-chat"];
-        const mcp = plugin.settings.mcp;
-        mcp.servers = mcp.servers.filter((server) => server.id !== "e2e-bare-oauth");
+        const folder = ".agentic-plugins/e2e-bare-oauth";
+        const existing = app.vault.getAbstractFileByPath(folder);
+        if (existing) await app.vault.delete(existing, true);
+        const stateId = Object.keys(plugin.settings.plugins.mcpState).find((id) => id.includes("e2e_bare_oauth"));
+        if (stateId) delete plugin.settings.plugins.mcpState[stateId];
         if (shouldAdd) {
-          mcp.enabled = true;
-          mcp.servers.push({
-            id: "e2e-bare-oauth",
-            name: "e2e-bare-oauth",
+          plugin.settings.mcp.enabled = true;
+          if (!plugin.pluginService) throw new Error("pluginService is unavailable");
+          await plugin.pluginService.generateMcpServerPackage({
+            serverName: "e2e-bare-oauth",
             url: "https://mcp.example.com/mcp",
-            enabled: true,
-            authType: "none",
-            authHeaderName: "",
-            authHeaderValue: "",
-            authHeaderValueSecretId: "test",
-            oauth: {
-              clientId: "", clientSecret: "", clientSecretSecretId: "", dynamicClientRegistration: false,
-              registeredRedirectUri: "", authorizationServer: "", authorizationEndpoint: "", tokenEndpoint: "",
-              registrationEndpoint: "", resourceMetadataUrl: "", accessToken: "", accessTokenSecretId: "",
-              refreshToken: "", refreshTokenSecretId: "", expiresAt: 0, scope: "",
-            },
-            approval: "ask",
-            knownTools: [],
-            headers: {},
-            source: "user",
-            enabledTools: [],
-            disabledTools: [],
-            pendingOAuthChallenge: 'Bearer resource_metadata="https://mcp.example.com/.well-known/oauth-protected-resource"',
-            pendingOAuthResourceUrl: "https://mcp.example.com/.well-known/oauth-protected-resource",
           });
+          const id = Object.keys(plugin.settings.plugins.mcpState).find((candidate) => candidate.includes("e2e_bare_oauth"));
+          if (!id) throw new Error("generated MCP package did not create state");
+          const state = plugin.settings.plugins.mcpState[id];
+          state.pendingOAuthChallenge =
+            'Bearer resource_metadata="https://mcp.example.com/.well-known/oauth-protected-resource"';
+          state.pendingOAuthResourceUrl = "https://mcp.example.com/.well-known/oauth-protected-resource";
         }
         await plugin.saveSettings();
       }, add);

@@ -67,6 +67,11 @@ export interface McpServerProbeResult {
   tools: McpKnownToolSettings[];
 }
 
+/** The runtime server list is built per turn; it is not persisted in settings. */
+export interface McpToolsSettings extends McpSettings {
+  servers: McpServerSettings[];
+}
+
 const MCP_ARTIFACT_THRESHOLD_CHARS = 8_000;
 const MCP_ARTIFACT_PREVIEW_CHARS = 4_000;
 
@@ -100,7 +105,7 @@ function mcpClientKey(server: McpServerSettings): string {
 }
 
 export async function createMcpTools(
-  settings: McpSettings,
+  settings: McpToolsSettings,
   fetcher: WebFetcher,
   options: McpToolCreationOptions = {},
 ): Promise<AgentTool[]> {
@@ -108,7 +113,7 @@ export async function createMcpTools(
 }
 
 export async function createMcpToolsWithDiagnostics(
-  settings: McpSettings,
+  settings: McpToolsSettings,
   fetcher: WebFetcher,
   options: McpToolCreationOptions = {},
 ): Promise<McpToolCreationResult> {

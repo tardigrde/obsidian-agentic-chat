@@ -116,17 +116,13 @@ describe("MCP server shape round-trip", () => {
     expect(healMcpServerState(healed, server.id)).toEqual(healed);
   });
 
-  it.each(servers)("$label: healMcpSettings is idempotent", ({ input }) => {
+  it.each(servers)("$label: the state shape survives a heal", ({ input }) => {
     const server = createMcpServerSettings(input);
-    const once = healMcpSettings({ servers: [server] });
-    expect(healMcpSettings(once)).toEqual(once);
-    expect(pick(once.servers[0]!)).toEqual(
-      pick({
-        ...server,
-        authHeaderValue: "",
-        oauth: { ...server.oauth, clientSecret: "", accessToken: "", refreshToken: "" },
-      }),
-    );
+    const state = healMcpServerState(mcpServerStateFromServer(server), server.id);
+    expect(state).toMatchObject({
+      authHeaderValue: "",
+      oauth: { clientSecret: "", accessToken: "", refreshToken: "" },
+    });
   });
 
   it("keeps healed pending OAuth challenges on the state shape", () => {
@@ -166,11 +162,10 @@ describe("MCP server shape round-trip", () => {
       enabledTools: [],
       disabledTools: [],
     });
-    expect(healMcpSettings({ servers: [] })).toEqual({
+    expect(healMcpSettings({})).toEqual({
       enabled: false,
       proxyUrl: "",
       noProxy: "localhost,127.0.0.1,::1",
-      servers: [],
     });
   });
 });

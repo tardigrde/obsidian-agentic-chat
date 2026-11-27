@@ -3,7 +3,6 @@ import type { Skill } from "../skills/skill-prompt";
 import {
   applyMcpServerState,
   createMcpServerSettings,
-  mcpServerStateFromServer,
   type McpServerSettings,
   type McpServerState,
 } from "../mcp/settings";
@@ -329,44 +328,26 @@ export function mcpServerFromPluginEntry(
 }
 
 /**
- * Resolve all MCP servers for the runtime: plugin-derived (via mcpState map) plus
- * legacy user servers that still live in settings.mcp.servers (source=user).
- * After the one-time migration, the only survivors in mcp.servers are user servers
- * that have not yet been recreated as plugins; new plugin servers are never added there.
- * For backward compat (tests that still pass plugin servers via mcp.servers), a
- * legacy plugin entry is used as fallback state when the map has no entry.
+ * Resolve the runtime MCP servers: plugin packages own every endpoint, and
+ * `plugins.mcpState` supplies the client-owned fields for each stable id.
+ * There is no second settings-owned server list.
  */
 export function resolveMcpServers(
-  settings: { mcp: { servers: McpServerSettings[] }; plugins: { mcpState: Record<string, McpServerState> } },
+  settings: { plugins: { mcpState: Record<string, McpServerState> } },
   derivedPluginServers: readonly McpServerSettings[],
 ): McpServerSettings[] {
-  const legacyPluginById = new Map(
-    settings.mcp.servers.filter((s) => s.source === "plugin").map((s) => [s.id, s] as const),
-  );
-  const pluginServers = derivedPluginServers.map((server) => {
+  return derivedPluginServers.map((server) => {
     const state = settings.plugins.mcpState[server.id];
-    if (state) {
-      // mcp.json moved the URL: never replay tokens, tools, or a challenge minted
-      // for the old host, even before the settings reconcile persists the clear.
-      const urlChanged = Boolean(state.lastUrl && state.lastUrl !== server.url);
-      const effective = urlChanged ? clearAuthForUrlChange({ ...state }) : state;
-      if (urlChanged) effective.lastUrl = server.url;
-      const copy: McpServerSettings = { ...server, oauth: { ...server.oauth }, knownTools: [...server.knownTools] };
-      applyMcpServerState(copy, effective);
-      return copy;
-    }
-    const legacy = legacyPluginById.get(server.id);
-    if (legacy) {
-      // Fallback for tests / pre-migration data that still stores plugin state in mcp.servers.
-      const legacyState = mcpServerStateFromServer(legacy);
-      const copy: McpServerSettings = { ...server, oauth: { ...server.oauth }, knownTools: [...server.knownTools] };
-      applyMcpServerState(copy, legacyState);
-      return copy;
-    }
-    return server;
+    if (!state) return server;
+    // mcp.json moved the URL: never replay tokens, tools, or a challenge minted
+    // for the old host, even before the settings reconcile persists the clear.
+    const urlChanged = Boolean(state.lastUrl && state.lastUrl !== server.url);
+    const effective = urlChanged ? clearAuthForUrlChange({ ...state }) : state;
+    if (urlChanged) effective.lastUrl = server.url;
+    const copy: McpServerSettings = { ...server, oauth: { ...server.oauth }, knownTools: [...server.knownTools] };
+    applyMcpServerState(copy, effective);
+    return copy;
   });
-  const userServers = settings.mcp.servers.filter((server) => server.source !== "plugin");
-  return [...userServers, ...pluginServers];
 }
 
 function folderEntry(app: App, path: string): TFolder | null {

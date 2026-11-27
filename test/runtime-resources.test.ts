@@ -70,6 +70,13 @@ function settings(overrides: SettingsOverrides = {}): AgenticChatSettings {
     ...overrides,
     web: { ...DEFAULT_SETTINGS.web, ...(overrides.web ?? {}) },
     mcp: { ...DEFAULT_SETTINGS.mcp, ...(overrides.mcp ?? {}) },
+    plugins: { ...DEFAULT_SETTINGS.plugins, ...(overrides.plugins ?? {}) },
+  };
+}
+
+function pluginMcpState(enabled = true): AgenticChatSettings["plugins"]["mcpState"] {
+  return {
+    [enabledPluginServer().id]: createMcpServerState(enabledPluginServer().id, { enabled }),
   };
 }
 
@@ -256,7 +263,10 @@ describe("agent runtime resources", () => {
     );
     const resources = await loadAgentRuntimeResources(
       app,
-      settings({ mcp: { enabled: true, proxyUrl: "", noProxy: "localhost,127.0.0.1,::1", servers: [enabledPluginServer()] } }),
+      settings({
+        mcp: { enabled: true, proxyUrl: "", noProxy: "localhost,127.0.0.1,::1" },
+        plugins: { ...DEFAULT_SETTINGS.plugins, mcpState: pluginMcpState() },
+      }),
       mcpFetcher(),
     );
 
@@ -264,7 +274,7 @@ describe("agent runtime resources", () => {
     const build = () =>
       buildAgentParentTools({
         app: { vault: {}, workspace: {} } as unknown as App,
-        settings: settings({ mcp: { enabled: true, proxyUrl: "", noProxy: "localhost,127.0.0.1,::1", servers: [] } }),
+        settings: settings({ mcp: { enabled: true, proxyUrl: "", noProxy: "localhost,127.0.0.1,::1" } }),
         resources,
         readMemo: new ReadMemo(),
         webFetch: noopFetcher,
@@ -299,7 +309,7 @@ describe("agent runtime resources", () => {
     );
     const serverId = pluginMcpServerId("mcp-server", "docs");
     const loaded = settings({
-      mcp: { enabled: true, proxyUrl: "", noProxy: "localhost,127.0.0.1,::1", servers: [] },
+      mcp: { enabled: true, proxyUrl: "", noProxy: "localhost,127.0.0.1,::1" },
       plugins: {
         ...DEFAULT_SETTINGS.plugins,
         mcpState: {
@@ -348,7 +358,10 @@ describe("agent runtime resources", () => {
     const { value: resources } = await withFakeClock(() =>
       loadAgentRuntimeResources(
         app,
-        settings({ mcp: { enabled: true, proxyUrl: "", noProxy: "localhost,127.0.0.1,::1", servers: [enabledPluginServer()] } }),
+        settings({
+          mcp: { enabled: true, proxyUrl: "", noProxy: "localhost,127.0.0.1,::1" },
+          plugins: { ...DEFAULT_SETTINGS.plugins, mcpState: pluginMcpState() },
+        }),
         async () => ({ status: 500, text: "server down", headers: {} }),
       ),
     );

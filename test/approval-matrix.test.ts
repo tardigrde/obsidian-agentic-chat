@@ -14,7 +14,7 @@ import {
 import { type ApprovalPolicy, type ApprovalSettings } from "../src/agent/approval";
 import { type AgentMode, resolveModePolicy } from "../src/agent/modes";
 import type { AgentRole } from "../src/agent/subagents";
-import { createMcpServerSettings } from "../src/mcp/settings";
+import { createMcpServerState } from "../src/mcp/settings";
 import { ObsidianSessionManager, SessionWriteRegistry } from "../src/session/session-manager";
 import { DEFAULT_SETTINGS, type AgenticChatSettings } from "../src/settings-schema";
 import { SubagentRegistry } from "../src/tools/subagent-tool";
@@ -358,22 +358,17 @@ describe("tool-call controller policy table", () => {
         openrouterApiKey: "test-key",
         mode: cell.mode,
         approval: cell.approval,
-        mcp: {
-          ...DEFAULT_SETTINGS.mcp,
-          servers: cell.mcpServerApproval
-            ? [createMcpServerSettings({ id: "docs", name: "Docs", url: "https://docs.example/mcp", approval: cell.mcpServerApproval })]
-            : [],
-        },
         plugins: {
           ...DEFAULT_SETTINGS.plugins,
-          mcpState: cell.mcpStateApproval
-            ? {
-                docs: {
-                  ...createMcpServerSettings({ id: "docs", approval: cell.mcpStateApproval }),
-                  approval: cell.mcpStateApproval,
-                },
-              }
-            : {},
+          mcpState:
+            cell.mcpStateApproval ?? cell.mcpServerApproval
+              ? {
+                  docs: createMcpServerState("docs", {
+                    enabled: true,
+                    approval: cell.mcpStateApproval ?? cell.mcpServerApproval,
+                  }),
+                }
+              : {},
         },
       };
       const controller = new AgentToolCallController({

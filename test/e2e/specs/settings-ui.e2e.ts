@@ -49,17 +49,6 @@ interface SettingsSnapshot {
   };
   mcp: {
     enabled: boolean;
-    servers: Array<{
-      id: string;
-      name: string;
-      url: string;
-      enabled: boolean;
-      authType: string;
-      authHeaderName: string;
-      authHeaderValue: string;
-      approval: string;
-      source: string;
-    }>;
   };
   plugins: { folder: string; sources?: Record<string, string>; mcpState?: Record<string, McpServerStateSnapshot> };
   ignoredGlobs: string;
@@ -122,7 +111,7 @@ async function resetSettingsForUiSpec(): Promise<void> {
         authHeaderValueSecretId?: string;
         authHeaderValue?: string;
       };
-      mcp: { enabled: boolean; proxyUrl: string; noProxy: string; servers: unknown[] };
+      mcp: { enabled: boolean; proxyUrl: string; noProxy: string };
       plugins: {
         folder: string;
         enabled: Record<string, boolean>;
@@ -152,7 +141,6 @@ async function resetSettingsForUiSpec(): Promise<void> {
       enabled: false,
       proxyUrl: "",
       noProxy: "localhost,127.0.0.1,::1",
-      servers: [],
     };
     settings.observability = {
       enabled: false,

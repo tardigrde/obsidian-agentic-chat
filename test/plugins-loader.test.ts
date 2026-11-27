@@ -322,7 +322,7 @@ describe("plugin MCP ids and resolution", () => {
     ];
 
     const [server] = resolveMcpServers(
-      { mcp: { servers: [] }, plugins: { mcpState: { [id]: persisted } } },
+      { plugins: { mcpState: { [id]: persisted } } },
       derived,
     );
 

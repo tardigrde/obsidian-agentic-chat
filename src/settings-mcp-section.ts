@@ -72,7 +72,8 @@ export class McpSettingsSection {
 
   private mcpDisplayServers(settings: AgenticChatSettings): McpServerSettings[] {
     const pluginServers = this.host.plugin.pluginService.getLoaded().filter((p) => p.enabled).flatMap((p) => p.mcpServers);
-    // Use the same resolution as the runtime (state map primary, legacy mcp.servers fallback for tests/pre-migration).
+    // Use the same resolution as the runtime: plugin packages own the shape,
+    // settings.plugins.mcpState owns the client state.
     return resolveMcpServers(settings, pluginServers);
   }
 
@@ -316,7 +317,7 @@ export class McpSettingsSection {
                 }
                 clearMcpPerToolApprovals(settings.approval, server.id);
                 clearMcpSecretSlots(this.host.app, server);
-                settings.mcp.servers = settings.mcp.servers.filter((entry) => entry !== server);
+                delete settings.plugins.mcpState[server.id];
                 await this.host.save();
                 this.host.redraw();
               }),

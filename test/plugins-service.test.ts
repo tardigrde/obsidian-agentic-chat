@@ -16,7 +16,6 @@ function settings(overrides: Partial<AgenticChatSettings> = {}): AgenticChatSett
   return {
     ...DEFAULT_SETTINGS,
     plugins: { ...DEFAULT_SETTINGS.plugins, enabled: {} },
-    mcp: { ...DEFAULT_SETTINGS.mcp, servers: [] },
     ...overrides,
   };
 }

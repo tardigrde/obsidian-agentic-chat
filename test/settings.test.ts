@@ -1,7 +1,15 @@
 import { describe, expect, it, vi } from "vitest";
 import type { App } from "obsidian";
 import { applyOpenAICompatiblePreset, OPENAI_COMPATIBLE_PRESETS, openAICompatiblePresetForBaseUrl } from "../src/settings";
-import { activeModelConfig, activeModelId, apiKeyForProvider, DEFAULT_SETTINGS, mergeSettings, type AgenticChatSettings } from "../src/settings-schema";
+import {
+  activeModelConfig,
+  activeModelId,
+  apiKeyForProvider,
+  DEFAULT_SETTINGS,
+  mergeSettings,
+  retiredSettingsNotices,
+  type AgenticChatSettings,
+} from "../src/settings-schema";
 import { DEFAULT_OPENAI_COMPATIBLE_BASE_URL } from "../src/llm/models";
 import {
   DEFAULT_MCP_SETTINGS,
@@ -249,88 +257,64 @@ describe("mergeSettings — MCP", () => {
 
   it("normalizes MCP server ids to delimiter-safe unique values", () => {
     expect(normalizeMcpServerId("Prod__Docs!!")).toBe("prod_docs");
-    const merged = mergeSettings({
-      mcp: {
-        enabled: true,
-        servers: [
-          { id: "Prod__Docs", name: "Prod Docs", url: "https://mcp.example.com/mcp" },
-          { id: "prod_docs", name: "Other Docs", url: "https://other.example.com/mcp" },
-        ],
-      } as never,
-    });
-
-    expect(merged.mcp.servers.map((server) => server.id)).toEqual(["prod_docs", "prod_docs_2"]);
   });
 
-  it("heals stored MCP servers and defaults approval to ask", () => {
-    const merged = mergeSettings({
+  it("drops the retired mcp.servers list and keeps only proxy settings", () => {
+    const stored = {
       mcp: {
         enabled: true,
-        proxyUrl: "",
-        noProxy: "localhost,127.0.0.1,::1",
+        proxyUrl: " http://192.0.2.10:3128/ ",
+        noProxy: " localhost, *.internal.example, localhost ",
         servers: [
           {
             id: "Context 7!",
             name: " Docs MCP ",
             url: " https://mcp.example.com/mcp ",
-            enabled: true,
-            authHeaderName: " X-API-Key ",
-            authHeaderValue: " secret ",
-            approval: "wat" as "ask",
-          } as never,
+            source: "user",
+            authHeaderValue: "secret-token",
+          },
+          {
+            id: "plugin_srv",
+            name: "Plugin",
+            url: "https://plugin.example.com/mcp",
+            source: "plugin",
+          },
         ],
-      } as never,
-    });
+      },
+    };
+    const merged = mergeSettings(stored as never);
 
     expect(merged.mcp).toEqual({
       enabled: true,
-      proxyUrl: "",
-      noProxy: "localhost,127.0.0.1,::1",
-      servers: [
-        {
-          id: "context_7",
-          name: "Docs MCP",
-          url: "https://mcp.example.com/mcp",
-          enabled: true,
-          authType: "header",
-          authHeaderName: "X-API-Key",
-          authHeaderValueSecretId: mcpSecretId("context_7", "auth-header-value"),
-          // Plaintext is moved to secretStorage by the one-time legacy migration,
-          // so mergeSettings itself never reads it.
-          authHeaderValue: "",
-          headers: {},
-          source: "user",
-          oauth: mcpOAuthSettingsForServer("context_7"),
-          approval: "ask",
-          knownTools: [],
-          enabledTools: [],
-          disabledTools: [],
-        },
-      ],
+      proxyUrl: "http://192.0.2.10:3128/",
+      noProxy: "localhost,*.internal.example",
     });
+    expect(JSON.stringify(merged)).not.toContain("mcp.servers");
+
+    const notices = retiredSettingsNotices(stored);
+    expect(notices).toContainEqual(expect.stringContaining('"Docs MCP" (https://mcp.example.com/mcp)'));
+    expect(notices.join(" ")).not.toContain("secret-token");
   });
 
-  it("heals MCP proxy settings", () => {
+  it("heals MCP proxy settings and rejects a non-http proxy", () => {
     const merged = mergeSettings({
       mcp: {
         enabled: true,
         proxyUrl: " http://192.0.2.10:3128/ ",
         noProxy: " localhost, *.internal.example, localhost ",
-        servers: [],
       },
     });
 
-    expect(merged.mcp).toMatchObject({
+    expect(merged.mcp).toEqual({
+      enabled: true,
       proxyUrl: "http://192.0.2.10:3128/",
       noProxy: "localhost,*.internal.example",
     });
 
-    expect(
-      mergeSettings({ mcp: { enabled: true, proxyUrl: "socks://proxy:1080", servers: [] } as never }).mcp.proxyUrl,
-    ).toBe("");
+    expect(mergeSettings({ mcp: { enabled: true, proxyUrl: "socks://proxy:1080", noProxy: "" } }).mcp.proxyUrl).toBe("");
   });
 
-  it("heals S5 enabled/disabled_tools globs for servers and state, including snake_case legacy keys", () => {
+  it("heals S5 enabled/disabled_tools globs for state, including snake_case legacy keys", () => {
     const merged = mergeSettings({
       plugins: {
         folder: "",
@@ -346,26 +330,10 @@ describe("mergeSettings — MCP", () => {
           } as never,
         },
       },
-      mcp: {
-        enabled: true,
-        proxyUrl: "",
-        noProxy: "",
-        servers: [
-          {
-            id: "user_srv",
-            name: "User",
-            url: "https://user.example.com/mcp",
-            enabledTools: ["read_*", "READ_*"],
-            disabledTools: ["*_danger"],
-          } as never,
-        ],
-      },
     });
 
     expect(merged.plugins.mcpState.plugin_srv.enabledTools).toEqual(["read_*", "list_*"]);
     expect(merged.plugins.mcpState.plugin_srv.disabledTools).toEqual(["delete_*", "*_danger"]);
-    expect(merged.mcp.servers[0].enabledTools).toEqual(["read_*"]);
-    expect(merged.mcp.servers[0].disabledTools).toEqual(["*_danger"]);
   });
 
   it("heals S5 tool globs to empty arrays when absent or malformed", () => {
@@ -378,18 +346,10 @@ describe("mergeSettings — MCP", () => {
           fresh: { enabled: true, approval: "ask", enabled_tools: 42 } as never,
         },
       },
-      mcp: {
-        enabled: true,
-        proxyUrl: "",
-        noProxy: "",
-        servers: [{ id: "a", name: "A", url: "https://a.example.com/mcp" } as never],
-      },
     });
 
     expect(merged.plugins.mcpState.fresh.enabledTools).toEqual([]);
     expect(merged.plugins.mcpState.fresh.disabledTools).toEqual([]);
-    expect(merged.mcp.servers[0].enabledTools).toEqual([]);
-    expect(merged.mcp.servers[0].disabledTools).toEqual([]);
   });
 
   it("heals observability settings and proxy overrides", () => {
@@ -435,108 +395,26 @@ describe("mergeSettings — MCP", () => {
     });
   });
 
-  it("heals cached MCP tool approval metadata", () => {
+  it("heals cached MCP tool approval metadata in plugin state", () => {
     const merged = mergeSettings({
-      mcp: {
-        enabled: true,
-        proxyUrl: "",
-        noProxy: "localhost,127.0.0.1,::1",
-        servers: [
-          {
-            ...createMcpServerSettings({ id: "docs", name: "Docs MCP", url: "https://mcp.example.com/mcp" }),
+      plugins: {
+        ...DEFAULT_SETTINGS.plugins,
+        mcpState: {
+          docs: {
+            enabled: true,
             knownTools: [
               { name: " search_tools ", title: " Search Tools ", readOnlyHint: true },
               { name: "search_tools", title: "duplicate", readOnlyHint: false },
               { name: "", title: "bad", readOnlyHint: true },
             ],
-          },
-        ],
+          } as never,
+        },
       },
     });
 
-    expect(merged.mcp.servers[0].knownTools).toEqual([
+    expect(merged.plugins.mcpState.docs.knownTools).toEqual([
       { name: "search_tools", title: "Search Tools", readOnlyHint: true },
     ]);
-  });
-
-  it("migrates legacy preset-marked MCP servers into generic settings", () => {
-    const merged = mergeSettings({
-      mcp: {
-        enabled: true,
-        servers: [
-          {
-            preset: "oauth",
-            id: "OAuth MCP",
-            name: "OAuth MCP",
-            url: "https://oauth-mcp.example.com/mcp?toolCategories=gitlab,knowledge&tools=query_company_knowledge",
-            enabled: true,
-            authHeaderName: "",
-            authHeaderValue: "",
-            approval: "allow",
-          } as never,
-        ],
-      } as never,
-    });
-
-    expect(merged.mcp.servers[0]).toMatchObject({
-      id: "oauth_mcp",
-      name: "OAuth MCP",
-      authType: "oauth",
-      url: "https://oauth-mcp.example.com/mcp?toolCategories=gitlab,knowledge&tools=query_company_knowledge",
-      approval: "allow",
-      knownTools: [],
-    });
-    expect(merged.mcp.servers[0]).not.toHaveProperty("preset");
-    expect(merged.mcp.servers[0]).not.toHaveProperty("legacyFilters");
-  });
-
-  it("migrates retired filter-object settings without preserving retired keys", () => {
-    const merged = mergeSettings({
-      mcp: {
-        enabled: true,
-        servers: [
-          {
-            id: "docs",
-            name: "Docs MCP",
-            url: "https://docs.example.com/mcp",
-            authType: "oauth",
-            legacyFilters: {
-              toolCategories: ["gitlab", "knowledge"],
-              tools: "query_company_knowledge",
-            },
-          } as never,
-        ],
-      } as never,
-    });
-
-    expect(merged.mcp.servers[0]).toMatchObject({
-      id: "docs",
-      authType: "oauth",
-      url: "https://docs.example.com/mcp?toolCategories=gitlab%2Cknowledge&tools=query_company_knowledge",
-    });
-    expect(merged.mcp.servers[0]).not.toHaveProperty("preset");
-    expect(merged.mcp.servers[0]).not.toHaveProperty("legacyFilters");
-  });
-
-  it("drops malformed MCP servers without URLs", () => {
-    const merged = mergeSettings({
-      mcp: {
-        enabled: true,
-        servers: [
-          {
-            id: "bad",
-            name: "Bad",
-            url: "",
-            enabled: true,
-            authHeaderName: "",
-            authHeaderValue: "",
-            approval: "ask",
-          } as never,
-        ],
-      } as never,
-    });
-
-    expect(merged.mcp.servers).toEqual([]);
   });
 
   it("rebases MCP per-tool approvals and secret refs when a server id changes", () => {
@@ -548,34 +426,26 @@ describe("mergeSettings — MCP", () => {
           mcp__docs__resolve_library_id_2: "deny",
         },
       },
-      mcp: {
-        enabled: true,
-        proxyUrl: "",
-        noProxy: "localhost,127.0.0.1,::1",
-        servers: [
-          {
-            ...createMcpServerSettings({ id: "docs", name: "Docs MCP", url: "https://mcp.example.com/mcp" }),
-            authType: "bearer",
-            authHeaderValue: "secret",
-            knownTools: [
-              {
-                name: "resolve-library-id",
-                localName: "mcp__docs__resolve_library_id",
-                title: "Resolve library",
-                readOnlyHint: false,
-              },
-              {
-                name: "resolve_library_id",
-                localName: "mcp__docs__resolve_library_id_2",
-                title: "Resolve library",
-                readOnlyHint: false,
-              },
-            ],
-          },
-        ],
-      },
     });
-    const server = settings.mcp.servers[0];
+    const server = {
+      ...createMcpServerSettings({ id: "docs", name: "Docs MCP", url: "https://mcp.example.com/mcp" }),
+      authType: "bearer" as const,
+      authHeaderValue: "secret",
+      knownTools: [
+        {
+          name: "resolve-library-id",
+          localName: "mcp__docs__resolve_library_id",
+          title: "Resolve library",
+          readOnlyHint: false,
+        },
+        {
+          name: "resolve_library_id",
+          localName: "mcp__docs__resolve_library_id_2",
+          title: "Resolve library",
+          readOnlyHint: false,
+        },
+      ],
+    };
     const clearedSecrets: Array<[string, string]> = [];
     const app = {
       secretStorage: { setSecret: (id: string, value: string) => clearedSecrets.push([id, value]) },
@@ -611,19 +481,11 @@ describe("mergeSettings — MCP", () => {
           write: "ask",
         },
       },
-      mcp: {
-        enabled: true,
-        proxyUrl: "",
-        noProxy: "localhost,127.0.0.1,::1",
-        servers: [
-          {
-            ...createMcpServerSettings({ id: "docs", name: "Docs MCP", url: "https://mcp.example.com/mcp" }),
-            knownTools: [{ name: "search", localName: "mcp__docs__search", title: "Search", readOnlyHint: false }],
-          },
-        ],
-      },
     });
-    const server = settings.mcp.servers[0];
+    const server = {
+      ...createMcpServerSettings({ id: "docs", name: "Docs MCP", url: "https://mcp.example.com/mcp" }),
+      knownTools: [{ name: "search", localName: "mcp__docs__search", title: "Search", readOnlyHint: false }],
+    };
     clearMcpKnownToolsAndApprovals(settings, server);
 
     expect(server.knownTools).toEqual([]);
@@ -634,29 +496,21 @@ describe("mergeSettings — MCP", () => {
 
   it("clears MCP credentials when endpoint edits pass through invalid URLs", () => {
     const settings = mergeSettings({
-      mcp: {
-        enabled: true,
-        proxyUrl: "",
-        noProxy: "localhost,127.0.0.1,::1",
-        servers: [
-          {
-            ...createMcpServerSettings({
-              id: "docs",
-              name: "Docs MCP",
-              url: "https://a.example.com/mcp",
-              authType: "bearer",
-              authHeaderValue: "old-token",
-            }),
-            knownTools: [{ name: "search", localName: "mcp__docs__search", title: "Search", readOnlyHint: false }],
-          },
-        ],
-      },
       approval: {
         mutating: "ask",
         perTool: { mcp__docs__search: "allow" },
       },
     });
-    const server = settings.mcp.servers[0];
+    const server = {
+      ...createMcpServerSettings({
+        id: "docs",
+        name: "Docs MCP",
+        url: "https://a.example.com/mcp",
+        authType: "bearer",
+        authHeaderValue: "old-token",
+      }),
+      knownTools: [{ name: "search", localName: "mcp__docs__search", title: "Search", readOnlyHint: false }],
+    };
     const invalid = updateMcpServerEndpoint(undefined, settings, server, "not a url");
 
     expect(invalid.clearedCredentials).toBe(true);
@@ -667,15 +521,8 @@ describe("mergeSettings — MCP", () => {
   });
 
   it("enables newly configured MCP servers when a valid endpoint is entered", () => {
-    const settings = mergeSettings({
-      mcp: {
-        enabled: true,
-        proxyUrl: "",
-        noProxy: "localhost,127.0.0.1,::1",
-        servers: [createMcpServerSettings({ id: "mcp" })],
-      },
-    });
-    const server = settings.mcp.servers[0];
+    const settings = mergeSettings({});
+    const server = createMcpServerSettings({ id: "mcp" });
     expect(server.enabled).toBe(false);
     const result = updateMcpServerEndpoint(undefined, settings, server, "https://docs.example.com/mcp");
 

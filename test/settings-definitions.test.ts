@@ -117,16 +117,9 @@ describe("declarative settings definitions", () => {
     expect(calls.saves).toBe(3);
   });
 
-  it("rebuilds the MCP section when MCP is enabled and servers change", () => {
+  it("rebuilds the MCP section when MCP is enabled", () => {
     const { tab } = makeHarness((next) => {
       next.mcp.enabled = true;
-      next.mcp.servers = [
-        createMcpServerSettings({
-          id: "docs",
-          name: "Docs MCP",
-          url: "https://docs.example.com/mcp",
-        }),
-      ];
     });
     const mcp = pages(tab)
       .flatMap((page) => groups(page))

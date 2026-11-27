@@ -337,7 +337,7 @@ export class AgenticChatSettingTab extends PluginSettingTab {
   private reconcileLoadedPlugins(plugins: LoadedPlugin[]): boolean {
     // S10: shape lives in mcp.json; ensure every derived plugin server has a
     // client-owned entry in settings.plugins.mcpState (enabled/approval/auth).
-    // No merge into settings.mcp.servers — the two cannot diverge.
+    // Server shape lives in plugin packages; only client state is settings-owned.
     const pluginServers = plugins.flatMap((plugin) => plugin.mcpServers);
     let mutated = false;
     for (const server of pluginServers) {

@@ -315,7 +315,8 @@ async function configurePlugin(): Promise<Record<string, unknown>> {
       approval: { mutating: string; perTool: Record<string, string> };
       privacy: { allowFallbacks: boolean; denyDataCollection: boolean; requireZDR: boolean };
       web: { enabled: boolean };
-      mcp: { enabled: boolean; proxyUrl: string; noProxy: string; servers: McpServerSettings[] };
+      mcp: { enabled: boolean; proxyUrl: string; noProxy: string };
+      plugins: { mcpState: Record<string, Record<string, unknown>> };
       maxTokens: number;
     };
     settings.provider = "openrouter";
@@ -340,12 +341,36 @@ async function configurePlugin(): Promise<Record<string, unknown>> {
     settings.web.enabled = false;
     settings.mcp.enabled = false;
     if (config.mcpServers.length > 0) {
-      // The plan named this run's fake MCP server, so the plugin gets exactly
-      // one MCP server. The base leaves mcp.enabled false; a case that sets
-      // "mcp.enabled": true turns MCP on for its own runs only.
+      // The plan named this run's fake MCP server. Endpoints live in a plugin
+      // package; its client state lives in plugins.mcpState. The base leaves
+      // mcp.enabled false; a case that sets "mcp.enabled": true turns MCP on
+      // for its own runs only.
+      const server = config.mcpServers[0];
+      const root = ".agentic-plugins/eval-fixture";
+      if (!(await app.vault.adapter.exists(root))) {
+        await app.vault.adapter.mkdir(root);
+        await app.vault.adapter.write(
+          `${root}/plugin.json`,
+          JSON.stringify({
+            $schema: "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+            name: "eval-fixture",
+          }),
+        );
+        await app.vault.adapter.write(
+          `${root}/mcp.json`,
+          JSON.stringify({
+            $schema: "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+            mcpServers: { fixture: { type: "streamable-http", url: server.url } },
+          }),
+        );
+      }
       settings.mcp.proxyUrl = "";
       settings.mcp.noProxy = "localhost,127.0.0.1,::1";
-      settings.mcp.servers = config.mcpServers;
+      settings.plugins.mcpState["plugin_eval_fixture_40fbcc244690"] = {
+        ...server,
+        enabled: true,
+        lastUrl: server.url,
+      };
     }
     // A provider reserves the request's max output tokens against the key's
     // credit. A run never needs more than a few thousand output tokens, so

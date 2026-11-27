@@ -6,7 +6,6 @@ import { mcpUrlProblem } from "../utils/host-policy";
 import { healMcpToolGlobs } from "./tool-filter";
 
 export type McpAuthType = "none" | "bearer" | "header" | "oauth";
-type LegacyMcpServerPreset = "generic" | "context7" | "oauth";
 
 export interface McpSettings extends ProxySettings {
   /**
@@ -14,8 +13,6 @@ export interface McpSettings extends ProxySettings {
    * tools are registered and no MCP endpoint is contacted.
    */
   enabled: boolean;
-  /** Remote Streamable HTTP MCP servers. */
-  servers: McpServerSettings[];
 }
 
 /**
@@ -115,7 +112,6 @@ export interface McpOAuthSettings {
 export const DEFAULT_MCP_SETTINGS: McpSettings = {
   enabled: false,
   ...DEFAULT_PROXY_SETTINGS,
-  servers: [],
 };
 
 export const DEFAULT_MCP_OAUTH_SETTINGS: McpOAuthSettings = {
@@ -138,17 +134,11 @@ export const DEFAULT_MCP_OAUTH_SETTINGS: McpOAuthSettings = {
 };
 
 export function healMcpSettings(stored: Partial<McpSettings> | null | undefined): McpSettings {
-  const servers = Array.isArray(stored?.servers) ? stored.servers.map(healMcpServer).filter(isMcpServer) : [];
   return {
     enabled: stored?.enabled === true,
     proxyUrl: normalizeProxyUrl(stored?.proxyUrl),
     noProxy: normalizeNoProxy(stored?.noProxy),
-    servers: uniquifyMcpServerIds(servers),
   };
-}
-
-function isMcpServer(server: McpServerSettings | null): server is McpServerSettings {
-  return server !== null;
 }
 
 /** `heal` normalizes persisted/raw input; `copy` mirrors a live record unchanged. */
@@ -161,7 +151,6 @@ interface McpServerBuildOptions {
   includePlaintext: boolean;
   /** `trim` for state, `raw` for persisted settings, omitted by the settings generator. */
   pending: "trim" | "raw" | "omit";
-  legacyPreset?: LegacyMcpServerPreset;
 }
 
 interface McpServerBuildInput {
@@ -187,7 +176,7 @@ function buildMcpServer(input: McpServerBuildInput, options: McpServerBuildOptio
     approval: copy ? (input.approval as ApprovalPolicy) : healApproval(input.approval as ApprovalPolicy | undefined),
     authType: copy
       ? (input.authType as McpAuthType)
-      : healAuthType(input.authType as McpAuthType | undefined, options.legacyPreset, input.authHeaderName),
+      : healAuthType(input.authType as McpAuthType | undefined, input.authHeaderName),
     authHeaderName: copy
       ? ((input.authHeaderName as string | undefined) ?? "")
       : stringValue(input.authHeaderName),
@@ -254,30 +243,6 @@ function ownedInput(record: Record<string, unknown>, enabled: boolean): McpServe
     disabledTools: record.disabledTools ?? record.disabled_tools,
     pendingOAuthChallenge: record.pendingOAuthChallenge,
     pendingOAuthResourceUrl: record.pendingOAuthResourceUrl,
-  };
-}
-
-function healMcpServer(server: Partial<McpServerSettings> | null | undefined): McpServerSettings | null {
-  if (!server) return null;
-  const url = normalizeLegacyMcpServerUrl(server);
-  const legacyPreset = legacyMcpServerPreset((server as { preset?: unknown }).preset);
-  const id = normalizeMcpServerId(server.id || server.name || serverIdFromMcpUrl(url) || "mcp");
-  if (!url) return null;
-  const record = server as Record<string, unknown>;
-  return {
-    id,
-    name: typeof server.name === "string" && server.name.trim() ? server.name.trim() : id,
-    url,
-    ...buildMcpServer(ownedInput(record, server.enabled !== false), {
-      id,
-      mode: "heal",
-      includePlaintext: false,
-      pending: "raw",
-      legacyPreset,
-    }),
-    headers: healHeaderMap(server.headers),
-    source: healServerSource(server.source),
-    ...(typeof server.pluginRoot === "string" && server.pluginRoot.trim() ? { pluginRoot: server.pluginRoot.trim() } : {}),
   };
 }
 
@@ -377,17 +342,8 @@ export function createMcpServerSettings(
   };
 }
 
-function legacyMcpServerPreset(value: unknown): LegacyMcpServerPreset | undefined {
-  return value === "generic" || value === "context7" || value === "oauth" ? value : undefined;
-}
-
-function healAuthType(
-  value: McpAuthType | undefined,
-  legacyPreset: LegacyMcpServerPreset | undefined,
-  headerName: unknown,
-): McpAuthType {
+function healAuthType(value: McpAuthType | undefined, headerName: unknown): McpAuthType {
   if (value === "none" || value === "bearer" || value === "header" || value === "oauth") return value;
-  if (legacyPreset === "oauth") return "oauth";
   return typeof headerName === "string" && headerName.trim() ? "header" : "none";
 }
 
@@ -480,10 +436,6 @@ function healHeaderMap(value: unknown): Record<string, string> {
   return headers;
 }
 
-function healServerSource(value: unknown): "user" | "plugin" {
-  return value === "plugin" ? "plugin" : "user";
-}
-
 function healMcpKnownTools(value: unknown): McpKnownToolSettings[] {
   if (!Array.isArray(value)) return [];
   const seen = new Set<string>();
@@ -530,17 +482,6 @@ function stringValue(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
 }
 
-function uniquifyMcpServerIds(servers: McpServerSettings[]): McpServerSettings[] {
-  const used = new Set<string>();
-  return servers.map((server) => {
-    const originalId = server.id;
-    server.id = nextUniqueMcpServerId(server.id, used);
-    used.add(server.id);
-    if (server.id !== originalId) resetMcpServerSecretRefs(server);
-    return server;
-  });
-}
-
 export function nextUniqueMcpServerId(base: string, used: ReadonlySet<string>): string {
   const normalized = normalizeMcpServerId(base);
   if (!used.has(normalized)) return normalized;
@@ -551,30 +492,3 @@ export function nextUniqueMcpServerId(base: string, used: ReadonlySet<string>): 
   return `${normalized}_${Date.now()}`;
 }
 
-function normalizeLegacyMcpServerUrl(server: Partial<McpServerSettings> | null | undefined): string {
-  const url = typeof server?.url === "string" ? server.url.trim() : "";
-  if (!url) return "";
-  const legacy = (server as { legacyFilters?: unknown } | null | undefined)?.legacyFilters;
-  const record = legacy && typeof legacy === "object" && !Array.isArray(legacy) ? legacy as Record<string, unknown> : {};
-  const toolCategories = legacyString(record.toolCategories);
-  const tools = legacyString(record.tools);
-  if (!toolCategories && !tools) return url;
-  try {
-    const parsed = new URL(url);
-    if (toolCategories && !parsed.searchParams.has("toolCategories")) {
-      parsed.searchParams.set("toolCategories", toolCategories);
-    }
-    if (tools && !parsed.searchParams.has("tools")) {
-      parsed.searchParams.set("tools", tools);
-    }
-    return parsed.toString();
-  } catch {
-    return url;
-  }
-}
-
-function legacyString(value: unknown): string {
-  if (typeof value === "string") return value.trim();
-  if (Array.isArray(value)) return value.filter((item): item is string => typeof item === "string").join(",");
-  return "";
-}

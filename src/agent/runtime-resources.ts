@@ -97,7 +97,7 @@ export async function loadAgentRuntimeResources(
     : { proxyUrl: settings.network.proxyUrl, noProxy: settings.network.noProxy };
   // Plugin mcp.json is the source of truth for server shape; client-owned
   // state (enabled/approval/auth/knownTools/oauth) lives in settings.plugins.mcpState
-  // keyed by stable id. No merge with settings.mcp.servers — the two cannot diverge.
+  // keyed by stable id. There is no second server list in settings.
   const pluginServers = plugins.filter((plugin) => plugin.enabled).flatMap((plugin) => plugin.mcpServers);
   const mcpServers = resolveMcpServers(settings, pluginServers);
   // Plugin servers are runtime copies: their shape comes from mcp.json and their

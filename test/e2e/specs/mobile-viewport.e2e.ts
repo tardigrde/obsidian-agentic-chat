@@ -80,7 +80,8 @@ async function seedMobileState(): Promise<void> {
       mode: string;
       approval: { mutating: string; perTool: Record<string, string> };
       web: { enabled: boolean };
-      mcp: { enabled: boolean; proxyUrl: string; noProxy: string; servers: unknown[] };
+      mcp: { enabled: boolean; proxyUrl: string; noProxy: string };
+      plugins: { mcpState: Record<string, unknown> };
       network: { proxyUrl: string; noProxy: string };
     };
     settings.provider = "openrouter";
@@ -93,43 +94,57 @@ async function seedMobileState(): Promise<void> {
       enabled: true,
       proxyUrl: "",
       noProxy: "localhost,127.0.0.1,::1",
-      servers: [{
-        id: "mobile-demo",
-        name: "Mobile MCP Demo",
-        url: "https://mcp.example.com/mcp",
-        // Disabled so later scripted chat turns never contact the endpoint;
-        // the settings header still renders.
-        enabled: false,
-        authType: "none",
-        authHeaderName: "",
-        authHeaderValueSecretId: "",
-        authHeaderValue: "",
-        oauth: {
-          clientId: "",
-          clientSecretSecretId: "",
-          clientSecret: "",
-          dynamicClientRegistration: false,
-          registeredRedirectUri: "",
-          authorizationServer: "",
-          authorizationEndpoint: "",
-          tokenEndpoint: "",
-          registrationEndpoint: "",
-          resourceMetadataUrl: "",
-          accessTokenSecretId: "",
-          accessToken: "",
-          refreshTokenSecretId: "",
-          refreshToken: "",
-          expiresAt: 0,
-          scope: "",
-        },
-        approval: "ask",
-        knownTools: [],
-        headers: {},
-        source: "user",
-        enabledTools: [],
-        disabledTools: [],
-      }],
     };
+    // MCP endpoints live in plugin packages now. A disabled package still
+    // renders the server header the mobile layout test measures.
+    const demoRoot = ".agentic-plugins/mobile-demo";
+    if (!app.vault.getAbstractFileByPath(demoRoot)) {
+      await app.vault.createFolder(demoRoot);
+      await app.vault.create(
+        `${demoRoot}/plugin.json`,
+        JSON.stringify({
+          $schema: "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+          name: "mobile-demo",
+        }),
+      );
+      await app.vault.create(
+        `${demoRoot}/mcp.json`,
+        JSON.stringify({
+          $schema: "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+          mcpServers: { demo: { type: "streamable-http", url: "https://mcp.example.com/mcp" } },
+        }),
+      );
+    }
+    settings.plugins.mcpState["plugin_mobile_demo_demo"] = {
+      enabled: false,
+      approval: "ask",
+      authType: "none",
+      authHeaderName: "",
+      authHeaderValueSecretId: "",
+      authHeaderValue: "",
+      oauth: {
+        clientId: "",
+        clientSecretSecretId: "",
+        clientSecret: "",
+        dynamicClientRegistration: false,
+        registeredRedirectUri: "",
+        authorizationServer: "",
+        authorizationEndpoint: "",
+        tokenEndpoint: "",
+        registrationEndpoint: "",
+        resourceMetadataUrl: "",
+        accessTokenSecretId: "",
+        accessToken: "",
+        refreshTokenSecretId: "",
+        refreshToken: "",
+        expiresAt: 0,
+        scope: "",
+      },
+      knownTools: [],
+      enabledTools: [],
+      disabledTools: [],
+      lastUrl: "https://mcp.example.com/mcp",
+    } as never;
     settings.network = { proxyUrl: "", noProxy: "localhost,127.0.0.1,::1" };
     app.secretStorage?.setSecret?.("agentic-chat-openrouter-api-key", "e2e-mobile-scripted-key");
     await plugin.saveSettings?.();
