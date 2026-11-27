@@ -23,6 +23,11 @@ export interface AgentSessionActionsRuntime {
     messages: AgentMessage[],
     options?: { expectedPath?: string | null; expectedGeneration?: number },
   ): Promise<ActiveSessionSnapshot>;
+  appendCompaction(
+    summary: AgentMessage,
+    firstKeptIndex: number,
+    options?: { expectedPath?: string | null; expectedGeneration?: number },
+  ): Promise<void>;
   refreshInfoIfActive(): SessionInfo | undefined;
 }
 
@@ -333,9 +338,15 @@ export class AgentSessionActions {
    * is reloaded so the next turn does not continue from the stale one. If that
    * fails too, the commit rejects with {@link CompactionNotLiveError}.
    */
-  async commitCompaction(messages: AgentMessage[], binding: SessionBinding): Promise<void> {
+  async commitCompaction(
+    messages: AgentMessage[],
+    firstKeptIndex: number,
+    binding: SessionBinding,
+  ): Promise<void> {
+    const summary = messages[0];
+    if (!summary) throw new Error("A compaction must carry a summary message.");
     await this.sessionSwaps.enqueue(async () => {
-      await this.options.sessions.rewriteMessages(messages, binding);
+      await this.options.sessions.appendCompaction(summary, firstKeptIndex, binding);
       try {
         this.options.activation.installTranscript(messages);
       } catch (error) {

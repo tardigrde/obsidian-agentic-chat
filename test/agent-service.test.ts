@@ -961,7 +961,8 @@ describe("AgentService", () => {
     expect(service.getMessages().some((message) => JSON.stringify(message).includes("first"))).toBe(false);
     const path = service.getSessionInfo()?.path as string;
     const persisted = parseSessionEntries(await adapter.read(path));
-    expect(persisted.filter((entry) => entry.type === "message" && isSummaryMessage(entry.message))).toHaveLength(1);
+    expect(persisted.filter((entry) => entry.type === "compaction")).toHaveLength(1);
+    expect(persisted.filter((entry) => entry.type === "message" && isSummaryMessage(entry.message))).toHaveLength(0);
   });
 
   it("records skipped manual compaction attempts in the session audit log", async () => {

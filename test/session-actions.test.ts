@@ -32,6 +32,7 @@ class FakeSessionRuntime implements AgentSessionActionsRuntime {
   renamed: Array<{ path: string; name: string }> = [];
   refreshed = 0;
   rewrites: AgentMessage[][] = [];
+  compactions: Array<{ summary: AgentMessage; firstKeptIndex: number }> = [];
   continued = 0;
   recentPath: string | null = null;
   events: string[] = [];
@@ -119,6 +120,14 @@ class FakeSessionRuntime implements AgentSessionActionsRuntime {
     this.rewrites.push(messages);
     this.seed(path, messages);
     return this.snapshot(path);
+  }
+
+  async appendCompaction(summary: AgentMessage, firstKeptIndex: number): Promise<void> {
+    const path = this.activePath ?? "sessions/current.jsonl";
+    this.events.push("compaction");
+    this.activePath = path;
+    this.compactions.push({ summary, firstKeptIndex });
+    this.seed(path, [summary]);
   }
 
   refreshInfoIfActive(): SessionInfo | undefined {
@@ -635,10 +644,10 @@ describe("AgentSessionActions", () => {
         original(messages);
       };
 
-      await actions.commitCompaction(summary, actions.getBinding());
+      await actions.commitCompaction(summary, 1, actions.getBinding());
 
-      expect(sessions.rewrites).toEqual([summary]);
-      expect(events).toEqual(["rewrite", "install:1", "notify"]);
+      expect(sessions.compactions).toEqual([{ summary: summary[0], firstKeptIndex: 1 }]);
+      expect(events).toEqual(["compaction", "install:1", "notify"]);
       // The install ran inside the queue operation; listeners heard about it after.
       expect(states).toEqual(["loading"]);
       expect(actions.getSwapState()).toBe("live");
@@ -649,7 +658,7 @@ describe("AgentSessionActions", () => {
       const { actions } = await compactable();
       const before = actions.getSessionToken();
 
-      await actions.commitCompaction([userMessage("summary")], actions.getBinding());
+      await actions.commitCompaction([userMessage("summary")], 1, actions.getBinding());
 
       expect(actions.getSessionToken()).toBe(before);
     });
@@ -658,9 +667,9 @@ describe("AgentSessionActions", () => {
       const { actions, activation, events } = await compactable();
       activation.failInstalls = 1;
 
-      await actions.commitCompaction([userMessage("summary")], actions.getBinding());
+      await actions.commitCompaction([userMessage("summary")], 1, actions.getBinding());
 
-      expect(events).toEqual(["rewrite", "install-failed", "load", "install:1", "notify"]);
+      expect(events).toEqual(["compaction", "install-failed", "load", "install:1", "notify"]);
       expect(activation.currentAgent?.state.messages).toHaveLength(1);
     });
 
@@ -668,21 +677,21 @@ describe("AgentSessionActions", () => {
       const { actions, activation, events } = await compactable();
       activation.failInstalls = 2;
 
-      await expect(actions.commitCompaction([userMessage("summary")], actions.getBinding())).rejects.toBeInstanceOf(
-        CompactionNotLiveError,
-      );
+      await expect(
+        actions.commitCompaction([userMessage("summary")], 1, actions.getBinding()),
+      ).rejects.toBeInstanceOf(CompactionNotLiveError);
 
       // No change notification: the live transcript did not change.
-      expect(events).toEqual(["rewrite", "install-failed", "load", "install-failed"]);
+      expect(events).toEqual(["compaction", "install-failed", "load", "install-failed"]);
     });
 
     it("does not install anything when the rewrite is refused", async () => {
       const { actions, sessions, events } = await compactable();
-      sessions.rewriteMessages = async () => {
+      sessions.appendCompaction = async () => {
         throw new Error("Session changed before the transcript rewrite could start.");
       };
 
-      await expect(actions.commitCompaction([userMessage("summary")], actions.getBinding())).rejects.toThrow(
+      await expect(actions.commitCompaction([userMessage("summary")], 1, actions.getBinding())).rejects.toThrow(
         /session changed/i,
       );
 
@@ -698,10 +707,10 @@ describe("AgentSessionActions", () => {
       const binding = actions.getBinding();
 
       const swap = actions.newSession();
-      const commit = actions.commitCompaction([userMessage("summary")], binding);
+      const commit = actions.commitCompaction([userMessage("summary")], 1, binding);
       await Promise.all([swap, commit]);
 
-      const rewriteAt = events.indexOf("rewrite");
+      const rewriteAt = events.indexOf("compaction");
       expect(rewriteAt).toBeGreaterThan(events.indexOf("activate:0:no-reload"));
     });
   });

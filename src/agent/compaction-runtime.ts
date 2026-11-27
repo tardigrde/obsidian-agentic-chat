@@ -137,8 +137,12 @@ export interface AgentCompactionRuntimeOptionsForRun {
 export interface CompactionTarget {
   /** The session and generation the caller's messages were read from. */
   getBinding(): SessionBinding;
-  /** Persist the compacted transcript and put it on the live agent, as one step. */
-  commitCompaction(messages: AgentMessage[], binding: SessionBinding): Promise<void>;
+  /**
+   * Append the summary record and put `[summary, ...keep]` on the live agent.
+   * `firstKeptIndex` is the index in the supplied transcript of the first
+   * message entry retained verbatim; nothing before it is rewritten.
+   */
+  commitCompaction(messages: AgentMessage[], firstKeptIndex: number, binding: SessionBinding): Promise<void>;
 }
 
 export type AgentCompactionSkipReason =
@@ -258,8 +262,9 @@ export class AgentCompactionRuntime {
     const manifest = collectCompactionManifest(plan.summarize);
     const newMessages = [buildSummaryMessage(summary.summary, Date.now(), dropped, manifest), ...plan.keep];
     // The captured binding stops a swap, rewind, or rewrite during
-    // summarization from landing this transcript on a different one.
-    await this.session.commitCompaction(newMessages, binding);
+    // summarization from landing this transcript on a different one. The session
+    // appends a compaction record and never rewrites the old messages.
+    await this.session.commitCompaction(newMessages, messages.length - plan.keep.length, binding);
     return { status: "compacted", messages: newMessages };
   }
 

@@ -136,6 +136,69 @@ describe("session jsonl", () => {
     expect(getLastLeafId(entries)).toBe("m2");
   });
 
+  it("builds [summary, ...kept, ...later] from the latest compaction entry", () => {
+    const summary = userMessage("summary");
+    const entries: SessionEntry[] = [
+      createSessionHeader("sid", "vault"),
+      { type: "message", id: "m1", parentId: null, timestamp: "t", message: userMessage("one") },
+      { type: "message", id: "m2", parentId: "m1", timestamp: "t", message: userMessage("two") },
+      { type: "message", id: "m3", parentId: "m2", timestamp: "t", message: userMessage("three") },
+      { type: "message", id: "m4", parentId: "m3", timestamp: "t", message: userMessage("four") },
+      {
+        type: "compaction",
+        id: "c1",
+        parentId: "m4",
+        timestamp: "t",
+        summary,
+        firstKeptEntryId: "m3",
+      },
+      { type: "message", id: "m5", parentId: "c1", timestamp: "t", message: userMessage("five") },
+    ];
+
+    expect(buildSessionContext(entries).messages.map(messageText)).toEqual([
+      "summary",
+      "three",
+      "four",
+      "five",
+    ]);
+  });
+
+  it("uses only the latest compaction when several are on the branch", () => {
+    const entries: SessionEntry[] = [
+      createSessionHeader("sid", "vault"),
+      { type: "message", id: "m1", parentId: null, timestamp: "t", message: userMessage("one") },
+      { type: "message", id: "m2", parentId: "m1", timestamp: "t", message: userMessage("two") },
+      { type: "message", id: "m3", parentId: "m2", timestamp: "t", message: userMessage("three") },
+      { type: "message", id: "m4", parentId: "m3", timestamp: "t", message: userMessage("four") },
+      {
+        type: "compaction",
+        id: "c1",
+        parentId: "m4",
+        timestamp: "t",
+        summary: userMessage("summary one"),
+        firstKeptEntryId: "m3",
+      },
+      { type: "message", id: "m5", parentId: "c1", timestamp: "t", message: userMessage("five") },
+      { type: "message", id: "m6", parentId: "m5", timestamp: "t", message: userMessage("six") },
+      {
+        type: "compaction",
+        id: "c2",
+        parentId: "m6",
+        timestamp: "t",
+        summary: userMessage("summary two"),
+        firstKeptEntryId: "m5",
+      },
+      { type: "message", id: "m7", parentId: "c2", timestamp: "t", message: userMessage("seven") },
+    ];
+
+    expect(buildSessionContext(entries).messages.map(messageText)).toEqual([
+      "summary two",
+      "five",
+      "six",
+      "seven",
+    ]);
+  });
+
   it("returns an empty branch for a null leaf", () => {
     const entries: SessionEntry[] = [createSessionHeader("sid", "vault")];
     expect(buildSessionContext(entries, null).messages).toHaveLength(0);
