@@ -113,6 +113,22 @@ describe("session/event-log invariants", () => {
     expect(entries.filter((entry) => entry.type === "compaction")).toHaveLength(2);
   });
 
+  it("loads a compacted session in another tab and appends through the same view", async () => {
+    const { manager, adapter } = makeManager();
+    const info = await manager.createSession(DEFAULTS);
+    for (const text of ["one", "two", "three", "four"]) await manager.appendMessage(userMessage(text));
+    await manager.appendCompaction(userMessage("summary"), 2);
+
+    const otherTab = new ObsidianSessionManager(adapter.asDataAdapter(), "sessions", "vault:test", new SessionWriteRegistry());
+    await otherTab.loadSession(info.path);
+    expect(otherTab.buildSessionContext().messages.map(messageText)).toEqual(["summary", "three", "four"]);
+    await otherTab.appendMessage(userMessage("five"));
+
+    const firstTab = new ObsidianSessionManager(adapter.asDataAdapter(), "sessions", "vault:test", new SessionWriteRegistry());
+    await firstTab.loadSession(info.path);
+    expect(firstTab.buildSessionContext().messages.map(messageText)).toEqual(["summary", "three", "four", "five"]);
+  });
+
   it("rewinds after a compaction without deleting the history before it", async () => {
     const { manager, adapter } = makeManager();
     const info = await manager.createSession(DEFAULTS);
