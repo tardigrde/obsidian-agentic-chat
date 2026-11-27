@@ -1,6 +1,6 @@
 import type { ApprovalPolicy } from "../agent/approval";
 import { DEFAULT_PROXY_SETTINGS, type ProxySettings, normalizeNoProxy, normalizeProxyUrl } from "../network/proxy";
-import { ensureMcpOAuthSecretRefs, mcpSecretId } from "../secrets/secret-store";
+import { mcpSecretId } from "../secrets/secret-ids";
 import { isValidHttpHeaderName } from "./http-headers";
 import { mcpUrlProblem } from "../utils/host-policy";
 import { healMcpToolGlobs } from "./tool-filter";
@@ -299,6 +299,13 @@ export function healMcpServerState(
     }),
     ...(typeof record?.lastUrl === "string" && record.lastUrl.trim() ? { lastUrl: record.lastUrl.trim() } : {}),
   };
+}
+
+/** Fill the OAuth secret ids without importing the secret store (#438). */
+function ensureMcpOAuthSecretRefs(serverId: string, oauth: McpOAuthSettings): void {
+  oauth.clientSecretSecretId ||= mcpSecretId(serverId, "oauth-client-secret");
+  oauth.accessTokenSecretId ||= mcpSecretId(serverId, "oauth-access-token");
+  oauth.refreshTokenSecretId ||= mcpSecretId(serverId, "oauth-refresh-token");
 }
 
 export function createMcpServerState(id: string, overrides: Partial<McpServerState> = {}): McpServerState {

@@ -1,7 +1,7 @@
 import type { App } from "obsidian";
 import type { AgentService } from "../agent/agent-service";
 import type { ContextReadout } from "../agent/readouts";
-import type AgenticChatPlugin from "../main";
+import type { AgenticChatHost } from "../plugin-host";
 import { activeModelId } from "../settings-schema";
 import type { ChatTabWorkingState } from "./chat-tab-state";
 import { setIcon } from "obsidian";
@@ -70,7 +70,7 @@ export interface ChatChromeElements {
 
 export interface ChatChromeDeps {
   app: App;
-  plugin: AgenticChatPlugin;
+  plugin: AgenticChatHost;
   service: () => AgentService;
   state: () => ChatTabWorkingState;
   transcript: () => TranscriptView;

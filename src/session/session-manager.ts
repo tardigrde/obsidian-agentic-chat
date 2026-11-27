@@ -3,8 +3,8 @@
 import type { App, DataAdapter, Plugin } from "obsidian";
 import type { AgentMessage, ThinkingLevel } from "@earendil-works/pi-agent-core";
 import { collectArtifactIdsFromMessages } from "../artifacts/artifact-references";
-import type { ActionAuditEvent } from "../agent/action-audit-log";
-import type { FileCheckpoint } from "../agent/file-checkpoints";
+import type { ActionAuditEvent } from "../agent/action-audit-types";
+import type { FileCheckpoint } from "../agent/checkpoint-types";
 import type { UndoEntry } from "../agent/undo";
 import { normalizeFolderPath } from "../vault/path";
 import { ensureAdapterFolder, removeIfExists, renameOver } from "../vault/storage";

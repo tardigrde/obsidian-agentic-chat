@@ -2,7 +2,7 @@ import type { DoctorReport } from "../../agent/doctor-report";
 import type { App } from "obsidian";
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import type { ImageContent } from "@earendil-works/pi-ai";
-import type AgenticChatPlugin from "../../main";
+import type { AgenticChatHost } from "../../plugin-host";
 import type { AgentService } from "../../agent/agent-service";
 import type { ContextAttachment } from "../context-attachments";
 import type { ActionRow, WorkflowRenderer } from "../workflow-renderer";
@@ -16,7 +16,7 @@ import type { SessionActivationCoordinator } from "../session-activation-coordin
  */
 export interface SlashContext {
   service: AgentService;
-  plugin: AgenticChatPlugin;
+  plugin: AgenticChatHost;
   app: App;
   clearEmptyState(): void;
   renderInfoMessage(title: string, entries: Array<[string, string]>): void;

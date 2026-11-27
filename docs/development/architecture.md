@@ -45,6 +45,24 @@ changes the live session; only `AgentSessionActions` calls the mutating
 methods of `AgentConversation`, and only `AgentConversation` calls
 `ObsidianSessionManager`.
 
+## Layering
+
+The same rule holds at the module graph. `npm run check:cycles` (part of
+`verify -- check` and CI) fails on any import cycle in `src/`. Three neutral
+modules keep the hot edges one-way:
+
+- `plugin-host.ts` is the interface `ui/`, the settings tab, and slash
+  handlers need from the entry point. `main.ts` satisfies it; those modules no
+  longer import the concrete class.
+- `agent/action-audit-types.ts` and `agent/checkpoint-types.ts` hold the
+  event and checkpoint shapes the session writer persists, so `session/` does
+  not import the agent recorders that also read the session manager.
+- `secrets/secret-ids.ts` holds the secret-id constants and helpers. MCP and
+  settings code no longer imports `secret-store.ts` just to name an id.
+
+The allowlist is empty. Fix a new cycle by moving the shared type or helper to
+a neutral module; do not add an allowlist entry.
+
 ## Active session
 
 Owner: `ObsidianSessionManager` owns `sessionFile`, the entry log, append,

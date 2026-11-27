@@ -8,13 +8,29 @@ import type {
   McpSettings,
 } from "../mcp/settings";
 import type { PluginSettings } from "../plugins/settings";
-import { sha256Hex } from "../utils/sha256";
+import {
+  OPENAI_COMPATIBLE_API_KEY_SECRET_ID,
+  OPENROUTER_API_KEY_SECRET_ID,
+  WEB_SEARCH_API_KEY_SECRET_ID,
+  legacySecretId,
+  mcpSecretId,
+  normalizeSecretId,
+} from "./secret-ids";
 import {
   OBSERVABILITY_AUTH_HEADER_VALUE_SECRET_ID,
   OBSERVABILITY_LANGFUSE_PUBLIC_KEY_SECRET_ID,
   OBSERVABILITY_LANGFUSE_SECRET_KEY_SECRET_ID,
   type ObservabilitySettings,
 } from "../observability/settings";
+
+export {
+  OPENAI_COMPATIBLE_API_KEY_SECRET_ID,
+  OPENROUTER_API_KEY_SECRET_ID,
+  WEB_SEARCH_API_KEY_SECRET_ID,
+  legacySecretId,
+  mcpSecretId,
+  normalizeSecretId,
+};
 
 export interface SecretStore {
   getSecret(id: string): string;
@@ -72,10 +88,6 @@ export class MemorySecretStore implements SecretStore {
   }
 }
 
-export const OPENROUTER_API_KEY_SECRET_ID = "agentic-chat-openrouter-api-key";
-export const OPENAI_COMPATIBLE_API_KEY_SECRET_ID = "agentic-chat-openai-compatible-api-key";
-export const WEB_SEARCH_API_KEY_SECRET_ID = "agentic-chat-web-search-api-key";
-
 type SettingsSecretSlot = {
   readonly valuePath: readonly string[];
   readonly secretIdPath: readonly string[];
@@ -114,10 +126,6 @@ export const SETTINGS_SECRET_SLOTS: readonly SettingsSecretSlot[] = [
     defaultSecretId: OBSERVABILITY_AUTH_HEADER_VALUE_SECRET_ID,
   },
 ];
-
-export function mcpSecretId(serverId: string, kind: string): string {
-  return normalizeSecretId(`agentic-chat-mcp-${serverId}-${kind}`);
-}
 
 type McpSecretSlot = {
   /** `server` is the MCP record itself; `oauth` is its `oauth` member. */
@@ -189,31 +197,6 @@ export type PersistedSettings = WithoutPlaintext<
   // Optional: pre-S7 data.json predates client-owned plugin server state.
   plugins: Omit<PluginSettings, "mcpState"> & { mcpState?: Record<string, PersistedMcpServerState> };
 };
-
-/** Sanitize a secret id to Obsidian-safe characters (no length cap). */
-function sanitizeSecretId(input: string): string {
-  return input
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9-]+/g, "-")
-    .replace(/^-+|-+$/g, "");
-}
-
-export function normalizeSecretId(input: string): string {
-  const normalized = sanitizeSecretId(input);
-  if (!normalized) throw new Error("Secret id must not be empty.");
-  // Obsidian's native secret store caps ids at 64 chars. Truncating the tail
-  // would collapse the distinguishing kind suffix (auth-header-value vs
-  // oauth-client-secret), so long ids keep a readable prefix plus a truncated
-  // SHA-256 of the full id.
-  if (normalized.length <= 64) return normalized;
-  return `${normalized.slice(0, 51)}-${sha256Hex(normalized).slice(0, 12)}`;
-}
-
-/** The id the pre-plugins secret store used (sanitized, truncated to 120 chars). */
-export function legacySecretId(input: string): string {
-  return sanitizeSecretId(input).slice(0, 120);
-}
 
 export function hydrateSettingsSecrets(settings: AgenticChatSettings, store: SecretStore): void {
   ensureSecretRefs(settings);

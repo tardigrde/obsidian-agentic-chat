@@ -1,5 +1,5 @@
 import { type App, type ButtonComponent, Notice, Platform, type SettingDefinitionItem, type SettingDefinitionRender } from "obsidian";
-import type AgenticChatPlugin from "./main";
+import type { AgenticChatHost } from "./plugin-host";
 import { type ApprovalPolicy, clearMcpPerToolApprovals, setPerToolApproval } from "./agent/approval";
 import { createMcpFetcher } from "./mcp/fetcher";
 import {
@@ -53,7 +53,7 @@ import { errorMessage } from "./utils/errors";
 /** What the MCP section needs from the settings tab that hosts it. */
 export interface McpSettingsHost {
   readonly app: App;
-  readonly plugin: AgenticChatPlugin;
+  readonly plugin: AgenticChatHost;
   save(): Promise<void>;
   redraw(): void;
   ensurePluginsLoaded(): void;

@@ -13,7 +13,7 @@ import { SubagentReportModal } from "./report-modal";
 import { keyboardOverlap } from "./keyboard-overlap";
 import type { AgentEvent, AgentMessage } from "@earendil-works/pi-agent-core";
 import type { ImageContent } from "@earendil-works/pi-ai";
-import type AgenticChatPlugin from "../main";
+import type { AgenticChatHost } from "../plugin-host";
 import type { AgentService } from "../agent/agent-service";
 import type { AskUserRequest } from "../tools/ask-user-tool";
 import type { ToolApprovalRequest, UserApprovalChoice } from "../agent/tool-call-controller";
@@ -103,7 +103,7 @@ export class ChatView extends ItemView {
 
   constructor(
     leaf: WorkspaceLeaf,
-    private readonly plugin: AgenticChatPlugin,
+    private readonly plugin: AgenticChatHost,
   ) {
     super(leaf);
   }

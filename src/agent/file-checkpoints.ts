@@ -1,16 +1,10 @@
 import type { App } from "obsidian";
 import type { ObsidianSessionManager } from "../session/session-manager";
 import { applyUndo, type UndoEntry } from "./undo";
+import type { FileCheckpoint } from "./checkpoint-types";
 import { errorMessage } from "../utils/errors";
 
-export interface FileCheckpoint {
-  version: 1;
-  id: string;
-  toolCallId: string;
-  toolName: string;
-  createdAt: string;
-  entries: readonly UndoEntry[];
-}
+export type { FileCheckpoint } from "./checkpoint-types";
 
 export interface FileCheckpointCreateInput {
   toolCallId: string;
