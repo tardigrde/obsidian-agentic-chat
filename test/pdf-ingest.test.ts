@@ -346,6 +346,37 @@ describe("PDF source ingestion (pdf.js, U4 #10)", () => {
     expect(pagesRead).toBe(1);
   });
 
+  it("does not return text when Stop comes during the last page (review of #442)", async () => {
+    const controller = new AbortController();
+    const pdfjs = async (): Promise<PdfJsLike> => {
+      const real = await loadPdf();
+      return {
+        getDocument: (source) => {
+          const task = real.getDocument(source);
+          return {
+            promise: task.promise.then((document) => ({
+              ...document,
+              numPages: document.numPages,
+              getPage: async (pageNumber: number) => {
+                const page = await document.getPage(pageNumber);
+                return {
+                  getTextContent: async () => {
+                    const content = await page.getTextContent();
+                    controller.abort();
+                    return content;
+                  },
+                };
+              },
+              destroy: () => document.destroy?.(),
+            })),
+          };
+        },
+      };
+    };
+
+    await expect(extractPdfText(buildPdf([["only page"]]), pdfjs, { signal: controller.signal })).rejects.toThrow(/stopped/);
+  });
+
   it("applies a lower byte cap when one is passed (mobile)", async () => {
     await expect(extractPdfText(buildPdf([["small"]]), loadPdf, { maxBytes: 10 })).rejects.toThrow(/too large to import/);
   });

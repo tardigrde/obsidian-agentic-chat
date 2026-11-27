@@ -147,6 +147,8 @@ export async function extractPdfText(input: PdfInput, loadPdfJs: PdfJsLoader, op
   } finally {
     await document.destroy?.();
   }
+  // A Stop during the last page must not write the artifact.
+  throwIfAborted(options.signal);
   let text = normalizeSourceText(pages.join("\n\n"));
   if (text.length > MAX_PDF_TEXT_CHARS) text = text.slice(0, MAX_PDF_TEXT_CHARS);
   if (!text) {

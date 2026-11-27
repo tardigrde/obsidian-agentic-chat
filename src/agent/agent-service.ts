@@ -297,6 +297,8 @@ export class AgentService {
           this.subagents.registry.clear();
           // Reports waiting for a turn belong to the old conversation (review of #431).
           this.reports.reset();
+          // A held steer is the user's draft, not the old session's data: it goes back to the composer, unsent.
+          this.steering.keepUndelivered(this.heldSteers.splice(0));
           this.steering.takeDrainedReports();
         },
       },
@@ -847,7 +849,11 @@ export class AgentService {
       );
     } finally {
       // The turn never ran (blocked, or the session changed): the held text goes back to the composer.
-      if (!ran) this.steering.keepUndelivered(this.heldSteers.splice(0));
+      if (!ran && this.heldSteers.length > 0) {
+        this.steering.keepUndelivered(this.heldSteers.splice(0));
+        // The UI restores undelivered text on a change notification; the turn's last one came before this.
+        this.notifyChange();
+      }
       // A report steered in after the last poll did not reach the model: it waits again.
       this.reports.keepDrained(this.steering.takeDrainedReports(), { startsTurn: true });
       this.reports.afterTurn(ran);
