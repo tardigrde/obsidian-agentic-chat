@@ -67,7 +67,18 @@ async function seedMobileState(): Promise<void> {
   await browser.executeObsidian(async ({ app, obsidian }, writePath) => {
     const plugin = (app as unknown as {
       plugins?: {
-        plugins?: Record<string, { settings?: Record<string, unknown>; saveSettings?: () => Promise<void> }>;
+        plugins?: Record<
+          string,
+          {
+            settings?: Record<string, unknown>;
+            saveSettings?: () => Promise<void>;
+            pluginService?: {
+              invalidate?: () => void;
+              reload?: () => Promise<unknown>;
+              generateMcpServerPackage?: (input: { serverName: string; url: string }) => Promise<unknown>;
+            };
+          }
+        >;
       };
       secretStorage?: { setSecret?: (id: string, value: string) => void };
     }).plugins?.plugins?.["agentic-chat"];
@@ -94,56 +105,17 @@ async function seedMobileState(): Promise<void> {
       proxyUrl: "",
       noProxy: "localhost,127.0.0.1,::1",
     };
-    // MCP endpoints live in plugin packages now. A disabled package still
-    // renders the server header the mobile layout test measures.
-    const demoRoot = ".agentic-plugins/mobile-demo";
-    if (!app.vault.getAbstractFileByPath(demoRoot)) {
-      await app.vault.createFolder(demoRoot);
-      await app.vault.create(
-        `${demoRoot}/plugin.json`,
-        JSON.stringify({
-          $schema: "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
-          name: "mobile-demo",
-        }),
-      );
-      await app.vault.create(
-        `${demoRoot}/mcp.json`,
-        JSON.stringify({
-          $schema: "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
-          mcpServers: { demo: { type: "streamable-http", url: "https://mcp.example.com/mcp" } },
-        }),
-      );
+    // MCP endpoints live in plugin packages now. Generate one through the real
+    // path so the settings header has a server card to measure.
+    if (!plugin.pluginService?.generateMcpServerPackage) throw new Error("pluginService is unavailable");
+    await plugin.pluginService.generateMcpServerPackage({
+      serverName: "demo",
+      url: "https://mcp.example.com/mcp",
+    });
+    // Keep the scripted turns offline: the card still renders while disabled.
+    for (const state of Object.values(settings.plugins.mcpState)) {
+      (state as { enabled?: boolean }).enabled = false;
     }
-    settings.plugins.mcpState["plugin_mobile_demo_demo"] = {
-      enabled: false,
-      approval: "ask",
-      authType: "none",
-      authHeaderName: "",
-      authHeaderValueSecretId: "",
-      authHeaderValue: "",
-      oauth: {
-        clientId: "",
-        clientSecretSecretId: "",
-        clientSecret: "",
-        dynamicClientRegistration: false,
-        registeredRedirectUri: "",
-        authorizationServer: "",
-        authorizationEndpoint: "",
-        tokenEndpoint: "",
-        registrationEndpoint: "",
-        resourceMetadataUrl: "",
-        accessTokenSecretId: "",
-        accessToken: "",
-        refreshTokenSecretId: "",
-        refreshToken: "",
-        expiresAt: 0,
-        scope: "",
-      },
-      knownTools: [],
-      enabledTools: [],
-      disabledTools: [],
-      lastUrl: "https://mcp.example.com/mcp",
-    } as never;
     settings.network = { proxyUrl: "", noProxy: "localhost,127.0.0.1,::1" };
     app.secretStorage?.setSecret?.("agentic-chat-openrouter-api-key", "e2e-mobile-scripted-key");
     await plugin.saveSettings?.();
@@ -420,8 +392,8 @@ describe("agentic-chat mobile viewport", function () {
     await waitForSetting("Model provider");
     await selectSettingsTab("Advanced");
     await waitForSetting("Enable MCP");
-    await waitForSetting("Mobile MCP Demo");
-    assertHeadingRowReadable(await measureHeadingRow("Mobile MCP Demo"), "MCP server header");
+    await waitForSetting("demo");
+    assertHeadingRowReadable(await measureHeadingRow("demo"), "MCP server header");
     // U7 #8 and #6: each server is a card; its Advanced fold starts closed.
     const card = await browser.execute(() => {
       const el = document.querySelector<HTMLElement>(".agentic-chat-mcp-card");
