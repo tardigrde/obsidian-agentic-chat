@@ -95,13 +95,26 @@ function crapCli() {
   return path.join(path.dirname(require.resolve("crap-ts")), "cli.js");
 }
 
+/**
+ * The lane runs this script without `--strict`: a broken report must not stop
+ * `verify -- check` before the witness self-test. `npm run crap` passes
+ * `--strict`, so a developer sees the failure.
+ */
+function reportError(message) {
+  console.error(message);
+  if (process.argv.includes("--strict")) {
+    process.exitCode = 1;
+  } else {
+    console.error("crap: report skipped (advisory); run `npm run crap` to fail on this error.");
+  }
+}
+
 function main() {
   const coverageFile = path.resolve("coverage", "coverage-final.json");
   if (!existsSync(coverageFile)) {
-    console.error(
+    reportError(
       `crap: missing ${path.relative(process.cwd(), coverageFile)}; run \`npm run test:coverage\` first.`,
     );
-    process.exitCode = 1;
     return;
   }
 
@@ -111,8 +124,7 @@ function main() {
   });
   if (result.stderr) process.stderr.write(result.stderr);
   if (result.status !== 0) {
-    console.error(`crap: crap-ts exited ${result.status ?? "without a status"}.`);
-    process.exitCode = result.status || 1;
+    reportError(`crap: crap-ts exited ${result.status ?? "without a status"}.`);
     return;
   }
 
@@ -120,18 +132,21 @@ function main() {
   try {
     report = JSON.parse(result.stdout);
   } catch (error) {
-    console.error(`crap: could not parse crap-ts JSON: ${error instanceof Error ? error.message : String(error)}`);
-    process.exitCode = 1;
+    reportError(`crap: could not parse crap-ts JSON: ${error instanceof Error ? error.message : String(error)}`);
     return;
   }
 
-  mkdirSync(REPORT_DIR, { recursive: true });
-  writeFileSync(JSON_FILE, `${JSON.stringify(report, null, 2)}\n`);
-  const markdown = formatCrapMarkdown(report);
-  writeFileSync(MARKDOWN_FILE, markdown);
-  process.stdout.write(markdown);
-  if (appendStepSummary(markdown)) console.log("crap: appended to GITHUB_STEP_SUMMARY");
-  console.log(`crap: wrote ${MARKDOWN_FILE} and ${JSON_FILE}`);
+  try {
+    mkdirSync(REPORT_DIR, { recursive: true });
+    writeFileSync(JSON_FILE, `${JSON.stringify(report, null, 2)}\n`);
+    const markdown = formatCrapMarkdown(report);
+    writeFileSync(MARKDOWN_FILE, markdown);
+    process.stdout.write(markdown);
+    if (appendStepSummary(markdown)) console.log("crap: appended to GITHUB_STEP_SUMMARY");
+    console.log(`crap: wrote ${MARKDOWN_FILE} and ${JSON_FILE}`);
+  } catch (error) {
+    reportError(`crap: could not write the report: ${error instanceof Error ? error.message : String(error)}`);
+  }
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) main();

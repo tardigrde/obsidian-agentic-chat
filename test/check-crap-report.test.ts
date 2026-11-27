@@ -1,8 +1,12 @@
+import { spawnSync } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { appendStepSummary, formatCrapMarkdown } from "../scripts/report-crap.mjs";
+
+const reportScript = fileURLToPath(new URL("../scripts/report-crap.mjs", import.meta.url));
 
 const report = {
   summary: { files: 2, functions: 3, aboveMax: 1 },
@@ -52,6 +56,21 @@ describe("CRAP report", () => {
       expect(appendStepSummary("## CRAP report\n", file)).toBe(true);
       expect(readFileSync(file, "utf8")).toBe("## CRAP report\n");
       expect(appendStepSummary("ignored", "")).toBe(false);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("skips a broken report in the advisory lane, but fails with --strict", () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), "crap-missing-"));
+    try {
+      const advisory = spawnSync(process.execPath, [reportScript], { cwd: dir, encoding: "utf8" });
+      expect(advisory.status).toBe(0);
+      expect(advisory.stderr).toContain("report skipped (advisory)");
+
+      const strict = spawnSync(process.execPath, [reportScript, "--strict"], { cwd: dir, encoding: "utf8" });
+      expect(strict.status).toBe(1);
+      expect(strict.stderr).toContain("missing coverage/coverage-final.json");
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

@@ -143,7 +143,8 @@ Coverage and mutation are advisory: CI prints diff coverage and the CRAP report;
 `npm run mutation` is a weekly local run ([mutation.md](mutation.md)). The CRAP
 report (`npm run crap` after `npm run test:coverage`) ranks functions by
 complexity and coverage into `coverage/crap.md`; `verify -- check --coverage`
-runs it and CI puts it in the job summary. It never fails the build.
+runs it and CI puts it in the job summary. A broken report never fails the
+lane; `npm run crap` is the strict form for local use.
 
 ## Adding a test
 

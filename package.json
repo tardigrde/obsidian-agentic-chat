@@ -32,7 +32,7 @@
     "lint:obsidian": "eslint -c config/eslint.obsidian.mjs --max-warnings 0 src",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
-    "crap": "node scripts/report-crap.mjs",
+    "crap": "node scripts/report-crap.mjs --strict",
     "test:watch": "vitest",
     "test:live": "vitest run --config vitest.live.config.ts",
     "eval:provider-cache-live": "node scripts/eval-provider-cache-live.mjs",
