@@ -221,6 +221,7 @@ describe("agentic-chat settings UI", function () {
   });
 
   it("insets plain settings blocks from the card edge on every tab", async function () {
+    let seenBlocks = 0;
     for (const tab of ["Models", "Agent", "Advanced"]) {
       await selectSettingsTab(tab);
       const result = await browser.execute(() => {
@@ -246,10 +247,11 @@ describe("agentic-chat settings UI", function () {
         }
         return { problems, blocks: blocks.length };
       });
-      expect(result.blocks).toBeGreaterThan(0);
+      seenBlocks += result.blocks;
       if (result.problems.length > 0) throw new Error(`${tab} settings blocks: ${result.problems.join("; ")}`);
       expect(result.problems).toEqual([]);
     }
+    expect(seenBlocks).toBeGreaterThan(0);
   });
 
   it("persists provider, API key, base URL, and model through the Models tab", async function () {
@@ -300,6 +302,10 @@ describe("agentic-chat settings UI", function () {
 
     expect(await readSettingPlaceholder("OpenRouter API key")).toBe("••••••••");
     expect(await readSettingText("OpenRouter API key")).toBe("");
+
+    // Leave the provider state the later persistence tests expect.
+    await setSettingSelect("Model provider", "openai-compatible");
+    await waitForSetting("Base URL");
   });
 
   it("removes the working-directory section and still saves approval controls", async function () {

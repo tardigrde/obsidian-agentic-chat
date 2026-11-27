@@ -157,10 +157,21 @@ describe("chat timeline U4-A", function () {
     const record = await browser.execute(() => {
       const row = Array.from(document.querySelectorAll('[data-ac="step"]')).at(-1);
       const line = row?.querySelector<HTMLElement>('[data-ac="step-approval"]');
-      // Visible on the folded row, not only present in a display:none detail.
+      // The block stays as the user left it (closed), so the settled line is
+      // present on the row but folded until the user opens the body.
       return { outcome: row?.getAttribute("data-ac-approval"), line: line?.textContent, visible: (line?.getClientRects().length ?? 0) > 0 };
     });
-    expect(record).toEqual({ outcome: "allowed", line: "Allowed by you", visible: true });
+    expect(record).toEqual({ outcome: "allowed", line: "Allowed by you", visible: false });
+    await browser.execute(() => {
+      const heads = Array.from(document.querySelectorAll<HTMLElement>('[data-ac="activity-head"]'));
+      heads.at(-1)?.click();
+    });
+    const opened = await browser.execute(() => {
+      const row = Array.from(document.querySelectorAll('[data-ac="step"]')).at(-1);
+      const line = row?.querySelector<HTMLElement>('[data-ac="step-approval"]');
+      return (line?.getClientRects().length ?? 0) > 0;
+    });
+    expect(opened).toBe(true);
     await configureScriptedPlugin("allow");
   });
 
