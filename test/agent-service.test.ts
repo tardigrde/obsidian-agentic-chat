@@ -1533,6 +1533,55 @@ describe("AgentService", () => {
     expect(service.takeUndeliveredSteers()).toEqual([]);
   });
 
+  /** Hold the next turn in its pre-stream window (in flight, not streaming) until `release` runs. */
+  function holdTurnStart(service: unknown): { release: (error?: string) => void } {
+    const options = (service as { promptTurns: { options: { maybeCompact: () => Promise<string | undefined> } } }).promptTurns.options;
+    const original = options.maybeCompact;
+    let release: (error?: string) => void = () => {};
+    options.maybeCompact = () =>
+      new Promise<string | undefined>((resolve) => {
+        release = (error) => {
+          options.maybeCompact = original;
+          resolve(error);
+        };
+      });
+    return { release: (error) => release(error) };
+  }
+
+  it("delivers a steer sent while a turn is starting, not yet streaming (B1, swallowed mobile message)", async () => {
+    const controlled = controlledStreamFn(["first answer", "answer to the steer"]);
+    const { service } = makeService(controlled.streamFn);
+    const gate = holdTurnStart(service);
+
+    const run = service.sendPrompt("initial request");
+    await waitFor(() => service.isTurnInFlight() && !service.isStreaming(), "turn starting");
+    await service.steerPrompt("held steer");
+    gate.release();
+    await waitFor(() => controlled.runs.length === 1, "first run");
+    controlled.runs[0].finish();
+    await waitFor(() => controlled.runs.length === 2, "steer run");
+    controlled.runs[1].finish();
+    await run;
+
+    expect(userTexts(service.getMessages())).toEqual(["initial request", "held steer"]);
+    expect(service.takeUndeliveredSteers()).toEqual([]);
+  });
+
+  it("returns a held steer to the composer when the starting turn never runs", async () => {
+    const controlled = controlledStreamFn(["never streamed"]);
+    const { service } = makeService(controlled.streamFn);
+    const gate = holdTurnStart(service);
+
+    const run = service.sendPrompt("initial request");
+    await waitFor(() => service.isTurnInFlight() && !service.isStreaming(), "turn starting");
+    await service.steerPrompt("held steer");
+    gate.release("compaction failed");
+    await run;
+
+    expect(controlled.runs.length).toBe(0);
+    expect(service.takeUndeliveredSteers()).toEqual(["held steer"]);
+  });
+
   it("returns queued steering text when the user stops the active run", async () => {
     const controlled = controlledStreamFn(["will abort"]);
     const { service } = makeService(controlled.streamFn);

@@ -281,6 +281,74 @@ describe("PDF source ingestion (pdf.js, U4 #10)", () => {
 
     await expect(tool.execute("call-1", { path: "Research/source.txt" })).rejects.toThrow(/Unsupported document format/);
   });
+
+  it("refuses a too-large PDF by its stat size before reading the file (B1)", async () => {
+    const adapter = new MemoryAdapter();
+    await adapter.write("Research/huge.pdf", latin1(PDF_FLATE));
+    const data = adapter.asDataAdapter();
+    let reads = 0;
+    const sized = {
+      ...data,
+      stat: async () => ({ type: "file", ctime: 0, mtime: 0, size: MAX_PDF_BYTES + 1 }),
+      readBinary: async (path: string) => {
+        reads += 1;
+        return data.readBinary(path);
+      },
+      read: async (path: string) => {
+        reads += 1;
+        return data.read(path);
+      },
+    };
+    const { store } = memoryArtifactStore();
+    const [tool] = createDocumentTools({ vault: { adapter: sized } } as unknown as App, store, loadPdf);
+
+    await expect(tool.execute("call-1", { path: "Research/huge.pdf" })).rejects.toThrow(/too large to import/);
+    expect(reads).toBe(0);
+  });
+
+  it("stops the import when the tool signal is aborted (B1)", async () => {
+    const adapter = new MemoryAdapter();
+    await adapter.write("Research/embeddings.pdf", latin1(PDF_FLATE));
+    const { store, writes } = memoryArtifactStore();
+    const [tool] = createDocumentTools({ vault: { adapter: adapter.asDataAdapter() } } as unknown as App, store, loadPdf);
+    const controller = new AbortController();
+    controller.abort();
+
+    await expect(tool.execute("call-1", { path: "Research/embeddings.pdf" }, controller.signal)).rejects.toThrow(/stopped/);
+    expect(writes).toHaveLength(0);
+  });
+
+  it("stops between pages when the signal aborts mid-extraction (B1)", async () => {
+    const controller = new AbortController();
+    let pagesRead = 0;
+    const pdfjs = async (): Promise<PdfJsLike> => {
+      const real = await loadPdf();
+      return {
+        getDocument: (source) => {
+          const task = real.getDocument(source);
+          return {
+            promise: task.promise.then((document) => ({
+              ...document,
+              numPages: document.numPages,
+              getPage: async (pageNumber: number) => {
+                pagesRead += 1;
+                controller.abort();
+                return document.getPage(pageNumber);
+              },
+              destroy: () => document.destroy?.(),
+            })),
+          };
+        },
+      };
+    };
+
+    await expect(extractPdfText(buildPdf([["one"], ["two"], ["three"]]), pdfjs, { signal: controller.signal })).rejects.toThrow(/stopped/);
+    expect(pagesRead).toBe(1);
+  });
+
+  it("applies a lower byte cap when one is passed (mobile)", async () => {
+    await expect(extractPdfText(buildPdf([["small"]]), loadPdf, { maxBytes: 10 })).rejects.toThrow(/too large to import/);
+  });
 });
 
 describe("PDF hardening (U4-B review)", () => {

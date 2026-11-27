@@ -839,8 +839,8 @@ export class AgentService {
       await this.promptTurns.run(
         this.steering.settling((agent) => {
           ran = true;
-          // Steers held while this turn was starting reach the model at its first poll.
-          for (const message of this.heldSteers.splice(0)) agent.steer(message);
+          // Held steers ride as follow-ups: pi reads them when the turn would end, even after a text-only reply.
+          for (const message of this.heldSteers.splice(0)) agent.followUp(message);
           return run(agent);
         }),
         expectedSessionToken,
