@@ -138,6 +138,10 @@ describe("activity line and inline approval", function () {
         inTranscript: !!card?.closest('[data-ac="messages"]'),
         belowActivity: activity?.getAttribute("data-ac"),
         activityState: activity?.getAttribute("data-ac-state"),
+        // The approval card is outside the body, so the block stays closed
+        // until the user opens it; the needs-you head is still visible.
+        activityOpen: activity?.classList.contains("is-open"),
+        activityExpanded: activity?.querySelector(".agentic-chat-activity-head")?.getAttribute("aria-expanded"),
         summary: activity?.querySelector(".agentic-chat-activity-summary")?.textContent,
         // "needs you" is its own span outside the ellipsis, so a long path never cuts it.
         needsYou: activity?.querySelector(".agentic-chat-activity-state")?.textContent,
@@ -151,11 +155,28 @@ describe("activity line and inline approval", function () {
       inTranscript: true,
       belowActivity: "activity",
       activityState: "needs-you",
+      activityOpen: false,
+      activityExpanded: "false",
       summary: state.summary,
       needsYou: "· needs you",
       status: "Waiting for your approval",
       hint: "⏎ allow · Esc deny",
     });
+    // A block the user opens stays open while the approval card sits below it.
+    await browser.execute(() => {
+      const heads = Array.from(document.querySelectorAll<HTMLElement>('[data-ac="activity-head"]'));
+      heads.at(-1)?.click();
+    });
+    const opened = await browser.execute((selector) => {
+      const activities = Array.from(document.querySelectorAll<HTMLElement>('[data-ac="activity"]'));
+      const activity = activities.at(-1);
+      return {
+        open: activity?.classList.contains("is-open"),
+        expanded: activity?.querySelector(".agentic-chat-activity-head")?.getAttribute("aria-expanded"),
+        cardVisible: !!document.querySelector(selector)?.getBoundingClientRect().height,
+      };
+    }, PENDING_APPROVAL);
+    expect(opened).toEqual({ open: true, expanded: "true", cardVisible: true });
     // Compact card, as in the design: the head names the action and the path,
     // and the diff fits its box (no horizontal scrollbar).
     await browser.waitUntil(

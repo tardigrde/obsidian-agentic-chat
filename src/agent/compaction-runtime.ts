@@ -14,6 +14,7 @@ import {
   collectCompactionManifest,
   estimateContextUsage,
   getCompactedUsage,
+  isSummaryMessage,
   planCompaction,
   type CompactionConfig,
 } from "./compaction";
@@ -146,7 +147,9 @@ export type AgentCompactionSkipReason =
   | "no_plan"
   | "busy"
   | "summary_empty"
-  | "summary_failed";
+  | "summary_failed"
+  | "already_summarized"
+  | "no_gain";
 
 export type AgentCompactionRunResult =
   | { status: "compacted"; messages: AgentMessage[] }
@@ -154,7 +157,11 @@ export type AgentCompactionRunResult =
 
 type SummaryResult =
   | { ok: true; summary: string }
-  | { ok: false; reason: Exclude<AgentCompactionSkipReason, "no_plan" | "busy">; message: string };
+  | {
+      ok: false;
+      reason: Exclude<AgentCompactionSkipReason, "no_plan" | "busy" | "already_summarized" | "no_gain">;
+      message: string;
+    };
 
 export interface AgentCompactionRuntimeOptions {
   getSettings: () => AgenticChatSettings;
@@ -232,7 +239,10 @@ export class AgentCompactionRuntime {
     // during their own pre-work cannot retarget this rewrite.
     const binding = options.binding ?? this.session.getBinding();
     const config = options.force
-      ? { ...compactionConfig(this.getSettings()), enabled: true, thresholdFraction: 0 }
+      ? // A manual pass folds the whole transcript except the latest turn. The
+        // automatic keep budget would otherwise cut at the first user boundary
+        // that fits, leaving most turns unsummarized at low load.
+        { ...compactionConfig(this.getSettings()), enabled: true, thresholdFraction: 0, keepFraction: 0 }
       : compactionConfig(this.getSettings());
     const plan = planCompaction(messages, contextWindow, config, options.overheadTokens);
     if (!plan) {
@@ -240,6 +250,16 @@ export class AgentCompactionRuntime {
         status: "skipped",
         reason: "no_plan",
         message: compactionNoPlanMessage(messages, contextWindow, config, options.overheadTokens),
+      };
+    }
+    // A second manual pass must not spend a model call to rewrite its own
+    // summary in place. With keepFraction 0 this happens when the only older
+    // message left is an earlier summary.
+    if (plan.summarize.every(isSummaryMessage)) {
+      return {
+        status: "skipped",
+        reason: "already_summarized",
+        message: "Nothing to compact. All older turns are already summarized; the latest turn stays verbatim.",
       };
     }
     const summary = await this.summarizeForCompaction(plan.summarize, contextWindow, options.customInstructions);
@@ -257,6 +277,19 @@ export class AgentCompactionRuntime {
     const dropped = collectDroppedUsage(plan.summarize);
     const manifest = collectCompactionManifest(plan.summarize);
     const newMessages = [buildSummaryMessage(summary.summary, Date.now(), dropped, manifest), ...plan.keep];
+    const beforeTokens = estimateContextUsage(messages);
+    const afterTokens = estimateContextUsage(newMessages);
+    // A summary that is as large as what it replaces would not free context;
+    // leave the transcript untouched instead of reporting an unchanged load.
+    if (afterTokens >= beforeTokens) {
+      return {
+        status: "skipped",
+        reason: "no_gain",
+        message:
+          `Nothing compacted. The summary is not smaller than the conversation it would replace ` +
+          `(${beforeTokens} → ${afterTokens} estimated tokens), so the transcript was left unchanged.`,
+      };
+    }
     // The captured binding stops a swap, rewind, or rewrite during
     // summarization from landing this transcript on a different one.
     await this.session.commitCompaction(newMessages, binding);

@@ -85,6 +85,12 @@ export function block(
       setting.settingEl.removeClass("setting-item");
       setting.settingEl.addClass("agentic-chat-settings-block");
       render(setting);
+      // The CSS insets plain text like a row; a wrapper that holds real rows
+      // stays flush so their own padding is not doubled.
+      setting.settingEl.toggleClass(
+        "agentic-chat-settings-block-wraps-rows",
+        setting.settingEl.querySelector(".setting-item") !== null,
+      );
     },
   };
 }
@@ -146,11 +152,16 @@ export function secretInputDef(options: {
       : "No value is stored yet.";
     setting.setDesc(`${options.desc} ${status}`).addText((text) => {
       text.inputEl.type = "password";
-      text.setPlaceholder(options.placeholder).setValue("").onChange(async (value) => {
-        const trimmed = value.trim();
-        if (!trimmed) return;
-        await options.onSet(trimmed);
-      });
+      // A stored secret must not look like an empty field. The dots are a
+      // placeholder only: the value never enters the input.
+      text
+        .setPlaceholder(options.hasValue() ? "••••••••" : options.placeholder)
+        .setValue("")
+        .onChange(async (value) => {
+          const trimmed = value.trim();
+          if (!trimmed) return;
+          await options.onSet(trimmed);
+        });
     });
     setting.addButton((button) =>
       button

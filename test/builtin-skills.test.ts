@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { builtinSkills, DEEP_RESEARCH_SKILL, SELF_KNOWLEDGE_SKILL } from "../src/skills/builtin-skills";
+import { builtinSkills, DEEP_RESEARCH_SKILL, INSTALL_PLUGIN_SKILL, SELF_KNOWLEDGE_SKILL } from "../src/skills/builtin-skills";
 
 describe("builtinSkills", () => {
   it("offers self-knowledge and install-plugin when web access is off", () => {
@@ -17,6 +17,15 @@ describe("builtinSkills", () => {
     for (const skill of [...builtinSkills(true), DEEP_RESEARCH_SKILL, SELF_KNOWLEDGE_SKILL]) {
       expect(skill.filePath).toBe("(built-in)");
       expect(skill.content.trim().length).toBeGreaterThan(0);
+    }
+  });
+
+  it("points at Settings > Advanced > Agent plugins, not the retired Resources and MCP tabs", () => {
+    expect(INSTALL_PLUGIN_SKILL.content).toContain("Settings > Advanced > Agent plugins");
+    expect(INSTALL_PLUGIN_SKILL.content).toContain("MCP tools section of Advanced");
+    expect(INSTALL_PLUGIN_SKILL.content).not.toMatch(/Resources tab|MCP tab/);
+    for (const skill of [...builtinSkills(true), DEEP_RESEARCH_SKILL, SELF_KNOWLEDGE_SKILL]) {
+      expect(skill.content).not.toMatch(/Resources tab|MCP tab/);
     }
   });
 });

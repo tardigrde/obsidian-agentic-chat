@@ -328,10 +328,13 @@ export class ActivityLine {
     this.refresh();
   }
 
-  /** An approval is waiting below the line: orange, `· needs you`, expanded. */
+  /**
+   * An approval is waiting below the line: orange, `· needs you`. The approval
+   * card lives in approvalSlot, outside the body, so the block stays as the
+   * user left it instead of popping open.
+   */
   setNeedsYou(needsYou: boolean): void {
     this.needsYou = needsYou;
-    if (needsYou && !this.open) this.setOpen(true);
     this.refresh();
   }
 

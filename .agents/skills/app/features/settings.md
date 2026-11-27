@@ -50,6 +50,8 @@ await closeAgenticChatSettings();
 | A moved Advanced setting saves and survives close/reopen | `src/settings-tab-agent.ts#notificationDefinitions` | `test/e2e/specs/settings-ui.e2e.ts#keeps a moved Advanced setting after close and reopen` | `covered` |
 | Models: provider, API key, base URL, model | `src/settings-tab-models.ts#modelsDefinitions` | `test/e2e/specs/settings-ui.e2e.ts#persists provider, API key, base URL, and model through the Models tab` | `covered` |
 | Secrets stay out of `data.json` | `src/settings-definition-kit.ts#secretInputDef` | `test/e2e/specs/settings-ui.e2e.ts#persists provider, API key, base URL, and model through the Models tab` | `covered` |
+| A stored secret shows dots in the field, never its value | `src/settings-definition-kit.ts#secretInputDef` | `test/e2e/specs/settings-ui.e2e.ts#shows a stored secret as dots instead of an empty field`; `test/settings-definitions.test.ts#shows dots when a value is stored, and never puts the value in the field` | `covered` |
+| Plain settings blocks align with the card rows, without double-padding nested rows | `src/settings-definition-kit.ts#block` | `test/e2e/specs/settings-ui.e2e.ts#insets plain settings blocks from the card edge on every tab` | `covered` |
 | OpenRouter privacy toggles | `src/settings-tab-models.ts#openRouterDefinitions` | no committed check | `NONE` |
 | Ollama server URL and model | `src/settings-tab-models.ts#ollamaDefinitions` | no committed check | `NONE` |
 | Global network proxy | `src/settings-tab-models.ts#headingRow("Network proxy")` | no committed check | `NONE` |

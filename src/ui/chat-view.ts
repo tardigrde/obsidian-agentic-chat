@@ -42,6 +42,7 @@ import {
 } from "./context-attachments";
 import {
   type AgentMode,
+  MODES,
   resolveModeTransition,
   validateModeTransition,
 } from "../agent/modes";
@@ -86,6 +87,7 @@ export class ChatView extends ItemView {
   private fieldEl!: HTMLElement;
   private inputEl!: HTMLTextAreaElement;
   private modeToggleEl!: HTMLElement;
+  private modeIconEl?: HTMLElement;
   private modeLabelEl?: HTMLElement;
   private menu!: AutocompleteMenu;
   private sendButton!: HTMLButtonElement;
@@ -757,6 +759,7 @@ export class ChatView extends ItemView {
     this.inputEl = layout.inputEl;
     this.wireComposerKeyScope(this.inputEl);
     this.modeToggleEl = layout.modeToggleEl;
+    this.modeIconEl = layout.modeIconEl;
     this.modeLabelEl = layout.modeLabelEl;
     this.menu = layout.menu;
     this.sendButton = layout.sendButton;
@@ -863,6 +866,8 @@ export class ChatView extends ItemView {
     this.modeToggleEl.setAttr("aria-checked", String(settings.mode === "yolo"));
     const modeName = settings.mode === "yolo" ? "YOLO" : "Safe";
     this.modeToggleEl.setAttr("aria-label", `Permission mode: ${modeName}`);
+    // Phones hide the label, so the icon itself must carry Safe vs YOLO.
+    if (this.modeIconEl) setIcon(this.modeIconEl, MODES[settings.mode].icon);
     this.modeLabelEl?.setText(modeName);
     // Effort can't change mid-turn (it would disagree with the in-flight request).
     this.effortKnobEl?.toggleClass("is-disabled", streaming);

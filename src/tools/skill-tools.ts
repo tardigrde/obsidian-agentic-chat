@@ -65,7 +65,7 @@ export function createCreateSkillTool(scaffolder: SkillScaffolder): AgentTool<ty
       );
       const text = result.updated
         ? `Replaced skill "${result.name}" in ${result.rootPath}. The previous package is gone and cannot be undone with /undo.`
-        : `Created skill "${result.name}" in ${result.rootPath}. It appears in the Resources tab; MCP servers are not involved. It persists across sessions and cannot be undone with /undo.`;
+        : `Created skill "${result.name}" in ${result.rootPath}. It appears in Settings > Advanced > Agent plugins; MCP servers are not involved. It persists across sessions and cannot be undone with /undo.`;
       return toolResult(text, { ...result });
     },
   };

@@ -50,6 +50,9 @@ export async function runCompact(ctx: SlashContext, instructions = ""): Promise<
   }
   if (result.compacted) {
     ctx.renderTranscript(ctx.service.getMessages());
+    // renderTranscript rebuilds the pane and drops the command bubble rendered
+    // before compaction; put it back above the compacted transcript.
+    ctx.renderOutgoingUserMessage(display, []);
     ctx.syncChrome();
     ctx.renderInfoMessage("Compact", [["result", formatCompactionSummary(result)]]);
     return;

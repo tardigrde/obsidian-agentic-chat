@@ -56,6 +56,7 @@ export interface ChatLayoutElements {
   fieldEl: HTMLElement;
   inputEl: HTMLTextAreaElement;
   modeToggleEl: HTMLElement;
+  modeIconEl: HTMLElement;
   modeLabelEl: HTMLElement;
   menu: AutocompleteMenu;
   sendButton: HTMLButtonElement;
@@ -301,7 +302,7 @@ export function buildLayout(deps: ChatLayoutDeps): ChatLayoutElements {
   });
   acHook(modeToggleEl, "mode-toggle");
   const modeIcon = modeToggleEl.createSpan({ cls: "agentic-chat-mode-icon", attr: { "aria-hidden": "true" } });
-  setIcon(modeIcon, "shield");
+  setIcon(modeIcon, "shield-check");
   const modeLabelEl = modeToggleEl.createSpan({ cls: "agentic-chat-mode-label", text: "Safe" });
   modeToggleEl.setAttr(
     "title",
@@ -349,6 +350,7 @@ export function buildLayout(deps: ChatLayoutDeps): ChatLayoutElements {
     fieldEl,
     inputEl,
     modeToggleEl,
+    modeIconEl: modeIcon,
     modeLabelEl,
     menu,
     sendButton,

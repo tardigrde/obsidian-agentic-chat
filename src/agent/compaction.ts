@@ -50,23 +50,29 @@ export function estimateContextUsage(messages: AgentMessage[]): number {
 
 /**
  * Format a manual-compaction completion summary comparing context load before and
- * after the rewrite. When the active model exposes a context window the load is
- * shown as a percentage (the most actionable signal for the user); otherwise the
- * raw estimated-token counts are used. Pure so it can be unit-tested without UI.
+ * after the rewrite. The conversation numbers are what compaction changes; the
+ * system prompt, tool schemas, and reply reserve are reported separately so a
+ * total that barely moves is still explained. When the active model exposes a
+ * context window the load is also shown as a percentage. Pure so it can be
+ * unit-tested without UI.
  */
 export function formatCompactionSummary(stats: {
-  beforeTokens: number;
-  afterTokens: number;
+  conversationBeforeTokens: number;
+  conversationAfterTokens: number;
+  overheadTokens: number;
   contextWindow: number;
 }): string {
-  const before = Math.round(stats.beforeTokens);
-  const after = Math.round(stats.afterTokens);
+  const before = Math.round(stats.conversationBeforeTokens);
+  const after = Math.round(stats.conversationAfterTokens);
+  const overhead = Math.round(stats.overheadTokens);
+  const fixed = `The system prompt, tool schemas, and reply reserve stay at ${overhead.toLocaleString()} tokens.`;
+  const conversation = `Compacted. Conversation ${before.toLocaleString()} → ${after.toLocaleString()} estimated tokens`;
   if (stats.contextWindow > 0) {
-    const beforePct = Math.round((stats.beforeTokens / stats.contextWindow) * 100);
-    const afterPct = Math.round((stats.afterTokens / stats.contextWindow) * 100);
-    return `Compacted. Context load ${beforePct}% → ${afterPct}% (${before.toLocaleString()} → ${after.toLocaleString()} estimated tokens).`;
+    const beforePct = Math.round(((stats.conversationBeforeTokens + stats.overheadTokens) / stats.contextWindow) * 100);
+    const afterPct = Math.round(((stats.conversationAfterTokens + stats.overheadTokens) / stats.contextWindow) * 100);
+    return `${conversation} (context load ${beforePct}% → ${afterPct}%). ${fixed}`;
   }
-  return `Compacted. ${before.toLocaleString()} → ${after.toLocaleString()} estimated tokens.`;
+  return `${conversation}. ${fixed}`;
 }
 
 /** Share of the window an overhead-triggered compaction must free to be worth a summary. */
