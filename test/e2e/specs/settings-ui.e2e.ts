@@ -290,6 +290,15 @@ describe("agentic-chat settings UI", function () {
       expect(row?.value).toBe("default");
       expect(row?.label).toBe(`Default (${tool.mutating ? "ask" : "allow"})`);
     }
+    if (process.env.AGENTIC_CHAT_SCREENSHOT_DIR) {
+      await browser.execute((firstLabel) => {
+        const row = Array.from(
+          document.querySelectorAll<HTMLElement>(".setting-item:not(.agentic-chat-settings-block)"),
+        ).find((item) => item.querySelector<HTMLElement>(".setting-item-name")?.innerText.trim() === firstLabel);
+        row?.scrollIntoView({ block: "center" });
+      }, TOOL_CATALOG[0].label);
+      await browser.saveScreenshot(`${process.env.AGENTIC_CHAT_SCREENSHOT_DIR}/settings-tool-rows.png`);
+    }
   });
 
   it("removes the working-directory section and still saves approval controls", async function () {
