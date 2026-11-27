@@ -1,0 +1,8 @@
+{
+  "coverageFile": "coverage/coverage-final.json",
+  "include": ["src/**"],
+  "exclude": ["src/vendor/**"],
+  "minLines": 10,
+  "max": 30,
+  "reportOnly": true
+}

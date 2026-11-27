@@ -15,6 +15,7 @@ export default tseslint.config(
       "scripts/build.mjs",
       "docs/.vitepress/cache/**",
       "docs/.vitepress/dist/**",
+      "coverage/**",
       "logs/**",
       ".obsidian-cache/**",
       ".stryker-tmp/**",
