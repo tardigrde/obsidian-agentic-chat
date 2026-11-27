@@ -33,6 +33,20 @@ import {
   type ObservabilitySettings,
 } from "./observability/settings";
 
+/** The data.json format this build reads and writes. */
+export const CURRENT_SETTINGS_VERSION = 1;
+
+/** A data.json written by a newer build must never be replaced with defaults. */
+export class SettingsVersionError extends Error {
+  constructor(readonly version: number) {
+    super(
+      `Your Agentic Chat settings use format ${version} from a newer version of Agentic Chat, but this build supports ${CURRENT_SETTINGS_VERSION}. ` +
+        "Update the plugin to change settings. The file was left unchanged.",
+    );
+    this.name = "SettingsVersionError";
+  }
+}
+
 /** Subagents that run at once by default; the rest queue. */
 export const DEFAULT_PARALLEL_SUBAGENTS = 10;
 /** Bounds for the parallel-subagent setting. */
@@ -41,6 +55,8 @@ export const MAX_PARALLEL_SUBAGENTS = 20;
 
 
 export interface AgenticChatSettings {
+  /** data.json schema version; see {@link CURRENT_SETTINGS_VERSION}. */
+  settingsVersion: number;
   provider: ProviderId;
   /** Secret id in Obsidian secretStorage. */
   openrouterApiKeySecretId: string;
@@ -160,6 +176,7 @@ export interface NotificationSettings {
 export const THINKING_LEVELS: ThinkingLevel[] = ["off", "minimal", "low", "medium", "high", "xhigh"];
 
 export const DEFAULT_SETTINGS: AgenticChatSettings = {
+  settingsVersion: CURRENT_SETTINGS_VERSION,
   provider: "openrouter",
   openrouterApiKeySecretId: OPENROUTER_API_KEY_SECRET_ID,
   openrouterApiKey: "",
@@ -226,8 +243,28 @@ const SETTING_NUMBER_RANGES: Readonly<Record<string, readonly [number, number]>>
   "web.fetchCharLimit": [500, Number.POSITIVE_INFINITY],
 };
 
+/** Version of a stored data.json; pre-versioning files are format 1. */
+export function settingsVersionOf(stored: unknown): number {
+  if (!isRecord(stored)) return CURRENT_SETTINGS_VERSION;
+  const version = stored.settingsVersion;
+  if (typeof version !== "number" || !Number.isFinite(version)) return CURRENT_SETTINGS_VERSION;
+  return Math.trunc(version);
+}
+
+type SettingsMigration = (stored: Record<string, unknown>) => Record<string, unknown>;
+
+/**
+ * Older data.json formats migrate here, one step per version. Empty today:
+ * version 1 is the first stamped format.
+ */
+const SETTINGS_MIGRATIONS: Readonly<Record<number, SettingsMigration>> = {};
+
 /** Merge stored settings over defaults, healing nested objects. */
 export function mergeSettings(stored: Partial<AgenticChatSettings> | null | undefined): AgenticChatSettings {
+  const version = settingsVersionOf(stored);
+  if (version > CURRENT_SETTINGS_VERSION) throw new SettingsVersionError(version);
+  const migrated = migrateSettings(stored as Record<string, unknown> | null | undefined, version);
+  stored = migrated as Partial<AgenticChatSettings> | null | undefined;
   const remaining = dropRetiredSettingKeys(stored);
   const healedMcp = healMcpSettings(sanitizeProxyLeaves(stored?.mcp));
   const healedPlugins = healPluginSettings(stored?.plugins);
@@ -235,6 +272,7 @@ export function mergeSettings(stored: Partial<AgenticChatSettings> | null | unde
   const merged: AgenticChatSettings = {
     ...DEFAULT_SETTINGS,
     ...remaining,
+    settingsVersion: CURRENT_SETTINGS_VERSION,
     // Plaintext secret keys are never read from persisted data once loaded;
     // migrateLegacyPlaintextSecrets() moves legacy values to secretStorage
     // before merge, and hydrateSettingsSecrets() fills the runtime cache.
@@ -274,6 +312,19 @@ export function mergeSettings(stored: Partial<AgenticChatSettings> | null | unde
   // Last pass: a persisted leaf whose type (or UI-bounded number) is invalid
   // falls back to the default, including leaves no dedicated heal covers yet.
   return healPrimitiveLeaves(merged, DEFAULT_SETTINGS);
+}
+
+function migrateSettings(
+  stored: Record<string, unknown> | null | undefined,
+  fromVersion: number,
+): Record<string, unknown> | null | undefined {
+  if (!stored) return stored;
+  let migrated = stored;
+  for (let version = fromVersion; version < CURRENT_SETTINGS_VERSION; version += 1) {
+    const migration = SETTINGS_MIGRATIONS[version];
+    if (migration) migrated = migration(migrated);
+  }
+  return migrated;
 }
 
 function stringSetting(value: unknown, fallback: string): string {

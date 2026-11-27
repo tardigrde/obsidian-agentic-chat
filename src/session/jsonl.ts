@@ -6,6 +6,52 @@ import type { FileCheckpoint } from "../agent/checkpoint-types";
 
 export const CURRENT_SESSION_VERSION = 1;
 
+/** A session written by a newer build cannot be read safely; never rewrite it. */
+export class SessionVersionError extends Error {
+  constructor(readonly version: number) {
+    super(
+      `This conversation uses session format ${version} from a newer version of Agentic Chat, but this build supports ${CURRENT_SESSION_VERSION}. ` +
+        "Update the plugin to open it. The file was left unchanged.",
+    );
+    this.name = "SessionVersionError";
+  }
+}
+
+/**
+ * Version of a parsed header. Files from before versioning are version 1: their
+ * shape is the current one, and the migration hook below starts from there.
+ */
+export function sessionHeaderVersion(header: SessionHeaderEntry | undefined): number {
+  if (!header || typeof header.version !== "number" || !Number.isFinite(header.version)) {
+    return CURRENT_SESSION_VERSION;
+  }
+  return Math.trunc(header.version);
+}
+
+/** Throw before any read that could lead to a rewrite when the file is newer. */
+export function assertSessionVersion(header: SessionHeaderEntry | undefined): void {
+  const version = sessionHeaderVersion(header);
+  if (version > CURRENT_SESSION_VERSION) throw new SessionVersionError(version);
+}
+
+type SessionMigration = (entries: SessionEntry[]) => SessionEntry[];
+
+/**
+ * Older formats migrate here, one step per version. Empty today: version 1 is
+ * the first format, and the list is the hook for the next change.
+ */
+const SESSION_MIGRATIONS: Readonly<Record<number, SessionMigration>> = {};
+
+/** Apply every migration between `fromVersion` and the current format. */
+export function migrateSessionEntries(entries: SessionEntry[], fromVersion: number): SessionEntry[] {
+  let migrated = entries;
+  for (let version = fromVersion; version < CURRENT_SESSION_VERSION; version += 1) {
+    const migration = SESSION_MIGRATIONS[version];
+    if (migration) migrated = migration(migrated);
+  }
+  return migrated;
+}
+
 export interface SessionHeaderEntry {
   type: "session";
   version: typeof CURRENT_SESSION_VERSION;

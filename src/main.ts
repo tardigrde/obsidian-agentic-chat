@@ -13,7 +13,13 @@ import {
 } from "obsidian";
 import { VIEW_TYPE_AGENT_CHAT } from "./constants";
 import { AgenticChatSettingTab } from "./settings";
-import { type AgenticChatSettings, DEFAULT_SETTINGS, mergeSettings, retiredSettingsNotices } from "./settings-schema";
+import {
+  type AgenticChatSettings,
+  DEFAULT_SETTINGS,
+  mergeSettings,
+  retiredSettingsNotices,
+  SettingsVersionError,
+} from "./settings-schema";
 import { AgentService, type ToolApprovalRequest } from "./agent/agent-service";
 import type { UserApprovalChoice } from "./agent/tool-call-controller";
 import type { AskUserHandler } from "./tools/ask-user-tool";
@@ -43,6 +49,8 @@ export default class AgenticChatPlugin extends Plugin {
   settings: AgenticChatSettings = DEFAULT_SETTINGS;
   private lastSyncedMode: AgentMode | null = null;
   private readonly modeListeners = new Set<(mode: AgentMode) => void>();
+  /** False when data.json belongs to a newer build; saves must not overwrite it. */
+  private settingsWritable = true;
   private secretStore!: ObsidianSecretStore;
   private readonly sessionWriteRegistry = new SessionWriteRegistry();
   private readonly mcpOAuthCallbacks = new McpOAuthObsidianCallbackBridge();
@@ -262,7 +270,19 @@ export default class AgenticChatPlugin extends Plugin {
     // Read what THIS data.json still carries before mergeSettings drops it, so
     // the user learns which retired settings changed behaviour on upgrade.
     const retiredNotices = retiredSettingsNotices(stored);
-    this.settings = mergeSettings(stored);
+    try {
+      this.settings = mergeSettings(stored);
+    } catch (error) {
+      if (!(error instanceof SettingsVersionError)) throw error;
+      // The format is newer than this build. Run on defaults in memory, but do
+      // not save: the user's file must survive to be opened by the newer build.
+      this.settings = structuredClone(DEFAULT_SETTINGS);
+      this.settingsStore.replace(this.settings);
+      this.settingsWritable = false;
+      new Notice(error.message);
+      console.warn(`Agentic chat: ${error.message}`);
+      return;
+    }
     this.settingsStore.replace(this.settings);
     hydrateSettingsSecrets(this.settings, withUnmigratedSecrets(this.secretStore, unmigrated));
     // S4: remember mode for the broadcast guard.
@@ -313,6 +333,9 @@ export default class AgenticChatPlugin extends Plugin {
   }
 
   private async persistSettings(settings: AgenticChatSettings): Promise<void> {
+    if (!this.settingsWritable) {
+      throw new Error("Settings were written by a newer version of Agentic Chat; update the plugin to change them.");
+    }
     await this.saveData(settingsForStorage(settings, this.secretStore));
   }
 

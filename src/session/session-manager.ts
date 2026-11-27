@@ -12,13 +12,18 @@ import {
   type ActionAuditSessionEntry,
   type DiagnosticsSessionEntry,
   type FileCheckpointSessionEntry,
+  assertSessionVersion,
   buildSessionContext,
+  CURRENT_SESSION_VERSION,
+  SessionVersionError,
   createEntryId,
   createSessionHeader,
   createSessionId,
   getLastLeafId,
+  migrateSessionEntries,
   parseSessionEntries,
   serializeSessionEntries,
+  sessionHeaderVersion,
   type MessageSessionEntry,
   type ModelChangeSessionEntry,
   type SessionContext,
@@ -78,6 +83,8 @@ export interface SessionInfo {
    * see and delete it instead of losing it without a notice.
    */
   unreadable?: true;
+  /** The file uses a newer session format. History lists it; loading refuses. */
+  newerVersion?: number;
 }
 
 interface SessionFileInfo extends SessionInfo {
@@ -180,10 +187,16 @@ export class ObsidianSessionManager {
   }
 
   async continueRecentSession(defaults: SessionDefaults): Promise<SessionInfo> {
-    const recent = (await this.listSessions()).find((session) => !session.unreadable);
-    if (recent) {
-      await this.loadSession(recent.path);
-      return this.getActiveSessionInfo();
+    const recent = (await this.listSessions()).filter((session) => !session.unreadable);
+    for (const session of recent) {
+      try {
+        await this.loadSession(session.path);
+        return this.getActiveSessionInfo();
+      } catch (error) {
+        // A newer-format conversation stays listed for a future build; startup
+        // continues with the newest session this build can actually read.
+        if (!(error instanceof SessionVersionError)) throw error;
+      }
     }
     return this.createSession(defaults);
   }
@@ -196,6 +209,8 @@ export class ObsidianSessionManager {
     if (entries[0]?.type !== "session") {
       throw new Error("Session file is missing a session header.");
     }
+    assertSessionVersion(entries[0]);
+    const migrated = migrateSessionEntries(entries, sessionHeaderVersion(entries[0]));
     if (
       (options.expectedPath !== undefined && this.sessionFile !== options.expectedPath) ||
       (options.expectedGeneration !== undefined && this.sessionGeneration !== options.expectedGeneration)
@@ -206,8 +221,8 @@ export class ObsidianSessionManager {
     this.sessionFile = sessionPath;
     if (reload) this.sessionGeneration += 1;
     else this.beginConversation();
-    this.entries = entries;
-    this.leafId = getLastLeafId(entries);
+    this.entries = migrated;
+    this.leafId = getLastLeafId(migrated);
     this.fullCheckpointPaths = new Set();
     return this.getActiveSessionInfo();
   }
@@ -258,6 +273,8 @@ export class ObsidianSessionManager {
     for (const path of this.listSessionPaths(listing.files)) {
       try {
         const entries = parseSessionEntries(await this.readSessionContent(path));
+        const header = entries[0];
+        if (header?.type !== "session" || sessionHeaderVersion(header) > CURRENT_SESSION_VERSION) continue;
         const messages = entries
           .filter((entry): entry is MessageSessionEntry => entry.type === "message")
           .map((entry) => entry.message);
@@ -365,6 +382,7 @@ export class ObsidianSessionManager {
     const content = await this.adapter.read(sessionPath);
     const entries = parseSessionEntries(content);
     if (entries[0]?.type !== "session") throw new Error("Session file is missing a session header.");
+    assertSessionVersion(entries[0]);
     const entry: SessionInfoEntry = {
       type: "session_info",
       id: createEntryId(entries),
@@ -396,6 +414,7 @@ export class ObsidianSessionManager {
     }
     const header = this.entries[0];
     if (!header || header.type !== "session") throw new Error("Session file is missing a session header.");
+    assertSessionVersion(header);
     const sessionName = getSessionName(this.entries);
     const tabLabel = getTabLabel(this.entries);
     const context = this.buildSessionContext();
@@ -682,9 +701,15 @@ export class ObsidianSessionManager {
       const content = await this.readSessionContent(path);
       const stat = await this.adapter.stat(path);
       const entries = parseSessionEntries(content);
-      if (entries[0]?.type !== "session") return this.unreadableSessionInfo(path);
+      const header = entries[0];
+      if (header?.type !== "session") return this.unreadableSessionInfo(path);
       const modifiedTime = getSessionModifiedTime(entries, stat?.mtime ?? Date.now());
-      return { ...summarizeSession(path, entries, modifiedTime), modifiedTime };
+      const version = sessionHeaderVersion(header);
+      return {
+        ...summarizeSession(path, entries, modifiedTime),
+        modifiedTime,
+        ...(version > CURRENT_SESSION_VERSION ? { newerVersion: version } : {}),
+      };
     } catch {
       return this.unreadableSessionInfo(path);
     }

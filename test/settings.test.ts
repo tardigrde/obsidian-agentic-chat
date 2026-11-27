@@ -34,6 +34,17 @@ describe("default OpenRouter model", () => {
   });
 });
 
+describe("settings format version", () => {
+  it("stamps the current version on a fresh or older data.json", () => {
+    expect(mergeSettings(null).settingsVersion).toBe(1);
+    expect(mergeSettings({ settingsVersion: 0 } as never).settingsVersion).toBe(1);
+  });
+
+  it("refuses a data.json written by a newer version instead of overwriting it with defaults", () => {
+    expect(() => mergeSettings({ settingsVersion: 2 } as never)).toThrow(/newer version/i);
+  });
+});
+
 describe("mergeSettings — retired working directories", () => {
   it("loads an old data.json with approval.workingDirs and drops the key", () => {
     const merged = mergeSettings({
