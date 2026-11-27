@@ -141,11 +141,15 @@ export function approvalDefinitions(settings: AgenticChatSettings, host: Setting
   for (const tool of perToolApprovalRows(settings)) {
     items.push(
       row(tool.label, (setting) => {
-        setting.setDesc(`${tool.toolName} · ${tool.mutating ? "mutating" : "read-only"}`).addDropdown((dropdown) => {
+        const detail = tool.toolName === "subagent" ? "dispatch never prompts; deny blocks it" : tool.mutating ? "mutating" : "read-only";
+        setting.setDesc(`${tool.toolName} · ${detail}`).addDropdown((dropdown) => {
           dropdown
             .addOption("default", defaultApprovalOptionLabel(settings.approval, tool.mutating))
-            .addOption("allow", "Allow")
-            .addOption("ask", "Ask")
+            .addOption("allow", "Allow");
+          // Dispatch has no approval gate (the child never prompts), so an Ask
+          // option would silently behave like Allow. Only an explicit deny applies.
+          if (tool.toolName !== "subagent") dropdown.addOption("ask", "Ask");
+          dropdown
             .addOption("deny", "Deny")
             .setValue(settings.approval.perTool[tool.toolName] ?? "default")
             .onChange(async (value) => {

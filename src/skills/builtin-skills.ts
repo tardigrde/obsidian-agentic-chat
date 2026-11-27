@@ -128,11 +128,11 @@ description: >-
 
 # Install plugin
 
-Agent plugins are packages in the vault's plugins folder (default \`.agentic-plugins\`). Each package has a \`plugin.json\` (Agent Plugins 1.0.0 \`$schema\`), optional \`mcp.json\`, and a \`skills/\` directory holding one folder per skill (\`skills/<name>/SKILL.md\`). The Resources tab in plugin settings lists them.
+Agent plugins are packages in the vault's plugins folder (default \`.agentic-plugins\`). Each package has a \`plugin.json\` (Agent Plugins 1.0.0 \`$schema\`), optional \`mcp.json\`, and a \`skills/\` directory holding one folder per skill (\`skills/<name>/SKILL.md\`). The **Agent plugins** section under Settings > Advanced lists them.
 
 ## How the user installs a plugin
 
-The settings Resources tab has an **Install plugin** button. It accepts:
+The **Agent plugins** section (Settings > Advanced) has an **Install plugin** button. It accepts:
 
 - A GitHub URL: \`owner/repo\`, \`https://github.com/owner/repo\`, \`/tree/<ref>[/subfolder]\`, \`/blob/<ref>/<path>\` (single skill file), \`/archive/<...>.zip|.tar.gz\`, or a direct \`.zip\`/\`.tar.gz\`/\`.tgz\` URL.
 - A folder picked from the vault (desktop only).
@@ -144,9 +144,9 @@ Claude/Copilot/VS Code plugin packages are converted automatically: skills are c
 
 - If the user names a plugin to install, prefer pointing them at the **Install plugin** button over editing files by hand. It converts, sanitizes skill frontmatter, and writes a spec-valid package.
 - To install from a repository subfolder (e.g. a repo with many plugins), use the \`/tree/<ref>/<subfolder>\` form of the GitHub URL.
-- After install, tell the user the plugin now appears in the Resources tab and that MCP servers from imported plugins start **disabled** until enabled in the MCP tab.
+- After install, tell the user the plugin now appears in Settings > Advanced > Agent plugins and that MCP servers from imported plugins start **disabled** until enabled in the MCP tools section of Advanced.
 - The plugins folder is a dot-folder: hidden in the file explorer. Use **Open folder** on a plugin row to reveal it, or tell the user to toggle "Show hidden files" in Obsidian's explorer menu.
-- When the user wants a new skill of their own, point them at the **New skill** wizard on the Resources tab instead of hand-writing files with \`write\` — generic file tools cannot reliably create dot-folder paths. The vault also ships an empty \`my-skills\` package as the user's personal collection space; single-skill packages are fine, \`my-skills\` is for hand-curated customs.
+- When the user wants a new skill of their own, point them at the **New skill** wizard in Settings > Advanced > Agent plugins instead of hand-writing files with \`write\` — generic file tools cannot reliably create dot-folder paths. The vault also ships an empty \`my-skills\` package as the user's personal collection space; single-skill packages are fine, \`my-skills\` is for hand-curated customs.
 
 ## Authoring plugins
 
@@ -173,7 +173,7 @@ A minimal package:
 }
 \`\`\`
 
-Skill \`name\` frontmatter must equal the skill folder name; other frontmatter fields are ignored. When the user wants a new skill of their own, point them at the **New skill** wizard on the Resources tab instead of hand-writing files.
+Skill \`name\` frontmatter must equal the skill folder name; other frontmatter fields are ignored. When the user wants a new skill of their own, point them at the **New skill** wizard in Settings > Advanced > Agent plugins instead of hand-writing files.
 
 ## Limits
 

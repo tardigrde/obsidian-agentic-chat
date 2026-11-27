@@ -279,9 +279,16 @@ describe("agentic-chat settings UI", function () {
           const name = item.querySelector<HTMLElement>(".setting-item-name")?.innerText.trim() ?? "";
           const select = item.querySelector<HTMLSelectElement>("select");
           if (!select || !toolLabels.includes(name)) return null;
-          return { name, value: select.value, label: select.selectedOptions[0]?.textContent?.trim() ?? "" };
+          return {
+            name,
+            value: select.value,
+            label: select.selectedOptions[0]?.textContent?.trim() ?? "",
+            options: Array.from(select.options).map((option) => option.value),
+          };
         })
-        .filter((row): row is { name: string; value: string; label: string } => row !== null);
+        .filter(
+          (row): row is { name: string; value: string; label: string; options: string[] } => row !== null,
+        );
     }, labels);
 
     expect(rows.map((row) => row.name).sort()).toEqual([...labels].sort());
@@ -290,6 +297,10 @@ describe("agentic-chat settings UI", function () {
       expect(row?.value).toBe("default");
       expect(row?.label).toBe(`Default (${tool.mutating ? "ask" : "allow"})`);
     }
+    // Dispatch has no approval gate, so it must not offer an Ask that would
+    // silently behave like Allow. An explicit deny still blocks it.
+    const subagentRow = rows.find((row) => row.name === "Dispatch subagent");
+    expect(subagentRow?.options).toEqual(["default", "allow", "deny"]);
     if (process.env.AGENTIC_CHAT_SCREENSHOT_DIR) {
       await browser.execute((firstLabel) => {
         const row = Array.from(
