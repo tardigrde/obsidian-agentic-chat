@@ -941,7 +941,8 @@ export class ChatView extends ItemView {
       renderActionList: (title, subtitle, items) => view.renderActionList(title, subtitle, items),
       renderErrorMessage: (message) => view.renderErrorMessage(message),
       showServiceError: () => view.showServiceError(),
-      renderOutgoingUserMessage: (text, attachments, images) => view.renderOutgoingUserMessage(text, attachments, images),
+      renderOutgoingUserMessage: (text, attachments, images, pendingMessageEnd) =>
+        view.renderOutgoingUserMessage(text, attachments, images, pendingMessageEnd),
       renderTranscript: (messages) => view.renderTranscript(messages),
       syncChrome: () => view.syncChrome(),
       setComposerValue: (text) => view.setComposerValue(text),
@@ -1054,8 +1055,13 @@ export class ChatView extends ItemView {
     this.transcript.renderTranscript(messages);
   }
 
-  private renderOutgoingUserMessage(text: string, attachments: ContextAttachment[], images?: ImageContent[]): void {
-    this.transcript.renderOutgoingUserMessage(text, attachments, images);
+  private renderOutgoingUserMessage(
+    text: string,
+    attachments: ContextAttachment[],
+    images?: ImageContent[],
+    pendingMessageEnd = true,
+  ): void {
+    this.transcript.renderOutgoingUserMessage(text, attachments, images, pendingMessageEnd);
   }
 
   private scrollToBottom(options: { force?: boolean } = {}): void {

@@ -24,7 +24,12 @@ export interface SlashContext {
   renderActionList(title: string, subtitle: string, items: ActionRow[]): void;
   renderErrorMessage(message: string): void;
   showServiceError(): void;
-  renderOutgoingUserMessage(text: string, attachments: ContextAttachment[], images?: ImageContent[]): void;
+  renderOutgoingUserMessage(
+    text: string,
+    attachments: ContextAttachment[],
+    images?: ImageContent[],
+    pendingMessageEnd?: boolean,
+  ): void;
   renderTranscript(messages: AgentMessage[]): void;
   syncChrome(): void;
   setComposerValue(text: string): void;

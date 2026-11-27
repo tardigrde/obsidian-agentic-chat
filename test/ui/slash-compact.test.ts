@@ -31,5 +31,18 @@ describe("/compact", () => {
     expect(bubbles).toEqual(expect.arrayContaining([expect.stringContaining("/compact")]));
     // The rewrite landed, so the redraw that would have wiped the bubble ran.
     expect(ui.root.textContent).toContain("Compacted.");
+
+    // A user message delivered outside the composer (a steer drained after the
+    // rewrite) must still render; the redraw reset the pending local-render slot.
+    const transcript = (
+      ui.view as unknown as { transcript: { endUserMessage(message: unknown): void } }
+    ).transcript;
+    transcript.endUserMessage({
+      role: "user",
+      content: [{ type: "text", text: "delivered outside the composer" }],
+      timestamp: Date.now(),
+    });
+    await settle();
+    expect(ui.root.textContent).toContain("delivered outside the composer");
   });
 });
