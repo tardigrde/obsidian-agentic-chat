@@ -187,7 +187,6 @@ describe("agentic-chat settings UI", function () {
       "observability",
       "notifications",
       "plugins",
-      "subagents",
       "ignored-files",
     ]);
     for (const heading of [
@@ -196,7 +195,6 @@ describe("agentic-chat settings UI", function () {
       "Observability export",
       "Notifications",
       "Agent plugins",
-      "Subagents",
       "Ignored files",
     ]) {
       await waitForSetting(heading);

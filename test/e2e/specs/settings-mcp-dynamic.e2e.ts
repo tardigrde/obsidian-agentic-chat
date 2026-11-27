@@ -214,11 +214,12 @@ describe("settings MCP dynamic rows", function () {
         if (shouldAdd) {
           plugin.settings.mcp.enabled = true;
           if (!plugin.pluginService) throw new Error("pluginService is unavailable");
+          const before = new Set(Object.keys(plugin.settings.plugins.mcpState));
           await plugin.pluginService.generateMcpServerPackage({
             serverName: "e2e-bare-oauth",
             url: "https://mcp.example.com/mcp",
           });
-          const id = Object.keys(plugin.settings.plugins.mcpState).find((candidate) => candidate.includes("e2e_bare_oauth"));
+          const id = Object.keys(plugin.settings.plugins.mcpState).find((candidate) => !before.has(candidate));
           if (!id) throw new Error("generated MCP package did not create state");
           const state = plugin.settings.plugins.mcpState[id];
           state.pendingOAuthChallenge =
