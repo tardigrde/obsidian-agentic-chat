@@ -118,10 +118,16 @@ function main() {
     return;
   }
 
-  const result = spawnSync(process.execPath, [crapCli(), "score", "--json"], {
-    cwd: process.cwd(),
-    encoding: "utf8",
-  });
+  let result;
+  try {
+    result = spawnSync(process.execPath, [crapCli(), "score", "--json"], {
+      cwd: process.cwd(),
+      encoding: "utf8",
+    });
+  } catch (error) {
+    reportError(`crap: could not run crap-ts: ${error instanceof Error ? error.message : String(error)}`);
+    return;
+  }
   if (result.stderr) process.stderr.write(result.stderr);
   if (result.status !== 0) {
     reportError(`crap: crap-ts exited ${result.status ?? "without a status"}.`);
