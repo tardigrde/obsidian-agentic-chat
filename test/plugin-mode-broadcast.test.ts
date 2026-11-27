@@ -54,6 +54,16 @@ async function loadedPlugin(
   return { plugin, refresh, saved, streaming };
 }
 
+describe("newer settings format", () => {
+  it("keeps a newer data.json untouched and refuses to save defaults over it", async () => {
+    const { plugin, saved } = await loadedPlugin({ settingsVersion: 2, openrouterModel: "future/model" });
+
+    expect(plugin.settings.openrouterModel).toBe("deepseek/deepseek-v4.1-flash");
+    expect(saved).toEqual([]);
+    await expect(plugin.saveSettings()).rejects.toThrow(/newer version/i);
+  });
+});
+
 describe("runtime mode", () => {
   it("starts in Safe even when an old data.json stored a mode", async () => {
     const { plugin, saved } = await loadedPlugin({ mode: "yolo" });
