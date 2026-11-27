@@ -1,0 +1,39 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "entry": [
+    "src/main.ts",
+    "src/agent/e2e-stream-disabled.ts",
+    "src/types/**/*.ts",
+    "scripts/**/*.{ts,mjs}",
+    "test/**/*.test.ts",
+    "test/**/*.e2e.ts",
+    "test/**/*.dogfood.ts",
+    "test/**/*.eval.ts",
+    "config/**/*.mjs",
+    "*.{ts,mts,mjs}"
+  ],
+  "project": [
+    "src/**/*.ts",
+    "scripts/**/*.{ts,mjs}",
+    "test/**/*.ts",
+    "config/**/*.{mjs,ts}",
+    "*.{ts,mts,mjs}"
+  ],
+  "ignore": [
+    "scripts/release-fixtures/**"
+  ],
+  "ignoreBinaries": [
+    "systemd-inhibit",
+    "Xephyr"
+  ],
+  "ignoreDependencies": [
+    "@wdio/cli",
+    "typescript-7"
+  ],
+  "rules": {
+    "exports": "off",
+    "types": "off",
+    "duplicates": "off",
+    "enumMembers": "off"
+  }
+}
