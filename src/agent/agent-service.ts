@@ -150,6 +150,12 @@ export class AgentService {
   private readonly loopGuard = new AgentLoopGuard();
   private readonly recentEvents: string[] = [];
   private readonly queuedTexts: string[] = [];
+  /**
+   * Steers sent while a turn is starting but not yet streaming (B1: a report
+   * turn after a background subagent). The starting turn takes them; a turn
+   * that never runs hands them back to the composer. Never dropped.
+   */
+  private readonly heldSteers: AgentMessage[] = [];
   private readonly promptTurns: AgentPromptTurnRuntime;
   private disposal: Promise<void> | null = null;
 
@@ -291,6 +297,8 @@ export class AgentService {
           this.subagents.registry.clear();
           // Reports waiting for a turn belong to the old conversation (review of #431).
           this.reports.reset();
+          // A held steer is the user's draft, not the old session's data: it goes back to the composer, unsent.
+          this.steering.keepUndelivered(this.heldSteers.splice(0));
           this.steering.takeDrainedReports();
         },
       },
@@ -635,6 +643,13 @@ export class AgentService {
     const attached = images && images.length > 0 ? images : undefined;
     const agent = this.requireAgent();
     if (!agent.state.isStreaming) {
+      if (this.promptTurns.isInFlight()) {
+        // A send now would hit the "turn is already starting" guard and the text would be lost.
+        this.reports.resume();
+        this.heldSteers.push(createUserMessage(text, attached));
+        this.notifyChange();
+        return;
+      }
       await this.sendPrompt(text, attached, expectedSessionToken);
       return;
     }
@@ -826,11 +841,19 @@ export class AgentService {
       await this.promptTurns.run(
         this.steering.settling((agent) => {
           ran = true;
+          // Held steers ride as follow-ups: pi reads them when the turn would end, even after a text-only reply.
+          for (const message of this.heldSteers.splice(0)) agent.followUp(message);
           return run(agent);
         }),
         expectedSessionToken,
       );
     } finally {
+      // The turn never ran (blocked, or the session changed): the held text goes back to the composer.
+      if (!ran && this.heldSteers.length > 0) {
+        this.steering.keepUndelivered(this.heldSteers.splice(0));
+        // The UI restores undelivered text on a change notification; the turn's last one came before this.
+        this.notifyChange();
+      }
       // A report steered in after the last poll did not reach the model: it waits again.
       this.reports.keepDrained(this.steering.takeDrainedReports(), { startsTurn: true });
       this.reports.afterTurn(ran);

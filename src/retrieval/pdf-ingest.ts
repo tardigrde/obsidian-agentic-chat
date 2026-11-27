@@ -16,6 +16,8 @@ export const PDF_TEXT_EXTRACTOR = "pdfjs";
 
 /** Refuse PDFs larger than this; a 100 MB scan is not a note source (U4 #10). */
 export const MAX_PDF_BYTES = 50 * 1024 * 1024;
+/** On mobile pdf.js inflates streams in a small heap: a lower cap keeps a compressed PDF from exhausting it. */
+export const MAX_PDF_BYTES_MOBILE = 20 * 1024 * 1024;
 /** Keep at most this much extracted text; the rest is dropped with a warning. */
 export const MAX_PDF_TEXT_CHARS = 1_500_000;
 /** Pages read at most: empty pages add no text, so the text cap alone never stops them. */
@@ -66,6 +68,8 @@ export interface PdfImportWriteInput {
   title?: string;
   importedAt?: string;
   maxChunkChars?: number;
+  signal?: AbortSignal;
+  maxBytes?: number;
 }
 
 export interface PdfImportWriteResult {
@@ -85,15 +89,31 @@ export interface PdfImportWriteResult {
  * (U4 #10). A file too large is refused; text that is mostly unreadable (a
  * broken font encoding) is refused rather than stored.
  */
-export async function extractPdfText(input: PdfInput, loadPdfJs: PdfJsLoader): Promise<PdfExtractionResult> {
+export interface PdfExtractOptions {
+  /** Stop between pages; a Stop must not leave pdf.js running (U4L). */
+  signal?: AbortSignal;
+  /** Byte cap; defaults to `MAX_PDF_BYTES` (`MAX_PDF_BYTES_MOBILE` on mobile). */
+  maxBytes?: number;
+}
+
+export function pdfTooLargeError(byteLength: number, maxBytes: number): Error {
+  return new Error(`PDF is too large to import (${Math.round(byteLength / 1024 / 1024)} MB, max ${Math.round(maxBytes / 1024 / 1024)} MB).`);
+}
+
+function throwIfAborted(signal: AbortSignal | undefined): void {
+  if (signal?.aborted) throw new Error("PDF import stopped.");
+}
+
+export async function extractPdfText(input: PdfInput, loadPdfJs: PdfJsLoader, options: PdfExtractOptions = {}): Promise<PdfExtractionResult> {
   const bytes = input instanceof Uint8Array ? input : new Uint8Array(input);
-  if (bytes.byteLength > MAX_PDF_BYTES) {
-    throw new Error(`PDF is too large to import (${Math.round(bytes.byteLength / 1024 / 1024)} MB, max ${MAX_PDF_BYTES / 1024 / 1024} MB).`);
-  }
+  const maxBytes = options.maxBytes ?? MAX_PDF_BYTES;
+  if (bytes.byteLength > maxBytes) throw pdfTooLargeError(bytes.byteLength, maxBytes);
+  throwIfAborted(options.signal);
   if (!new TextDecoder("latin1").decode(bytes.slice(0, 1024)).includes("%PDF-")) {
     throw new Error("Unsupported file: expected a PDF header.");
   }
   const pdfjs = await loadPdfJs();
+  throwIfAborted(options.signal);
   // pdf.js may detach the buffer it gets: hand it a copy.
   let document: Awaited<ReturnType<PdfJsLike["getDocument"]>["promise"]>;
   try {
@@ -113,6 +133,7 @@ export async function extractPdfText(input: PdfInput, loadPdfJs: PdfJsLoader): P
       warnings.push(`Read the first ${MAX_PDF_PAGES.toLocaleString("en-US")} of ${document.numPages.toLocaleString("en-US")} pages.`);
     }
     for (let pageNumber = 1; pageNumber <= lastPage; pageNumber += 1) {
+      throwIfAborted(options.signal);
       const page = await document.getPage(pageNumber);
       const content = await page.getTextContent();
       const text = content.items.map((item) => `${item.str ?? ""}${item.hasEOL ? "\n" : ""}`).join("");
@@ -126,6 +147,8 @@ export async function extractPdfText(input: PdfInput, loadPdfJs: PdfJsLoader): P
   } finally {
     await document.destroy?.();
   }
+  // A Stop during the last page must not write the artifact.
+  throwIfAborted(options.signal);
   let text = normalizeSourceText(pages.join("\n\n"));
   if (text.length > MAX_PDF_TEXT_CHARS) text = text.slice(0, MAX_PDF_TEXT_CHARS);
   if (!text) {
@@ -225,7 +248,7 @@ export class PdfArtifactDeduper {
   constructor(private readonly loadPdfJs: PdfJsLoader) {}
 
   async write(store: ToolArtifactStoreLike, input: PdfImportWriteInput): Promise<PdfImportWriteResult> {
-    const extraction = await extractPdfText(input.data, this.loadPdfJs);
+    const extraction = await extractPdfText(input.data, this.loadPdfJs, { signal: input.signal, maxBytes: input.maxBytes });
     const chunks = chunkPdfText(extraction.text, { maxChars: input.maxChunkChars });
     const keys = await sourceDedupKeys(`pdf:${normalizeSourcePath(input.sourcePath)}`, extraction.text);
     const provenance: PdfImportProvenance = {

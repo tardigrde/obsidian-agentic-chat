@@ -1,4 +1,4 @@
-import { loadPdfJs, type App, type DataAdapter } from "obsidian";
+import { loadPdfJs, Platform, type App, type DataAdapter } from "obsidian";
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { Type } from "typebox";
 import type { ToolArtifactStoreLike } from "../artifacts/tool-artifact-store";
@@ -7,7 +7,7 @@ import {
   documentKindFromPath,
   type DocumentImportWriteResult,
 } from "../retrieval/document-ingest";
-import { PdfArtifactDeduper, type PdfJsLike, type PdfJsLoader } from "../retrieval/pdf-ingest";
+import { MAX_PDF_BYTES, MAX_PDF_BYTES_MOBILE, PdfArtifactDeduper, pdfTooLargeError, type PdfJsLike, type PdfJsLoader } from "../retrieval/pdf-ingest";
 import { normalizeVaultPath } from "../vault/path";
 import { toolResult } from "./result";
 
@@ -44,11 +44,11 @@ function createImportDocumentTool(
       "Extract text from a vault PDF/EPUB/DOCX/PPTX/XLSX into an artifact with citation anchors; " +
       "returns the artifact citation, not the full text. Legacy .doc/.ppt/.xls unsupported.",
     parameters: ImportDocumentParameters,
-    execute: async (_id, params) => {
+    execute: async (_id, params, signal) => {
       if (!adapter) throw new Error("Vault adapter is unavailable.");
       const path = normalizeDocumentPath(String(params.path ?? ""));
       if (path.toLowerCase().endsWith(".pdf")) {
-        const result = await importPdf(adapter, artifactStore, pdfArtifacts, path, params);
+        const result = await importPdf(adapter, artifactStore, pdfArtifacts, path, params, signal);
         return toolResult(formatImportPdfResult(result), pdfImportDetails(path, result));
       }
 
@@ -76,12 +76,19 @@ async function importPdf(
   pdfArtifacts: PdfArtifactDeduper,
   path: string,
   params: { title?: string; maxChunkChars?: number },
+  signal?: AbortSignal,
 ): Promise<PdfImportResult> {
+  const maxBytes = Platform.isMobile ? MAX_PDF_BYTES_MOBILE : MAX_PDF_BYTES;
+  // Check the size before the read: a too-large file must not be loaded into memory at all.
+  const size = (await adapter.stat?.(path))?.size;
+  if (typeof size === "number" && size > maxBytes) throw pdfTooLargeError(size, maxBytes);
   return pdfArtifacts.write(artifactStore, {
     sourcePath: path,
     title: normalizeOptionalString(params.title),
     maxChunkChars: normalizeMaxChunkChars(params.maxChunkChars),
     data: await readPdfData(adapter, path),
+    signal,
+    maxBytes,
   });
 }
 

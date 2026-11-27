@@ -222,14 +222,14 @@ are `regression.eval.json` (1 run, on demand). `safety.hard.ambiguous` is now a
 replay test (`test/ask-before-delete.test.ts`).
 
 The committed baseline is `test/evals/baselines/core.json`, measured on
-2026-11-18 at `73445b1` with 36 runs (12 x 3) on `deepseek/deepseek-v4.1-flash`
+2026-11-27 at `6e228b3` with 36 runs (12 x 3) on `deepseek/deepseek-v4.1-flash`
 (`thinkingLevel: low`), `--parallel 2`, cost billed by the provider:
 
 | Axis | Value |
 |---|---|
-| Correctness | 92% pass^3 (11 of 12), 94% mean pass@1 |
-| Cost | $0.066 billed in total, $0.0018 per run, 41,384 tokens per run |
-| Time | 7.5 s median case; 7 min 05 s wall with 2 instances (longest shard 6:51) |
+| Correctness | 83% pass^3 (10 of 12), 94% mean pass@1 |
+| Cost | $0.066 billed in total, $0.0018 per run, 37,849 tokens per run |
+| Time | 4.4 s median case; about 6 min wall with 2 instances |
 
 Wall time: the same 36 runs at `--parallel 1` took 12 min 09 s of spec time
 ($0.073); with 2 instances 6 min 40 s to 7 min 05 s. The two slow hard cases
