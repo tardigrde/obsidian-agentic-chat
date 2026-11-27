@@ -78,6 +78,7 @@ export function staticSteps() {
     step("lint", bin("eslint"), ["."]),
     step("comment budget (warn)", NODE, ["scripts/comment-budget.mjs"]),
     step("lint:obsidian", bin("eslint"), ["-c", "config/eslint.obsidian.mjs", "--max-warnings", "0", "src"]),
+    step("knip", bin("knip"), ["--no-progress"]),
     step("feature map", NODE, ["scripts/check-feature-map.mjs"]),
     step("test manifest", NODE, ["scripts/check-test-manifest.mjs"]),
     step("dependency bot config", NODE, ["scripts/check-dependency-bot-config.mjs"]),
