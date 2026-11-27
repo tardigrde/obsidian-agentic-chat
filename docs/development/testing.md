@@ -139,8 +139,12 @@ layout engine: sizes and scrolling stay in e2e.
 No network (the offline guard throws on a non-loopback host), no fixed ports
 (`listen(0)`), no real waits (`withFakeClock` in `test/support/fake-clock.ts`),
 one fake DOM (happy-dom) and one fake adapter (`test/support/fake-adapter.ts`).
-Coverage and mutation are advisory: CI prints diff coverage; `npm run mutation`
-is a weekly local run ([mutation.md](mutation.md)).
+Coverage and mutation are advisory: CI prints diff coverage and the CRAP report;
+`npm run mutation` is a weekly local run ([mutation.md](mutation.md)). The CRAP
+report (`npm run crap` after `npm run test:coverage`) ranks functions by
+complexity and coverage into `coverage/crap.md`; `verify -- check --coverage`
+runs it and CI puts it in the job summary. A broken report never fails the
+lane; `npm run crap` is the strict form for local use.
 
 ## Adding a test
 

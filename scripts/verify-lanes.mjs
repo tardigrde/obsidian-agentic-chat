@@ -207,6 +207,7 @@ export const lanes = {
         tier: "T1",
         vitestJson: true,
       }),
+      ...(coverage ? [step("crap report", NODE, ["scripts/report-crap.mjs"], { tier: "T1" })] : []),
       step("witness self-test", NODE, ["scripts/verify-witness.mjs", "--self-test"], { tier: "T1" }),
       ...buildSteps(),
       ...(noApp ? [] : [productionBootStep(), step("e2e bundle", NODE, ["scripts/build-e2e.mjs"]), e2eStep("smoke e2e", [SMOKE_SPEC])]),

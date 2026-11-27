@@ -49,6 +49,9 @@ describe("verify lanes", () => {
     expect(ci).not.toContain("smoke e2e");
     expect(ci).not.toContain("production boot");
     expect(ci).toContain("unit tests + coverage report");
+    expect(ci).toContain("crap report");
+    expect(ci.indexOf("crap report")).toBeGreaterThan(ci.indexOf("unit tests + coverage report"));
+    expect(labels(build("check", ["--no-app"]))).not.toContain("crap report");
     expect(() => build("check", ["--bogus"])).toThrow(/--no-app/);
   });
 
