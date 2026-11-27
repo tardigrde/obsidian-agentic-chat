@@ -12,7 +12,7 @@ import {
 import { SubagentRegistry } from "../src/tools/subagent-tool";
 import type { AgentRole } from "../src/agent/subagents";
 import { DEFAULT_SETTINGS, type AgenticChatSettings } from "../src/settings-schema";
-import { createMcpServerSettings, createMcpServerState } from "../src/mcp/settings";
+import { createMcpServerState } from "../src/mcp/settings";
 import type { AgentMode } from "../src/agent/modes";
 import { FakeVault } from "./helpers/fake-vault";
 

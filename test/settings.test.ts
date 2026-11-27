@@ -14,7 +14,6 @@ import { DEFAULT_OPENAI_COMPATIBLE_BASE_URL } from "../src/llm/models";
 import {
   DEFAULT_MCP_SETTINGS,
   createMcpServerSettings,
-  mcpOAuthSettingsForServer,
   normalizeMcpServerId,
 } from "../src/mcp/settings";
 import { mcpSecretId, normalizeSecretId } from "../src/secrets/secret-store";
@@ -83,13 +82,31 @@ describe("mergeSettings — retired working directories", () => {
 });
 
 describe("mergeSettings — defaults", () => {
-  it("heals the parallel-subagent setting to a whole number in 1..20, default 10", () => {
-    expect(mergeSettings(null).maxParallelSubagents).toBe(10);
-    expect(mergeSettings({ maxParallelSubagents: 3 }).maxParallelSubagents).toBe(3);
-    expect(mergeSettings({ maxParallelSubagents: 0 }).maxParallelSubagents).toBe(1);
-    expect(mergeSettings({ maxParallelSubagents: 99 }).maxParallelSubagents).toBe(20);
-    expect(mergeSettings({ maxParallelSubagents: 4.7 }).maxParallelSubagents).toBe(4);
-    expect(mergeSettings({ maxParallelSubagents: "x" as unknown as number }).maxParallelSubagents).toBe(10);
+  it("drops removed sampling and concurrency keys instead of carrying them", () => {
+    const merged = mergeSettings({
+      temperature: 0.9,
+      maxTokens: 8_192,
+      requestTimeoutMs: 10_000,
+      maxNetworkRetries: 5,
+      maxParallelSubagents: 3,
+      systemPrompt: "custom",
+      compaction: { enabled: true, thresholdPercent: 60 },
+      web: { enabled: true, maxResults: 9, fetchCharLimit: 500 },
+    } as never) as unknown as Record<string, unknown>;
+    for (const key of [
+      "temperature",
+      "maxTokens",
+      "requestTimeoutMs",
+      "maxNetworkRetries",
+      "maxParallelSubagents",
+      "systemPrompt",
+    ]) {
+      expect(key in merged).toBe(false);
+    }
+    expect((merged.compaction as Record<string, unknown>).thresholdPercent).toBeUndefined();
+    expect((merged.web as Record<string, unknown>).maxResults).toBeUndefined();
+    expect((merged.web as Record<string, unknown>).fetchCharLimit).toBeUndefined();
+    expect((merged.web as Record<string, unknown>).enabled).toBe(true);
   });
 
   it("drops the removed turn cap and subagent timeout from a stored data.json (U4)", () => {

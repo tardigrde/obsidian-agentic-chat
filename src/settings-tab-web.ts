@@ -5,7 +5,7 @@ import { controlDef, row, warning } from "./settings-definition-kit";
 import type { AgenticChatSettings } from "./settings-schema";
 import { WEB_SEARCH_PROVIDER_LABELS, WEB_SEARCH_PROVIDERS } from "./tools/web-search";
 import { normalizeAllowedHosts } from "./tools/web-allowlist";
-import { clampRowNumber, type SettingsTabHost } from "./settings-tab-host";
+import type { SettingsTabHost } from "./settings-tab-host";
 
 const OBSERVABILITY_BACKEND_LABELS: Record<ObservabilityBackend, string> = {
   langfuse: "Langfuse",
@@ -78,24 +78,6 @@ export function webDefinitions(settings: AgenticChatSettings, host: SettingsTabH
   }
 
   items.push(
-    controlDef(
-      "Search results",
-      { type: "slider", key: "web.maxResults", min: 1, max: 10, step: 1 },
-      "How many results web_search returns by default.",
-    ),
-    row("Fetched page character limit", (setting) => {
-      setting
-        .setDesc("Maximum characters of a fetched page's text returned to the model.")
-        .addText((text) => {
-          text.inputEl.type = "number";
-          text.inputEl.setAttribute("min", "500");
-          text.setValue(String(settings.web.fetchCharLimit)).onChange(async (value) => {
-            const limit = clampRowNumber(value, 500, Number.POSITIVE_INFINITY);
-            if (limit !== undefined) settings.web.fetchCharLimit = limit;
-            await host.save();
-          });
-        });
-    }),
     row("Allowed hosts", (setting) => {
       setting
         .setDesc(

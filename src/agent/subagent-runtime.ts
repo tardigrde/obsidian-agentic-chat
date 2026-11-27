@@ -3,7 +3,7 @@ import type { App } from "obsidian";
 import { Agent, type AgentTool, type StreamFn } from "@earendil-works/pi-agent-core";
 import type { Usage } from "@earendil-works/pi-ai";
 import type { ToolArtifactStoreLike } from "../artifacts/tool-artifact-store";
-import { activeModelConfig, apiKeyForProvider } from "../settings-schema";
+import { activeModelConfig, apiKeyForProvider, DEFAULT_PARALLEL_SUBAGENTS } from "../settings-schema";
 import type { AgenticChatSettings } from "../settings-schema";
 import { buildModel, type ModelConfig } from "../llm/models";
 import { MUTATING_TOOLS } from "../tools/tool-contracts";
@@ -72,7 +72,7 @@ export class AgentSubagentRuntime {
       getProfiles: () => this.getResources().profiles,
       createChildAgent: (profile) => this.createChildAgent(profile),
       recordUsage: this.recordUsage,
-      maxParallel: () => this.getSettings().maxParallelSubagents,
+      maxParallel: () => DEFAULT_PARALLEL_SUBAGENTS,
       registry: this.registry,
       artifactStore: this.artifactStore,
       background: this.background,

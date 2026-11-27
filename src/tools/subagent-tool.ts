@@ -8,11 +8,9 @@ import { truncateToolOutput } from "../vault/truncate";
 import { toolResult, untrustedToolResult } from "./result";
 import { errorMessage } from "../utils/errors";
 import type { ToolArtifactStoreLike } from "../artifacts/tool-artifact-store";
+import { DEFAULT_PARALLEL_SUBAGENTS } from "../settings-schema";
 
 export const SUBAGENT_TOOL_NAME = "subagent";
-
-/** Default cap on how many Dispatch calls run concurrently in one parent turn (setting `maxParallelSubagents`). */
-const DEFAULT_CONCURRENCY = 10;
 /** Finished children kept per chat tab for `action: "continue"`; the oldest is dropped. */
 export const MAX_RETAINED_CHILDREN = 10;
 /** At most this many files a child read are cited under the parent's answer. */
@@ -254,7 +252,7 @@ export interface SubagentToolDeps {
    * model call, so the spend cap sees a running fan-out (U4 #9).
    */
   recordUsage?: (usage: Usage, dispatchId: string) => void;
-  /** How many children run at once (setting `maxParallelSubagents`); default 10. */
+  /** How many children run at once; defaults to {@link DEFAULT_PARALLEL_SUBAGENTS}. */
   maxParallel?: () => number;
   /** Per-service registry. Omit only for standalone tools that need no external stop. */
   registry?: SubagentRegistry;
@@ -333,7 +331,8 @@ export function createSubagentTool(
   deps: SubagentToolDeps,
 ): AgentTool<typeof SubagentParameters, SubagentDetails> {
   const registry = deps.registry ?? new SubagentRegistry();
-  const limit = (): number => Math.max(1, Math.trunc(deps.maxParallel?.() ?? DEFAULT_CONCURRENCY) || DEFAULT_CONCURRENCY);
+  const limit = (): number =>
+    Math.max(1, Math.trunc(deps.maxParallel?.() ?? DEFAULT_PARALLEL_SUBAGENTS) || DEFAULT_PARALLEL_SUBAGENTS);
   return {
     name: SUBAGENT_TOOL_NAME,
     label: "Dispatch subagent",

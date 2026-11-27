@@ -88,10 +88,9 @@ describe("setControlValue normalization (#286)", () => {
         "observability.authHeaderName",
         "web.searchProvider",
         "notifications.costCapUsd",
-        "temperature",
       ]),
     );
-    expect(controls.length).toBeGreaterThan(30);
+    expect(controls.length).toBeGreaterThan(25);
   });
 
   for (const control of controls) {
@@ -140,11 +139,7 @@ describe("setControlValue normalization (#286)", () => {
 
   it("clamps numbers to the control range and keeps 0 as the cost-cap off value", async () => {
     const { tab, settings } = makeHarness();
-    await tab.setControlValue("temperature", 7);
-    await tab.setControlValue("web.maxResults", 0);
     await tab.setControlValue("notifications.costCapUsd", -3);
-    expect(settings.temperature).toBe(2);
-    expect(settings.web.maxResults).toBe(1);
     expect(settings.notifications.costCapUsd).toBe(0);
   });
 
@@ -153,10 +148,8 @@ describe("setControlValue normalization (#286)", () => {
     const plugin = (tab as unknown as { plugin: { settings: Settings } }).plugin;
     expect(settings.web.enabled).toBe(false);
     await tab.setControlValue("web.searchProvider", "bogus");
-    await tab.setControlValue("web.maxResults", 99);
     expect(plugin.settings).toBe(settings);
     expect(settings.web.searchProvider).toBe(DEFAULT_SETTINGS.web.searchProvider);
-    expect(settings.web.maxResults).toBe(10);
   });
 
   it("indexes OTLP-only rows while the default backend hides them", async () => {

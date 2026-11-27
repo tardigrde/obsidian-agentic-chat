@@ -319,7 +319,7 @@ async function approveIfPresent(timeoutMs: number, allowed: boolean): Promise<bo
 }
 
 async function configureApproval(mutating: string, perTool: Record<string, string> = {}): Promise<void> {
-  await configurePlugin({ mode: "safe", approval: { mutating, perTool } });
+  await configurePlugin({ approval: { mutating, perTool } });
 }
 
 // Read once while Obsidian answers; later calls (end-of-run checks, the
@@ -603,7 +603,6 @@ async function runStopSend(action: ChaosAction): Promise<void> {
 
 const PERSISTED = {
   noProxy: "localhost,127.0.0.1,chaos.local",
-  requestTimeoutMs: 120_000,
   costAlertUsd: 2.5,
 };
 
@@ -614,12 +613,6 @@ async function applyPersistedSettings(): Promise<void> {
   await waitForAgenticChatSetting(
     (settings) => (settings.network as { noProxy?: string } | undefined)?.noProxy === PERSISTED.noProxy,
     "no-proxy setting did not persist",
-  );
-  await selectSettingsTab("Agent");
-  await setSettingText("Request timeout (seconds)", String(PERSISTED.requestTimeoutMs / 1000));
-  await waitForAgenticChatSetting(
-    (settings) => settings.requestTimeoutMs === PERSISTED.requestTimeoutMs,
-    "request timeout setting did not persist",
   );
   await selectSettingsTab("Advanced");
   await setSettingText("Cost alert (USD)", String(PERSISTED.costAlertUsd));
@@ -636,12 +629,10 @@ async function assertPersistedSettings(stage: string): Promise<void> {
     async () => {
       const settings = await readAgenticChatSettings<{
         network?: { noProxy?: string };
-        requestTimeoutMs?: number;
         notifications?: { costAlertUsd?: number };
       }>();
       return (
         settings.network?.noProxy === PERSISTED.noProxy &&
-        settings.requestTimeoutMs === PERSISTED.requestTimeoutMs &&
         settings.notifications?.costAlertUsd === PERSISTED.costAlertUsd
       );
     },
@@ -651,13 +642,11 @@ async function assertPersistedSettings(stage: string): Promise<void> {
     const raw = await app.vault.adapter.read(`${app.vault.configDir}/plugins/${pluginId}/data.json`);
     return JSON.parse(raw) as {
       network?: { noProxy?: string };
-      requestTimeoutMs?: number;
       notifications?: { costAlertUsd?: number };
     };
   }, "agentic-chat");
   if (
     stored.network?.noProxy !== PERSISTED.noProxy ||
-    stored.requestTimeoutMs !== PERSISTED.requestTimeoutMs ||
     stored.notifications?.costAlertUsd !== PERSISTED.costAlertUsd
   ) {
     throw new Error(`data.json did not keep the values after ${stage}`);
@@ -672,11 +661,9 @@ async function restoreSettings(): Promise<void> {
     if (!plugin?.settings) return;
     const settings = plugin.settings as {
       network?: { noProxy?: string };
-      requestTimeoutMs?: number;
       notifications?: { costAlertUsd?: number };
     };
     if (settings.network) settings.network.noProxy = "localhost,127.0.0.1,::1";
-    settings.requestTimeoutMs = 90_000;
     if (settings.notifications) settings.notifications.costAlertUsd = 0;
     await plugin.saveSettings?.();
   });
@@ -1106,9 +1093,6 @@ describe("chaos monkey live driver", function () {
         openaiCompatibleApiKey: plan.live ? apiKey : undefined,
         openaiCompatibleBaseUrl: plan.live ? (plan.pluginBaseUrl ?? plan.baseUrl) : undefined,
         openaiCompatibleModel: plan.live ? (plan.pluginModel ?? plan.model) : undefined,
-        requestTimeoutMs: 120_000,
-        maxNetworkRetries: 1,
-        mode: "safe",
         approval: { mutating: "ask", perTool: {} },
         web: { enabled: false },
       });
@@ -1137,9 +1121,6 @@ describe("chaos monkey live driver", function () {
       openaiCompatibleApiKey: plan.live ? apiKey : undefined,
       openaiCompatibleBaseUrl: plan.live ? (plan.pluginBaseUrl ?? plan.baseUrl) : undefined,
       openaiCompatibleModel: plan.live ? (plan.pluginModel ?? plan.model) : undefined,
-      requestTimeoutMs: 120_000,
-      maxNetworkRetries: 0,
-      mode: "safe",
       approval: { mutating: "ask", perTool: {} },
       web: { enabled: false },
     });

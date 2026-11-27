@@ -81,9 +81,8 @@ window, the role's model (or the parent's), and only the tools in its allowlist.
   gate.
 - **UI and cost.** A dispatch shows a step row in the activity line with each child's live status and a Stop per running child;
   click a row for its summary. Child tokens and cost add to the session total.
-- **Parallel and follow-ups.** *Advanced → Subagents → Parallel subagents*
-  (default 10) sets how many children run at once; the rest queue. A child is
-  kept per chat tab (the last 10), so the agent can send it a follow-up with
+- **Parallel and follow-ups.** Ten children run at once (fixed); the rest queue.
+  A child is kept per chat tab (the last 10), so the agent can send it a follow-up with
   `action: "continue"` and its id. There is no turn cap and no timeout: Stop,
   the loop guard, and the spend cap end a run, and the spend cap counts each
   child model call as it happens.

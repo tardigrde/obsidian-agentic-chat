@@ -1,72 +1,19 @@
 import type { SettingDefinitionItem } from "obsidian";
 import { type ApprovalPolicy, setPerToolApproval } from "./agent/approval";
-import { DEFAULT_SYSTEM_PROMPT } from "./agent/system-prompt";
-import { boundedNumberRow, controlDef, headingRow, row } from "./settings-definition-kit";
-import { MAX_PARALLEL_SUBAGENTS, MAX_RESPONSE_TOKENS, MIN_PARALLEL_SUBAGENTS, type AgenticChatSettings } from "./settings-schema";
+import { controlDef, headingRow, row } from "./settings-definition-kit";
+import type { AgenticChatSettings } from "./settings-schema";
 import { MUTATING_TOOLS } from "./tools/tool-contracts";
 import { createVaultTools } from "./tools/vault-tools";
-import { clampRowNumber, type SettingsTabHost } from "./settings-tab-host";
+import type { SettingsTabHost } from "./settings-tab-host";
 
-export function agentDefinitions(settings: AgenticChatSettings, host: SettingsTabHost): SettingDefinitionItem[] {
+export function agentDefinitions(_settings: AgenticChatSettings, _host: SettingsTabHost): SettingDefinitionItem[] {
   return [
-    controlDef("Temperature", { type: "slider", key: "temperature", min: 0, max: 2, step: 0.1 }),
-    boundedNumberRow({
-      name: "Max response tokens",
-      desc: `Per model request, 0 to ${MAX_RESPONSE_TOKENS.toLocaleString("en-US")}. 0 lets the provider decide.`,
-      min: 0,
-      max: MAX_RESPONSE_TOKENS,
-      get: () => settings.maxTokens,
-      set: async (value) => {
-        settings.maxTokens = value;
-        await host.save();
-      },
-    }),
-    row("Request timeout (seconds)", (setting) => {
-      setting
-        .setDesc("How long to wait for the provider to start responding.")
-        .addText((text) =>
-          text.setValue(String(Math.round(settings.requestTimeoutMs / 1000))).onChange(async (value) => {
-            const seconds = clampRowNumber(value, 5, Number.POSITIVE_INFINITY);
-            if (seconds !== undefined) settings.requestTimeoutMs = seconds * 1000;
-            await host.save();
-          }),
-        );
-    }),
-    controlDef(
-      "Network retries",
-      { type: "slider", key: "maxNetworkRetries", min: 0, max: 5, step: 1 },
-      "Automatic retries on rate limits and transient server errors.",
-    ),
-    row("System prompt", (setting) => {
-      setting
-        .setDesc("Sent at the start of every conversation.")
-        .addTextArea((text) => {
-          text.inputEl.rows = 10;
-          text.inputEl.addClass("agentic-chat-system-prompt");
-          text.setValue(settings.systemPrompt).onChange(async (value) => {
-            settings.systemPrompt = value.trim() ? value : DEFAULT_SYSTEM_PROMPT;
-            await host.save();
-          });
-        });
-    }),
-    {
-      name: "Standing instructions",
-      desc:
-        "The agent loads AGENTS.md from the vault root every turn as standing context " +
-        "(falls back to CLAUDE.md, then GEMINI.md, if AGENTS.md is absent — symlink them for other agents). " +
-        "Edit the file directly, or run /init to have the agent curate it.",
-    },
     headingRow("Context window"),
     controlDef(
       "Auto-compaction",
       { type: "toggle", key: "compaction.enabled" },
       "Summarize older turns automatically as the context window fills, so long conversations don't hit the " +
-        "model limit or spike cost. The summary replaces the compacted turns in the transcript.",
-    ),
-    controlDef(
-      "Compact at (% of context window)",
-      { type: "slider", key: "compaction.thresholdPercent", min: 50, max: 95, step: 5 },
-      "Trigger compaction once the conversation fills this share of the model's context window.",
+        "model limit or spike cost.",
     ),
   ];
 }
@@ -113,24 +60,6 @@ export function approvalDefinitions(settings: AgenticChatSettings, host: Setting
     );
   }
   return items;
-}
-
-export function subagentDefinitions(settings: AgenticChatSettings, host: SettingsTabHost): SettingDefinitionItem[] {
-  return [
-    boundedNumberRow({
-      name: "Parallel subagents",
-      desc:
-        `How many subagents run at once in one turn (${MIN_PARALLEL_SUBAGENTS}-${MAX_PARALLEL_SUBAGENTS}); the rest queue. ` +
-        "Stop and the spend cap stop them all.",
-      min: MIN_PARALLEL_SUBAGENTS,
-      max: MAX_PARALLEL_SUBAGENTS,
-      get: () => settings.maxParallelSubagents,
-      set: async (value) => {
-        settings.maxParallelSubagents = value;
-        await host.save();
-      },
-    }),
-  ];
 }
 
 export function notificationDefinitions(): SettingDefinitionItem[] {

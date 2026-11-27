@@ -15,12 +15,7 @@ import type { LoadedPlugin } from "./plugins/loader";
 import { indexControls, normalizeControlValue } from "./settings-controls";
 import { secretInputDef } from "./settings-definition-kit";
 import { McpSettingsSection } from "./settings-mcp-section";
-import {
-  agentDefinitions,
-  approvalDefinitions,
-  notificationDefinitions,
-  subagentDefinitions,
-} from "./settings-tab-agent";
+import { agentDefinitions, approvalDefinitions, notificationDefinitions } from "./settings-tab-agent";
 import type { SettingsTabHost } from "./settings-tab-host";
 import { modelsDefinitions } from "./settings-tab-models";
 import { pluginDefinitions } from "./settings-tab-plugins";
@@ -51,7 +46,6 @@ const SECTION_HEADINGS: Record<SettingsSectionId, string> = {
   observability: "Observability export",
   notifications: "Notifications",
   plugins: "Agent plugins",
-  subagents: "Subagents",
   "ignored-files": "Ignored files",
 };
 
@@ -225,9 +219,6 @@ export class AgenticChatSettingTab extends PluginSettingTab {
         break;
       case "plugins":
         items.push(...pluginDefinitions(settings, this.host));
-        break;
-      case "subagents":
-        items.push(...subagentDefinitions(settings, this.host));
         break;
       case "ignored-files":
         items.push(...ignoredFileDefinitions(settings, this.host));

@@ -80,7 +80,7 @@ interface MigrationState {
     openaiCompatibleApiKey: string;
     openaiCompatibleModel: string;
     approval: { mutating: string; perTool: Record<string, string> };
-    web: { enabled: boolean; searchProvider: string; searchApiKey: string; searxngUrl: string; maxResults: number; fetchCharLimit: number };
+    web: { enabled: boolean; searchProvider: string; searchApiKey: string; searxngUrl: string };
     observability: {
       enabled: boolean;
       backend: string;
@@ -196,9 +196,9 @@ describe("agentic-chat settings migration", function () {
       searchProvider: "searxng",
       searchApiKey: "legacy-web-key",
       searxngUrl: "https://search.example.com",
-      maxResults: 8,
-      fetchCharLimit: 15_000,
     });
+    expect("maxResults" in state.settings.web).toBe(false);
+    expect("fetchCharLimit" in state.settings.web).toBe(false);
     expect(state.settings.observability).toMatchObject({
       enabled: true,
       backend: "langfuse",

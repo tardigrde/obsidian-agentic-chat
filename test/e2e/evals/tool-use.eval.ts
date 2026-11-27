@@ -309,22 +309,18 @@ async function configurePlugin(): Promise<Record<string, unknown>> {
       provider: string;
       openrouterApiKey: string;
       openrouterModel: string;
-      temperature: number;
-      mode: string;
       ignoredGlobs: string;
       approval: { mutating: string; perTool: Record<string, string> };
       privacy: { allowFallbacks: boolean; denyDataCollection: boolean; requireZDR: boolean };
       web: { enabled: boolean };
       mcp: { enabled: boolean; proxyUrl: string; noProxy: string };
       plugins: { mcpState: Record<string, Record<string, unknown>> };
-      maxTokens: number;
     };
     settings.provider = "openrouter";
     settings.openrouterApiKey = config.apiKey;
     settings.openrouterModel = config.model;
-    // Hold the sampling fixed. The reasoning level comes from the plan, per
-    // run (see applyCaseSettings), so a comparison names the level it used.
-    settings.temperature = 0;
+    // Sampling is fixed in the plugin now. The reasoning level comes from the
+    // plan, per run (see applyCaseSettings), so a comparison names the level it used.
     settings.approval.mutating = "allow";
     // The eval vault is synthetic. Recursive deletes still ask even under a
     // blanket allow, and the approval card would block the stop button and
@@ -371,10 +367,6 @@ async function configurePlugin(): Promise<Record<string, unknown>> {
         lastUrl: server.url,
       };
     }
-    // A provider reserves the request's max output tokens against the key's
-    // credit. A run never needs more than a few thousand output tokens, so
-    // cap it and leave the key budget for the whole suite.
-    settings.maxTokens = 8192;
     // The plugin has no turn cap since U4; the case timeout bounds a run.
     settings.ignoredGlobs = "";
     await plugin.saveSettings?.();

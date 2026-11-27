@@ -17,8 +17,7 @@ const settings: AgenticChatSettings = {
   ...DEFAULT_SETTINGS,
   openrouterApiKey: "test-key",
   openrouterModel: "test/model",
-  maxTokens: 1_000,
-  compaction: { ...DEFAULT_SETTINGS.compaction, enabled: true, thresholdPercent: 80 },
+  compaction: { ...DEFAULT_SETTINGS.compaction, enabled: true },
 };
 
 const model = {

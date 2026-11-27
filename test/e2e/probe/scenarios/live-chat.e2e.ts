@@ -49,9 +49,6 @@ describe("probe: live chat", function () {
       openaiCompatibleApiKey: apiKey,
       openaiCompatibleBaseUrl: baseUrl,
       openaiCompatibleModel: model,
-      requestTimeoutMs: 120_000,
-      maxNetworkRetries: 0,
-      mode: "safe",
       approval: { mutating: "ask", perTool: {} },
     });
     await openChat();

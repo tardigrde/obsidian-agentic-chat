@@ -1,5 +1,5 @@
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
-import { apiKeyForProvider } from "../../settings-schema";
+import { apiKeyForProvider, DEFAULT_REQUEST_TIMEOUT_MS } from "../../settings-schema";
 import { listOpenAICompatibleModels, listOpenRouterModels } from "../../llm/models";
 import { createFetchFromWebFetcher, createProxiedFetcher } from "../../mcp/fetcher";
 import { errorMessage } from "../../utils/errors";
@@ -29,7 +29,7 @@ export async function switchModel(ctx: SlashContext): Promise<void> {
               zdr: settings.privacy.requireZDR,
               denyDataCollection: settings.privacy.denyDataCollection,
               fetchImpl,
-              timeoutMs: settings.requestTimeoutMs,
+              timeoutMs: DEFAULT_REQUEST_TIMEOUT_MS,
             })
           )
             .filter((model) => model.supportsTools)
@@ -38,7 +38,7 @@ export async function switchModel(ctx: SlashContext): Promise<void> {
             await listOpenAICompatibleModels(apiKey, {
               baseUrl: settings.openaiCompatibleBaseUrl,
               fetchImpl,
-              timeoutMs: settings.requestTimeoutMs,
+              timeoutMs: DEFAULT_REQUEST_TIMEOUT_MS,
             })
           ).sort((a, b) => a.id.localeCompare(b.id));
     new ModelSuggestModal(ctx.app, models, (model, once) => {

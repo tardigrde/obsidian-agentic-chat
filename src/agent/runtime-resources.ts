@@ -30,7 +30,7 @@ import {
   formatAgentRolesForSystemPrompt,
   loadAgentRoles,
 } from "./subagents";
-import { buildSystemPrompt } from "./system-prompt";
+import { DEFAULT_SYSTEM_PROMPT, buildSystemPrompt } from "./system-prompt";
 import {
   LoadedToolSet,
   createSearchToolsTool,
@@ -149,7 +149,7 @@ export function composeAgentSystemPrompt(
     formatDeferredToolsOverlay(deferredTools, resources.mcpDiagnostics),
     webToolsOffNotice(settings),
   ];
-  return buildSystemPrompt(settings.systemPrompt, resources.skills, overlays);
+  return buildSystemPrompt(DEFAULT_SYSTEM_PROMPT, resources.skills, overlays);
 }
 
 /**

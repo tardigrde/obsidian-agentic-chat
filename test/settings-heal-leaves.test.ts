@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_SETTINGS, MAX_RESPONSE_TOKENS, mergeSettings } from "../src/settings-schema";
+import { DEFAULT_SETTINGS, mergeSettings } from "../src/settings-schema";
 
 type Json = Record<string, unknown>;
 type Leaf = { path: string[]; value: unknown };
@@ -65,32 +65,19 @@ describe("mergeSettings heals every primitive leaf", () => {
 
   it("heals the corrupt leaves named by the audit", () => {
     const merged = mergeSettings({
-      temperature: "hot",
-      requestTimeoutMs: -5,
-      maxTokens: -1,
-      maxNetworkRetries: 9,
       thinkingLevel: "ultra",
       ignoredGlobs: ["Private/"],
       openrouterModel: 42,
       ollamaModel: { id: "llama3.1" },
       notifications: { enabled: "yes", costAlertUsd: "x", costCapUsd: -1 },
-      compaction: { enabled: "yes", thresholdPercent: 99 },
+      compaction: { enabled: "yes" },
     } as never);
 
-    expect(merged.temperature).toBe(DEFAULT_SETTINGS.temperature);
-    expect(merged.requestTimeoutMs).toBe(DEFAULT_SETTINGS.requestTimeoutMs);
-    expect(merged.maxTokens).toBe(DEFAULT_SETTINGS.maxTokens);
-    expect(merged.maxNetworkRetries).toBe(DEFAULT_SETTINGS.maxNetworkRetries);
     expect(merged.thinkingLevel).toBe(DEFAULT_SETTINGS.thinkingLevel);
     expect(merged.ignoredGlobs).toBe(DEFAULT_SETTINGS.ignoredGlobs);
     expect(merged.openrouterModel).toBe(DEFAULT_SETTINGS.openrouterModel);
     expect(merged.ollamaModel).toBe(DEFAULT_SETTINGS.ollamaModel);
     expect(merged.notifications).toEqual(DEFAULT_SETTINGS.notifications);
     expect(merged.compaction).toEqual(DEFAULT_SETTINGS.compaction);
-  });
-
-  it("keeps max response tokens inside the range the settings field shows", () => {
-    expect(mergeSettings({ maxTokens: MAX_RESPONSE_TOKENS } as never).maxTokens).toBe(MAX_RESPONSE_TOKENS);
-    expect(mergeSettings({ maxTokens: 999_999_999 } as never).maxTokens).toBe(DEFAULT_SETTINGS.maxTokens);
   });
 });

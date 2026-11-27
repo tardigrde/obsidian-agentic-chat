@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { App, SettingDefinitionGroup, SettingDefinitionPage } from "obsidian";
 import { AgenticChatSettingTab } from "../src/settings";
-import { createMcpServerSettings } from "../src/mcp/settings";
 import { DEFAULT_SETTINGS } from "../src/settings-schema";
 import { SETTINGS_TABS } from "../src/settings-tabs";
 
@@ -85,7 +84,7 @@ describe("declarative settings definitions", () => {
       expect.arrayContaining(["Model provider", "HTTP proxy", "No proxy", "OpenRouter API key", "Model"]),
     );
     expect(names("agent")).toEqual(
-      expect.arrayContaining(["Temperature", "System prompt", "Auto-compaction"]),
+      expect.arrayContaining(["Auto-compaction"]),
     );
     expect(names("approval")).toEqual(
       expect.arrayContaining(["Before mutating tools", "Per-tool overrides"]),
@@ -104,15 +103,15 @@ describe("declarative settings definitions", () => {
 
   it("reads and writes nested control keys through the plugin settings", async () => {
     const { tab, settings, calls } = makeHarness();
-    expect(tab.getControlValue("web.maxResults")).toBe(DEFAULT_SETTINGS.web.maxResults);
+    expect(tab.getControlValue("notifications.costCapUsd")).toBe(DEFAULT_SETTINGS.notifications.costCapUsd);
 
     await tab.setControlValue("network.proxyUrl", "  http://192.0.2.10:3128/  ");
     await tab.setControlValue("privacy.denyDataCollection", false);
-    await tab.setControlValue("web.maxResults", 9);
+    await tab.setControlValue("notifications.costCapUsd", 9);
 
     expect(settings.network.proxyUrl).toBe("http://192.0.2.10:3128/");
     expect(settings.privacy.denyDataCollection).toBe(false);
-    expect(settings.web.maxResults).toBe(9);
+    expect(settings.notifications.costCapUsd).toBe(9);
     expect(calls.saves).toBe(3);
   });
 

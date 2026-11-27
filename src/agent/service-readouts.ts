@@ -42,7 +42,7 @@ export function agentContextReadout(
     contextWindow: input.model?.contextWindow ?? 0,
     systemPrompt: input.systemPrompt,
     tools: input.tools,
-    reserveTokens: expectedOutputTokens(input.settings),
+    reserveTokens: expectedOutputTokens(),
     parts: input.parts,
   }, counter);
 }
@@ -55,7 +55,7 @@ export function agentContextOverheadTokens(
   return contextOverheadTokens({
     systemPrompt: input.systemPrompt,
     tools: input.tools,
-    reserveTokens: expectedOutputTokens(input.settings),
+    reserveTokens: expectedOutputTokens(),
   }, counter);
 }
 
@@ -71,7 +71,6 @@ export function agentNextCostEstimate(input: AgentNextCostReadoutInput): Request
   return estimateNextCostReadout({
     messages: input.messages,
     model: input.model,
-    settings: input.settings,
     systemPrompt: input.systemPrompt,
     tools: input.tools,
   });

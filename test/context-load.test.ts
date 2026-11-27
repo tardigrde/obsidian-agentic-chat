@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import type { AgentMessage, AgentTool } from "@earendil-works/pi-agent-core";
-import { DEFAULT_SETTINGS } from "../src/settings-schema";
 import {
   contextReadout,
   estimateContextLoad,
@@ -58,8 +57,6 @@ describe("context load estimate", () => {
   });
 
   it("uses the configured max tokens as the reserve, else the default", () => {
-    expect(expectedOutputTokens({ maxTokens: 0 })).toBe(1_000);
-    expect(expectedOutputTokens({ maxTokens: 123 })).toBe(123);
-    expect(expectedOutputTokens(DEFAULT_SETTINGS)).toBe(1_000);
+    expect(expectedOutputTokens()).toBe(1_000);
   });
 });

@@ -9,7 +9,13 @@ import {
   type StopReason,
   type TranscriptContext,
 } from "@earendil-works/pi-ai";
-import type { AgenticChatSettings } from "../settings-schema";
+import {
+  DEFAULT_MAX_NETWORK_RETRIES,
+  DEFAULT_MAX_TOKENS,
+  DEFAULT_REQUEST_TIMEOUT_MS,
+  DEFAULT_TEMPERATURE,
+  type AgenticChatSettings,
+} from "../settings-schema";
 import {
   createOpenAICompatibleRequester,
   streamOpenAICompatibleViaRequestUrl,
@@ -136,10 +142,10 @@ export class AgentStreamRuntime {
       const settings = this.getSettings();
       const streamOptions = {
         ...options,
-        temperature: settings.temperature,
-        ...(settings.maxTokens > 0 ? { maxTokens: settings.maxTokens } : {}),
-        timeoutMs: settings.requestTimeoutMs,
-        maxRetries: settings.maxNetworkRetries,
+        temperature: DEFAULT_TEMPERATURE,
+        ...(DEFAULT_MAX_TOKENS > 0 ? { maxTokens: DEFAULT_MAX_TOKENS } : {}),
+        timeoutMs: DEFAULT_REQUEST_TIMEOUT_MS,
+        maxRetries: DEFAULT_MAX_NETWORK_RETRIES,
         headers: { "HTTP-Referer": HTTP_REFERER, "X-Title": X_TITLE, ...(options?.headers) },
       };
       const proxiedRequester = settings.network.proxyUrl

@@ -113,7 +113,6 @@ describe("agent readouts", () => {
     const estimate = estimateNextCostReadout({
       messages,
       model: model({ input: 1, output: 10, cacheRead: 0, cacheWrite: 0 }),
-      settings: { ...DEFAULT_SETTINGS, maxTokens: 1_000 },
       systemPrompt,
       tools: [READ_TOOL],
     });
@@ -160,12 +159,11 @@ describe("agent readouts", () => {
     const estimate = estimateNextCostReadout({
       messages: [{ role: "user", content: "x".repeat(400), timestamp: 1 }],
       model: model({ input: 1, output: 10, cacheRead: 0, cacheWrite: 0 }),
-      settings: { ...DEFAULT_SETTINGS, maxTokens: 123 },
       systemPrompt: "system",
       tools: [],
     });
 
-    expect(estimate?.outputTokens).toBe(123);
+    expect(estimate?.outputTokens).toBe(1_000);
     expect(estimate?.usd).toBeGreaterThan(0);
   });
 
@@ -183,7 +181,6 @@ describe("agent readouts", () => {
     const result = estimateNextCostReadout({
       messages: [{ role: "user", content: "hello", timestamp: 1 }],
       model: model({ input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }),
-      settings: DEFAULT_SETTINGS,
       systemPrompt: "system",
       tools: [READ_TOOL],
     });
@@ -192,16 +189,15 @@ describe("agent readouts", () => {
     expect(result?.isUnknown).toBe(true);
   });
 
-  it("uses configured maxTokens when estimating next request cost", () => {
+  it("uses the fixed output reserve when estimating next request cost", () => {
     const estimate = estimateNextCostReadout({
       messages: [{ role: "user", content: "x".repeat(400), timestamp: 1 }],
       model: model({ input: 1, output: 10, cacheRead: 0, cacheWrite: 0 }),
-      settings: { ...DEFAULT_SETTINGS, maxTokens: 123 },
       systemPrompt: "system",
       tools: [],
     });
 
-    expect(estimate?.outputTokens).toBe(123);
+    expect(estimate?.outputTokens).toBe(1_000);
     expect(estimate?.usd).toBeGreaterThan(0);
   });
 });
