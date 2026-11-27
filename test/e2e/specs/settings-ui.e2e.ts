@@ -23,6 +23,7 @@ import {
   setSettingText,
   setSettingTextByPlaceholder,
   setSettingToggle,
+  setPluginToggle,
   waitForMcpAddRow,
   waitForAgenticChatSetting,
   waitForSetting,
@@ -550,12 +551,12 @@ describe("agentic-chat settings UI", function () {
         (settings) => (settings as unknown as SettingsSnapshot).plugins.enabled?.["my-tool"] === true,
         "Installed package was not recorded as enabled",
       );
-      await setSettingToggle("my-tool", false);
+      await setPluginToggle("my-tool", false);
       await waitForAgenticChatSetting(
         (settings) => (settings as unknown as SettingsSnapshot).plugins.enabled?.["my-tool"] === false,
         "Disabling the installed package did not persist false",
       );
-      await setSettingToggle("my-tool", true);
+      await setPluginToggle("my-tool", true);
       await waitForAgenticChatSetting(
         (settings) => (settings as unknown as SettingsSnapshot).plugins.enabled?.["my-tool"] === true,
         "Re-enabling the installed package did not persist true",

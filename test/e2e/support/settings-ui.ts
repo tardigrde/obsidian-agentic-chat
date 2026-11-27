@@ -224,6 +224,39 @@ export async function readSettingText(name: string): Promise<string> {
   }, name);
 }
 
+/** Wait for an installed plugin row (its name is not a normal setting-item-name). */
+export async function waitForPluginRow(name: string): Promise<void> {
+  await focusSettingsWindow();
+  await browser.waitUntil(
+    async () =>
+      await browser.execute((pluginName) => {
+        const rows = Array.from(document.querySelectorAll<HTMLElement>(".agentic-chat-plugin-row"));
+        return rows.some(
+          (row) => row.querySelector<HTMLElement>(".agentic-chat-plugin-name")?.innerText.trim() === pluginName,
+        );
+      }, name),
+    { timeout: 5_000, timeoutMsg: `Plugin row "${name}" did not render` },
+  );
+}
+
+/** Toggle an installed plugin row through its checkbox, by manifest name. */
+export async function setPluginToggle(name: string, checked: boolean): Promise<void> {
+  await waitForPluginRow(name);
+  await browser.execute(
+    ({ pluginName, nextChecked }) => {
+      const row = Array.from(document.querySelectorAll<HTMLElement>(".agentic-chat-plugin-row")).find(
+        (candidate) =>
+          candidate.querySelector<HTMLElement>(".agentic-chat-plugin-name")?.innerText.trim() === pluginName,
+      );
+      const toggle = row?.querySelector<HTMLElement>(".checkbox-container");
+      if (!row || !toggle) throw new Error(`Plugin toggle for "${pluginName}" not found`);
+      const enabled = toggle.classList.contains("is-enabled");
+      if (enabled !== nextChecked) toggle.click();
+    },
+    { pluginName: name, nextChecked: checked },
+  );
+}
+
 /** Read the selected value of a named dropdown setting. */
 export async function readSettingSelect(name: string): Promise<string> {
   await focusSettingsWindow();
