@@ -79,6 +79,7 @@ export function staticSteps() {
     step("lint:obsidian", bin("eslint"), ["-c", "config/eslint.obsidian.mjs", "--max-warnings", "0", "src"]),
     step("feature map", NODE, ["scripts/check-feature-map.mjs"]),
     step("test manifest", NODE, ["scripts/check-test-manifest.mjs"]),
+    step("dependency bot config", NODE, ["scripts/check-dependency-bot-config.mjs"]),
     step("doc commands", NODE, ["scripts/check-doc-commands.mjs"]),
     step("skip rule", NODE, ["scripts/check-skips.mjs"]),
     step("css tokens", NODE, ["scripts/check-css-tokens.mjs"]),

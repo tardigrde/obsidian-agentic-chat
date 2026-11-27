@@ -20,7 +20,7 @@ npm run verify -- plan --explain src/ui/chat-view.ts   # why a path needs what i
 
 | Tier | What | Where | Budget |
 |---|---|---|---|
-| T0 static | secret scan, typecheck (src, e2e, scripts), lint, Obsidian lint, feature map, test manifest, doc commands, skip rule | `check`, CI | ≤ 30 s |
+| T0 static | secret scan, typecheck (src, e2e, scripts), lint, Obsidian lint, feature map, test manifest, dependency bot config, doc commands, skip rule | `check`, CI | ≤ 30 s |
 | T1 hermetic logic | vitest by domain group (`unit` project, no DOM), rendering on happy-dom (`ui` project, `test/ui/`), witness self-test | `check`, CI | ≤ 30 s |
 | T2 hermetic real app | real Obsidian with scripted turns: smoke, app specs, mobile, scripted dogfood | `check` (smoke), CI (rest) | smoke ≤ 25 s, suite ≤ 110 s |
 | T3 live | live specs (`test/e2e/live/`, `test/live/`), evals (canary, core, regression) | local only, needs a key | canary ≤ 3 min with `--parallel 2`; core ≤ 7 min |
