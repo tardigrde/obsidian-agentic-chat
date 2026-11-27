@@ -24,7 +24,6 @@ async function configureSafe(): Promise<void> {
     };
     s.provider = "openrouter";
     s.openrouterApiKey = "e2e-scripted-key";
-    s.mode = "safe";
     s.approval.mutating = "ask";
     s.approval.perTool = {};
     await plugin.saveSettings?.();

@@ -79,7 +79,6 @@ interface MigrationState {
     openaiCompatibleBaseUrl: string;
     openaiCompatibleApiKey: string;
     openaiCompatibleModel: string;
-    mode: string;
     approval: { mutating: string; perTool: Record<string, string> };
     web: { enabled: boolean; searchProvider: string; searchApiKey: string; searxngUrl: string; maxResults: number; fetchCharLimit: number };
     observability: {
@@ -185,7 +184,7 @@ describe("agentic-chat settings migration", function () {
     expect(state.settings.openaiCompatibleBaseUrl).toBe("https://legacy-gateway.example/api");
     expect(state.settings.openaiCompatibleApiKey).toBe("legacy-openai-compatible-key");
     expect(state.settings.openaiCompatibleModel).toBe("legacy/model");
-    expect(state.settings.mode).toBe("safe");
+    expect("mode" in state.settings).toBe(false);
     expect(state.settings.approval).toMatchObject({
       mutating: "ask",
       perTool: { write: "allow" },

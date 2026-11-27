@@ -601,20 +601,6 @@ async function seedWelcomeNote(): Promise<void> {
   });
 }
 
-/** Persist a mode through the plugin's real save path before the UI renders. */
-async function setStoredMode(mode: string): Promise<void> {
-  await browser.executeObsidian(async ({ app }, nextMode) => {
-    const plugin = (app as unknown as {
-      plugins?: {
-        plugins?: Record<string, { settings?: { mode?: string }; saveSettings?: () => Promise<void> }>;
-      };
-    }).plugins?.plugins?.["agentic-chat"];
-    if (!plugin?.settings) throw new Error("agentic-chat plugin not found");
-    plugin.settings.mode = nextMode;
-    await plugin.saveSettings?.();
-  }, mode);
-}
-
 async function readToggleState(): Promise<{ checked: string | null; label: string | null }> {
   return await browser.execute(() => {
     const toggle = document.querySelector<HTMLElement>('[data-ac="mode-toggle"]');
@@ -638,48 +624,45 @@ async function waitForToggleState(expected: { checked: string; label: string }):
   );
 }
 
-describe("agentic-chat settings mode sync", function () {
+describe("agentic-chat runtime mode", function () {
   before(async function () {
     // The settings UI suite above leaves its window open.
     await closeAgenticChatSettings();
-    await setStoredMode("safe");
     await seedWelcomeNote();
     await browser.executeObsidianCommand("agentic-chat:open-chat");
     await $('[data-ac="view"]').waitForExist();
     await waitForComposerReady();
-    await openAgenticChatSettings();
-    await selectSettingsTab("Agent");
-    await waitForSetting("Permission mode");
   });
 
   after(async function () {
     await closeAgenticChatSettings();
   });
 
-  it("follows the composer YOLO toggle in the settings dropdown", async function () {
-    expect(await readSettingSelect("Permission mode")).toBe("safe");
-
-    await focusMainWindow();
-    await $('[data-ac="mode-toggle"]').click();
-
-    await waitForAgenticChatSetting(
-      (settings) => settings.mode === "yolo",
-      "the composer toggle did not persist YOLO",
+  it("has no Permission mode setting row and starts in Safe", async function () {
+    await openAgenticChatSettings();
+    await selectSettingsTab("Agent");
+    await browser.waitUntil(
+      async () =>
+        await browser.execute(() => !Array.from(document.querySelectorAll("*")).some((el) => el.textContent === "Permission mode")),
+      { timeout: 5_000, timeoutMsg: "the retired Permission mode row is still rendered" },
     );
-    const stored = (await readAgenticChatSettings<{ mode: string }>()).mode;
-    const dropdown = await readSettingSelect("Permission mode");
-    expect(stored).toBe("yolo");
-    expect(dropdown).toBe(stored);
+    await closeAgenticChatSettings();
+
+    expect(await readToggleState()).toMatchObject({
+      checked: "false",
+      label: "Permission mode: Safe",
+    });
   });
 
-  it("reflects a settings dropdown change back in the composer toggle", async function () {
-    await setSettingSelect("Permission mode", "safe");
-    await waitForAgenticChatSetting(
-      (settings) => settings.mode === "safe",
-      "the settings dropdown did not persist Safe",
-    );
-
+  it("keeps the composer toggle runtime-only", async function () {
     await focusMainWindow();
-    await waitForToggleState({ checked: "false", label: "Permission mode: Safe" });
+    await $('[data-ac="mode-toggle"]').click();
+    await waitForToggleState({ checked: "true", label: "Permission mode: YOLO" });
+
+    const stored = await browser.executeObsidian(async ({ app }) => {
+      const raw = await app.vault.adapter.read(`${app.vault.configDir}/plugins/agentic-chat/data.json`);
+      return JSON.parse(raw) as Record<string, unknown>;
+    });
+    expect("mode" in stored).toBe(false);
   });
 });

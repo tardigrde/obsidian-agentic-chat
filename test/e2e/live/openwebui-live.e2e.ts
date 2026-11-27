@@ -55,7 +55,6 @@ async function configureProvider(config: { apiKey: string; baseUrl: string; mode
     settings.openaiCompatibleModel = liveConfig.model;
     settings.requestTimeoutMs = 120_000;
     settings.maxNetworkRetries = 0;
-    settings.mode = "safe";
     settings.approval.mutating = "ask";
     settings.approval.perTool = {};
     await plugin.saveSettings?.();

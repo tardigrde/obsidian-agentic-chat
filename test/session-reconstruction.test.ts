@@ -207,7 +207,6 @@ describe("exact-once persistence (WeakSet de-dupe)", () => {
     const settings: AgenticChatSettings = {
       ...DEFAULT_SETTINGS,
       openrouterApiKey: "test-key",
-      mode: "safe",
       approval: { ...DEFAULT_SETTINGS.approval, mutating: "allow", perTool: { write: "deny" } },
     };
     const adapter = new MemoryAdapter();
@@ -215,6 +214,7 @@ describe("exact-once persistence (WeakSet de-dupe)", () => {
     const service = new AgentService({
       app: { vault: { on: () => ({}), offref: () => {} }, workspace: {} } as unknown as App,
       getSettings: () => settings,
+      getMode: () => "safe",
       sessionManager,
       confirmToolCall: async () => ({ approved: true, remember: false }),
       streamFn,

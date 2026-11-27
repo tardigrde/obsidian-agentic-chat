@@ -14,7 +14,7 @@ import { createWebTools } from "../tools/web-tools";
 import type { WebFetcher } from "../tools/web-fetch";
 import { createArtifactTool } from "../artifacts/tool-artifact-tools";
 import { ReadMemo } from "../vault/read-memo";
-import { resolveModePolicy } from "./modes";
+import { type AgentMode, DEFAULT_MODE, resolveModePolicy } from "./modes";
 import type { AgentRuntimeResources } from "./runtime-resources";
 import { CHILD_PROMPT_OPENING, type AgentRole } from "./subagents";
 import type { AfterToolCallContext, AgentToolCallController, BeforeToolCallContext } from "./tool-call-controller";
@@ -22,6 +22,8 @@ import type { AfterToolCallContext, AgentToolCallController, BeforeToolCallConte
 export interface SubagentRuntimeOptions {
   app: App;
   getSettings: () => AgenticChatSettings;
+  /** Shared runtime posture; defaults to Safe for headless runtimes. */
+  getMode?: () => AgentMode;
   getResources: () => AgentRuntimeResources;
   buildStreamFn: () => StreamFn;
   recordUsage: (usage: Usage, dispatchId: string) => void;
@@ -40,6 +42,7 @@ export interface SubagentRuntimeOptions {
 export class AgentSubagentRuntime {
   private readonly app: App;
   private readonly getSettings: () => AgenticChatSettings;
+  private readonly getMode: () => AgentMode;
   private readonly getResources: () => AgentRuntimeResources;
   private readonly buildStreamFn: () => StreamFn;
   private readonly recordUsage: (usage: Usage, dispatchId: string) => void;
@@ -54,6 +57,7 @@ export class AgentSubagentRuntime {
   constructor(options: SubagentRuntimeOptions) {
     this.app = options.app;
     this.getSettings = options.getSettings;
+    this.getMode = options.getMode ?? (() => DEFAULT_MODE);
     this.getResources = options.getResources;
     this.buildStreamFn = options.buildStreamFn;
     this.recordUsage = options.recordUsage;
@@ -98,7 +102,7 @@ export class AgentSubagentRuntime {
       ...(artifactTool ? [artifactTool] : []),
       createSkillTool(this.app, skills, isPrivate),
     ].filter(
-      (tool) => resolveModePolicy(settings.mode, settings.approval, tool.name).policy !== "deny",
+      (tool) => resolveModePolicy(this.getMode(), settings.approval, tool.name).policy !== "deny",
     );
     const tools = filterChildTools(childTools, profile.toolAllowlist ?? []);
     const child = new Agent({

@@ -24,7 +24,6 @@ function makeHarness(mutate?: (settings: typeof DEFAULT_SETTINGS) => void) {
     saveSettings: async () => {
       calls.saves += 1;
     },
-    requestModeChange: async () => true,
     pluginService: {
       hasCache: () => false,
       hasRetainedImportBackup: () => false,
@@ -86,7 +85,7 @@ describe("declarative settings definitions", () => {
       expect.arrayContaining(["Model provider", "HTTP proxy", "No proxy", "OpenRouter API key", "Model"]),
     );
     expect(names("agent")).toEqual(
-      expect.arrayContaining(["Permission mode", "Temperature", "System prompt", "Auto-compaction"]),
+      expect.arrayContaining(["Temperature", "System prompt", "Auto-compaction"]),
     );
     expect(names("approval")).toEqual(
       expect.arrayContaining(["Before mutating tools", "Per-tool overrides"]),

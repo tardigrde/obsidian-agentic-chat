@@ -1,6 +1,5 @@
-import type { DropdownComponent, SettingDefinitionItem } from "obsidian";
+import type { SettingDefinitionItem } from "obsidian";
 import { type ApprovalPolicy, setPerToolApproval } from "./agent/approval";
-import { type AgentMode, MODE_ORDER, MODES } from "./agent/modes";
 import { DEFAULT_SYSTEM_PROMPT } from "./agent/system-prompt";
 import { boundedNumberRow, controlDef, headingRow, row } from "./settings-definition-kit";
 import { MAX_PARALLEL_SUBAGENTS, MAX_RESPONSE_TOKENS, MIN_PARALLEL_SUBAGENTS, type AgenticChatSettings } from "./settings-schema";
@@ -10,28 +9,6 @@ import { clampRowNumber, type SettingsTabHost } from "./settings-tab-host";
 
 export function agentDefinitions(settings: AgenticChatSettings, host: SettingsTabHost): SettingDefinitionItem[] {
   return [
-    row("Permission mode", (setting) => {
-      let dropdown: DropdownComponent | undefined;
-      setting
-        .setDesc(
-          "Safe honors your approval gates; YOLO auto-approves every mutating tool for the session " +
-            "(a per-tool deny still wins). The settings dropdown and the composer toggle share one setting and stay in sync.",
-        )
-        .addDropdown((component) => {
-          dropdown = component;
-          // S4: single list, same labels as MODES — every surface reflects the same source (Codex atomic override).
-          for (const id of MODE_ORDER) component.addOption(id, MODES[id].label);
-          component.setValue(settings.mode).onChange(async (value) => {
-            const target = value as AgentMode;
-            await host.plugin.requestModeChange(target);
-            // Re-sync the dropdown to the actual persisted value (blocked transitions leave it unchanged; Notice is shown by requestModeChange).
-            component.setValue(settings.mode);
-          });
-        });
-      // The composer toggle can change the mode while this row is on screen
-      // (settings may live in its own window); follow the persisted value.
-      return host.plugin.onModeChange((mode) => dropdown?.setValue(mode));
-    }),
     controlDef("Temperature", { type: "slider", key: "temperature", min: 0, max: 2, step: 0.1 }),
     boundedNumberRow({
       name: "Max response tokens",

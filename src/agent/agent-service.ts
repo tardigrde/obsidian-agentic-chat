@@ -66,6 +66,7 @@ import { AgentRuntimeResourceState } from "./runtime-resource-state";
 import type { PluginCatalog } from "../plugins/service";
 import type { AgentRuntimeResources } from "./runtime-resources";
 import { AgentSubagentRuntime } from "./subagent-runtime";
+import { type AgentMode, DEFAULT_MODE } from "./modes";
 import { AgentPromptTurnRuntime, SESSION_CHANGED_MESSAGE, type PromptTurnRun } from "./prompt-turn-runtime";
 import {
   buildRuntimeDiagnostics,
@@ -83,6 +84,8 @@ const PLUGIN_RELOAD_DEBOUNCE_MS = 300;
 export interface AgentServiceOptions {
   app: App;
   getSettings: () => AgenticChatSettings;
+  /** Shared runtime posture; defaults to Safe for headless services. */
+  getMode?: () => AgentMode;
   sessionManager: ObsidianSessionManager;
   /** Resolve an "ask" approval gate; returns the user's decision. */
   confirmToolCall: (request: ToolApprovalRequest, signal?: AbortSignal) => Promise<UserApprovalChoice>;
@@ -126,6 +129,7 @@ const DISABLED_LOOP_GUARD: Pick<AgentLoopGuard, "finishTurn"> = {
 export class AgentService {
   private readonly app: App;
   private readonly getSettings: () => AgenticChatSettings;
+  private readonly getMode: () => AgentMode;
   private readonly webFetch: WebFetcher;
   private readonly conversation: AgentConversation;
   private readonly streams: AgentStreamRuntime;
@@ -171,12 +175,14 @@ export class AgentService {
   constructor(options: AgentServiceOptions) {
     this.app = options.app;
     this.getSettings = options.getSettings;
+    this.getMode = options.getMode ?? (() => DEFAULT_MODE);
     const sessionManager = options.sessionManager;
     this.sessionManager = sessionManager;
     this.artifactStore = options.artifactStore;
     this.webFetch = options.webFetch ?? createDynamicProxiedFetcher(() => this.getSettings().network, createObsidianFetcher());
     this.observability = new AgentObservabilityRuntime({
       getSettings: this.getSettings,
+      getMode: this.getMode,
       fetcher:
         options.observabilityFetch ??
         createDynamicProxiedFetcher(() => this.effectiveObservabilityProxySettings(), createObsidianFetcher()),
@@ -232,6 +238,7 @@ export class AgentService {
     this.subagents = new AgentSubagentRuntime({
       app: this.app,
       getSettings: this.getSettings,
+      getMode: this.getMode,
       getResources: () => this.runtimeResources.current,
       buildStreamFn: () => this.streams.buildStreamFn(),
       // Each child model call counts at once, so the spend cap stops a fan-out
@@ -265,6 +272,7 @@ export class AgentService {
     this.toolCalls = new AgentToolCallController({
       app: this.app,
       getSettings: this.getSettings,
+      getMode: this.getMode,
       confirmToolCall: options.confirmToolCall,
       getTools: () => this.agent?.state.tools ?? [],
       getProfiles: () => this.runtimeResources.current.profiles,
@@ -528,6 +536,7 @@ export class AgentService {
     const settings = this.getSettings();
     return buildRuntimeDiagnostics({
       settings,
+      mode: this.getMode(),
       sessionInfo: this.conversation.info,
       sessionPath: this.conversation.activePath,
       tools: this.agent?.state.tools ?? [],

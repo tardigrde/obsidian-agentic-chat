@@ -87,7 +87,6 @@ async function seedMobileState(): Promise<void> {
     settings.provider = "openrouter";
     settings.openrouterApiKey = "e2e-mobile-scripted-key";
     settings.openrouterModel = "openai/gpt-4o-mini";
-    settings.mode = "safe";
     settings.approval = { mutating: "ask", perTool: {} };
     settings.web.enabled = false;
     settings.mcp = {

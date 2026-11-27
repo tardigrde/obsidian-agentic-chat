@@ -19,7 +19,6 @@ function makeHarness(mutate?: (settings: Settings) => void) {
       },
     },
     saveSettings: async () => undefined,
-    requestModeChange: async () => true,
     pluginService: {
       hasCache: () => false,
       hasRetainedImportBackup: () => false,

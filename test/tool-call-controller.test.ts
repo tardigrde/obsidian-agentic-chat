@@ -13,11 +13,14 @@ import { SubagentRegistry } from "../src/tools/subagent-tool";
 import type { AgentRole } from "../src/agent/subagents";
 import { DEFAULT_SETTINGS, type AgenticChatSettings } from "../src/settings-schema";
 import { createMcpServerSettings, createMcpServerState } from "../src/mcp/settings";
+import type { AgentMode } from "../src/agent/modes";
 import { FakeVault } from "./helpers/fake-vault";
+
+type TestSettings = Partial<AgenticChatSettings> & { mode?: AgentMode };
 
 function makeController(
   options: {
-    settings?: Partial<AgenticChatSettings>;
+    settings?: TestSettings;
     confirmToolCall?: (request: ToolApprovalRequest, signal?: AbortSignal) => Promise<UserApprovalChoice>;
     tools?: AgentTool[];
     profiles?: AgentRole[];
@@ -27,17 +30,19 @@ function makeController(
     recordFileCheckpoint?: (checkpoint: FileCheckpoint) => Promise<void> | void;
   } = {},
 ): { controller: AgentToolCallController; requests: ToolApprovalRequest[]; undoNotifications: { count: number } } {
+  const { mode = "safe", ...settingsOverrides } = options.settings ?? {};
   const settings: AgenticChatSettings = {
     ...DEFAULT_SETTINGS,
     openrouterApiKey: "test-key",
-    ...options.settings,
-    approval: { ...DEFAULT_SETTINGS.approval, ...(options.settings?.approval ?? {}) },
+    ...settingsOverrides,
+    approval: { ...DEFAULT_SETTINGS.approval, ...(settingsOverrides.approval ?? {}) },
   };
   const requests: ToolApprovalRequest[] = [];
   const undoNotifications = { count: 0 };
   const controller = new AgentToolCallController({
     app: options.app ?? fakeApp().app,
     getSettings: () => settings,
+    getMode: () => mode,
     confirmToolCall: async (request, signal) => {
       requests.push(request);
       return options.confirmToolCall ? options.confirmToolCall(request, signal) : { approved: true, remember: false };

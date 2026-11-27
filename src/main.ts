@@ -39,7 +39,7 @@ import { QuickAskModal } from "./ui/quick-ask-modal";
 import { ObsidianSecretStore, hydrateSettingsSecrets, settingsForStorage } from "./secrets/secret-store";
 import { migrateLegacyPlaintextSecrets, withUnmigratedSecrets } from "./secrets/legacy-plaintext";
 import { PluginService } from "./plugins/service";
-import { type AgentMode, resolveModeTransition, validateModeTransition } from "./agent/modes";
+import { type AgentMode, DEFAULT_MODE, resolveModeTransition, validateModeTransition } from "./agent/modes";
 import { SettingsStore } from "./settings-store";
 
 declare const __AGENTIC_CHAT_ENABLE_E2E_STREAM__: boolean;
@@ -47,7 +47,8 @@ declare const __AGENTIC_CHAT_ENABLE_E2E_STREAM__: boolean;
 export default class AgenticChatPlugin extends Plugin {
   /** The same object the settings store owns; both change only through the store. */
   settings: AgenticChatSettings = DEFAULT_SETTINGS;
-  private lastSyncedMode: AgentMode | null = null;
+  /** Session posture shared by every chat view. Runtime only: never saved. */
+  private runtimeMode: AgentMode = DEFAULT_MODE;
   private readonly modeListeners = new Set<(mode: AgentMode) => void>();
   /** False when data.json belongs to a newer build; saves must not overwrite it. */
   private settingsWritable = true;
@@ -63,8 +64,6 @@ export default class AgenticChatPlugin extends Plugin {
 
   async onload(): Promise<void> {
     this.secretStore = new ObsidianSecretStore(this.app);
-    // The mode broadcast is a listener of the owner, not a special case inside save.
-    this.settingsStore.onChange(() => this.broadcastModeChange());
     await this.loadSettings();
     // Recover an interrupted package install before any turn can load plugins:
     // a retained backup must own the settings readers use.
@@ -140,6 +139,7 @@ export default class AgenticChatPlugin extends Plugin {
     return new AgentService({
       app: this.app,
       getSettings: () => this.settings,
+      getMode: () => this.mode,
       sessionManager,
       confirmToolCall: options.confirmToolCall ?? ((request) => this.denyWithoutChatView(request)),
       askUser: options.askUser,
@@ -285,8 +285,6 @@ export default class AgenticChatPlugin extends Plugin {
     }
     this.settingsStore.replace(this.settings);
     hydrateSettingsSecrets(this.settings, withUnmigratedSecrets(this.secretStore, unmigrated));
-    // S4: remember mode for the broadcast guard.
-    this.lastSyncedMode = this.settings.mode;
     if (legacySkillFolders.length > 0) {
       // Run the migration before persisting the new schema: if it fails we
       // skip the save, so data.json keeps the legacy keys and the migration
@@ -339,11 +337,34 @@ export default class AgenticChatPlugin extends Plugin {
     await this.saveData(settingsForStorage(settings, this.secretStore));
   }
 
+  /** The shared runtime mode, read by every chat view and every agent service. */
+  get mode(): AgentMode {
+    return this.runtimeMode;
+  }
+
   /**
-   * Subscribe to persisted Safe ↔ YOLO changes. Returns an unsubscribe
-   * function. Listeners run only when a save actually changed the mode, never
-   * on an unrelated or failed save.
+   * One runtime posture for every view. Safe at each start; a settings save or
+   * an unrelated settings change never writes it. Callers validate streaming
+   * before asking; the returned false means no change landed.
    */
+  setMode(target: AgentMode): boolean {
+    const blocked = validateModeTransition(this.isAnyViewStreaming());
+    if (blocked || this.runtimeMode === target) return false;
+    const transition = resolveModeTransition(this.runtimeMode, target);
+    if (!transition) return false;
+    this.runtimeMode = transition.nextMode;
+    this.syncModeToViews();
+    for (const listener of [...this.modeListeners]) {
+      try {
+        listener(this.runtimeMode);
+      } catch (error: unknown) {
+        console.warn("Agentic chat: mode change listener failed", error);
+      }
+    }
+    return true;
+  }
+
+  /** Subscribe to runtime Safe ↔ YOLO changes. Returns an unsubscribe function. */
   onModeChange(listener: (mode: AgentMode) => void): () => void {
     this.modeListeners.add(listener);
     return () => {
@@ -351,60 +372,19 @@ export default class AgenticChatPlugin extends Plugin {
     };
   }
 
-  /** Only broadcast when mode actually changed — avoids repaint + notification side-effects on unrelated saves. */
-  private broadcastModeChange(): void {
-    if (this.lastSyncedMode === this.settings.mode) return;
-    this.lastSyncedMode = this.settings.mode;
-    const mode = this.settings.mode;
-    this.syncModeToViews();
-    for (const listener of [...this.modeListeners]) {
-      try {
-        listener(mode);
-      } catch (error: unknown) {
-        console.warn("Agentic chat: mode change listener failed", error);
-      }
-    }
-  }
-
-  /** S4: single-source mode — after any persisted mode change, push chrome to every chat leaf atomically (Codex ThreadSettingsOverrides pattern). */
+  /** Push the shared runtime mode into chrome on every chat leaf. */
   private syncModeToViews(): void {
     for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE_AGENT_CHAT)) {
       if (leaf.view instanceof ChatView) leaf.view.refreshModeFromSettings();
     }
   }
 
-  /** Whether any chat view is currently streaming — used by the settings tab's atomic gate. */
+  /** Whether any chat view is currently streaming — the mode transition gate. */
   isAnyViewStreaming(): boolean {
     for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE_AGENT_CHAT)) {
       if (leaf.view instanceof ChatView && leaf.view.isStreaming()) return true;
     }
     return false;
-  }
-
-  /** S4: settings tab delegates to the active chat view; falls back to direct mutate when no view is open. */
-  async requestModeChange(target: AgentMode): Promise<boolean> {
-    const activeView = this.app.workspace.getActiveViewOfType(ChatView);
-    if (activeView) {
-      const ok = await activeView.requestModeChange(target);
-      if (!ok) {
-        const blocked = validateModeTransition(this.isAnyViewStreaming());
-        if (blocked) new Notice(blocked);
-      }
-      return ok;
-    }
-    // No active view — mutate directly with the same validation as ChatView.
-    const blocked = validateModeTransition(this.isAnyViewStreaming());
-    if (blocked) {
-      new Notice(blocked);
-      return false;
-    }
-    if (this.settings.mode === target) return false;
-    const transition = resolveModeTransition(this.settings.mode, target);
-    if (!transition) return false;
-    await this.settingsStore.update((settings) => {
-      settings.mode = transition.nextMode;
-    });
-    return true;
   }
 }
 

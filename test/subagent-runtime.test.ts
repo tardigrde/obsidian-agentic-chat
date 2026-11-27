@@ -149,7 +149,6 @@ describe("AgentSubagentRuntime", () => {
   it("creates child agents with profile prompt, model override, and parent-denied tools stripped", () => {
     const runtime = makeRuntime({
       settings: settings({
-        mode: "safe",
         approval: { mutating: "allow", perTool: { write: "deny" } },
       }),
     });

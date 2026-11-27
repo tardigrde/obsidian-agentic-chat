@@ -68,8 +68,9 @@ describe("upgrade fixtures", () => {
       }
       if (["plan", "ask", "agent"].includes(String(stored.mode))) {
         expect(notices.some((n) => n.includes("mode was removed"))).toBe(true);
-        expect(settings.mode).toBe("safe");
       }
+      // Mode is runtime-only now; a stored mode never round-trips.
+      expect("mode" in settings).toBe(false);
     });
 
     it("is stable after the first save: a second load has no notices and the same settings", () => {

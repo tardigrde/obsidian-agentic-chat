@@ -113,16 +113,19 @@ function scriptedStreamFn(
   }) as unknown as StreamFn;
 }
 
+type TestSettings = Partial<AgenticChatSettings> & { mode?: AgentMode };
+
 function makeService(
   streamFn: StreamFn,
-  settings: Partial<AgenticChatSettings>,
+  settings: TestSettings,
   confirmToolCall: () => Promise<UserApprovalChoice> = async () => ({ approved: true, remember: false }),
 ): { service: AgentService; confirmCalls: { count: number } } {
+  const { mode = "safe", ...settingsOverrides } = settings;
   const merged: AgenticChatSettings = {
     ...DEFAULT_SETTINGS,
     openrouterApiKey: "test-key",
-    ...settings,
-    approval: { ...DEFAULT_SETTINGS.approval, ...(settings.approval ?? {}) },
+    ...settingsOverrides,
+    approval: { ...DEFAULT_SETTINGS.approval, ...(settingsOverrides.approval ?? {}) },
   };
   const confirmCalls = { count: 0 };
   const adapter = new MemoryAdapter();
@@ -130,6 +133,7 @@ function makeService(
   const service = new AgentService({
     app: { vault: { on: () => ({}), offref: () => {} }, workspace: {} } as unknown as App,
     getSettings: () => merged,
+    getMode: () => mode,
     sessionManager,
     streamFn,
     confirmToolCall: async () => {
@@ -356,7 +360,6 @@ describe("tool-call controller policy table", () => {
         ...DEFAULT_SETTINGS,
         provider: "openrouter",
         openrouterApiKey: "test-key",
-        mode: cell.mode,
         approval: cell.approval,
         plugins: {
           ...DEFAULT_SETTINGS.plugins,
@@ -374,6 +377,7 @@ describe("tool-call controller policy table", () => {
       const controller = new AgentToolCallController({
         app: {} as App,
         getSettings: () => settings,
+        getMode: () => cell.mode,
         confirmToolCall: async (request) => {
           requests.push(request);
           return { approved: true, remember: false };

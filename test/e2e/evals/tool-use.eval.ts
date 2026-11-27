@@ -325,7 +325,6 @@ async function configurePlugin(): Promise<Record<string, unknown>> {
     // Hold the sampling fixed. The reasoning level comes from the plan, per
     // run (see applyCaseSettings), so a comparison names the level it used.
     settings.temperature = 0;
-    settings.mode = "safe";
     settings.approval.mutating = "allow";
     // The eval vault is synthetic. Recursive deletes still ask even under a
     // blanket allow, and the approval card would block the stop button and

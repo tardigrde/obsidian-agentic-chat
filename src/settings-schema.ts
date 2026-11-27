@@ -8,7 +8,7 @@ import {
   type ProviderId,
 } from "./llm/models";
 import { healPerToolMap, type ApprovalSettings, DEFAULT_APPROVAL_SETTINGS } from "./agent/approval";
-import { type AgentMode, DEFAULT_MODE, healMode } from "./agent/modes";
+
 import { DEFAULT_SYSTEM_PROMPT } from "./agent/system-prompt";
 import { isRecord } from "./utils/records";
 import { DEFAULT_PLUGIN_SETTINGS, healPluginMcpState, type PluginSettings } from "./plugins/settings";
@@ -94,11 +94,6 @@ export interface AgenticChatSettings {
   requestTimeoutMs: number;
   maxNetworkRetries: number;
   systemPrompt: string;
-  /**
-   * Session permission posture: `safe` honors the approval policy, `yolo` auto-approves
-   * mutating tools.
-   */
-  mode: AgentMode;
   privacy: PrivacySettings;
   approval: ApprovalSettings;
   /** Agent Plugins packages loaded from a vault folder. */
@@ -194,7 +189,6 @@ export const DEFAULT_SETTINGS: AgenticChatSettings = {
   requestTimeoutMs: 90_000,
   maxNetworkRetries: 2,
   systemPrompt: DEFAULT_SYSTEM_PROMPT,
-  mode: DEFAULT_MODE,
   // Strongest privacy out of the box: zero data retention, no prompt
   // logging/training, and any fallback provider must also satisfy both.
   privacy: { denyDataCollection: true, requireZDR: true, allowFallbacks: true },
@@ -284,7 +278,6 @@ export function mergeSettings(stored: Partial<AgenticChatSettings> | null | unde
       stored?.openaiCompatibleApiKeySecretId,
       OPENAI_COMPATIBLE_API_KEY_SECRET_ID,
     ),
-    mode: healMode(stored?.mode),
     openaiCompatibleContextWindow: healContextWindow(stored?.openaiCompatibleContextWindow),
     privacy: { ...DEFAULT_SETTINGS.privacy, ...(stored?.privacy ?? {}) },
     approval: healApprovalSettings(stored?.approval),
@@ -401,6 +394,7 @@ const RETIRED_SETTING_KEYS = [
   "toolBudget",
   "maxTurnsPerPrompt",
   "subagentTimeoutSeconds",
+  "mode",
 ] as const;
 
 /**

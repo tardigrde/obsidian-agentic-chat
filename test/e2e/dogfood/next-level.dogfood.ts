@@ -237,7 +237,6 @@ async function configurePlugin(manifest: DogfoodManifest): Promise<boolean> {
     };
     settings.provider = "openrouter";
     settings.openrouterApiKey = "e2e-next-level-scripted-key";
-    settings.mode = "safe";
     settings.ignoredGlobs = payload.ignoredGlobs.join("\n");
     settings.approval.mutating = "allow";
     settings.approval.perTool = {};
