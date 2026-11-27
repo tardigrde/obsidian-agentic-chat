@@ -20,6 +20,14 @@ export class AgentSteeringQueue {
     return this.drainedReports.splice(0);
   }
 
+  /** User messages that never reached a run: their text goes back to the composer. */
+  keepUndelivered(messages: AgentMessage[]): void {
+    for (const message of messages) {
+      const text = queuedUserText(message);
+      if (text) this.undelivered.push(text);
+    }
+  }
+
   /** Each undelivered text is returned once; the UI puts it back in the composer. */
   takeUndelivered(): string[] {
     return this.undelivered.splice(0);

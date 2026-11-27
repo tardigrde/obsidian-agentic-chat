@@ -150,6 +150,12 @@ export class AgentService {
   private readonly loopGuard = new AgentLoopGuard();
   private readonly recentEvents: string[] = [];
   private readonly queuedTexts: string[] = [];
+  /**
+   * Steers sent while a turn is starting but not yet streaming (B1: a report
+   * turn after a background subagent). The starting turn takes them; a turn
+   * that never runs hands them back to the composer. Never dropped.
+   */
+  private readonly heldSteers: AgentMessage[] = [];
   private readonly promptTurns: AgentPromptTurnRuntime;
   private disposal: Promise<void> | null = null;
 
@@ -635,6 +641,13 @@ export class AgentService {
     const attached = images && images.length > 0 ? images : undefined;
     const agent = this.requireAgent();
     if (!agent.state.isStreaming) {
+      if (this.promptTurns.isInFlight()) {
+        // A send now would hit the "turn is already starting" guard and the text would be lost.
+        this.reports.resume();
+        this.heldSteers.push(createUserMessage(text, attached));
+        this.notifyChange();
+        return;
+      }
       await this.sendPrompt(text, attached, expectedSessionToken);
       return;
     }
@@ -826,11 +839,15 @@ export class AgentService {
       await this.promptTurns.run(
         this.steering.settling((agent) => {
           ran = true;
+          // Steers held while this turn was starting reach the model at its first poll.
+          for (const message of this.heldSteers.splice(0)) agent.steer(message);
           return run(agent);
         }),
         expectedSessionToken,
       );
     } finally {
+      // The turn never ran (blocked, or the session changed): the held text goes back to the composer.
+      if (!ran) this.steering.keepUndelivered(this.heldSteers.splice(0));
       // A report steered in after the last poll did not reach the model: it waits again.
       this.reports.keepDrained(this.steering.takeDrainedReports(), { startsTurn: true });
       this.reports.afterTurn(ran);
