@@ -8,13 +8,32 @@ import type {
   McpSettings,
 } from "../mcp/settings";
 import type { PluginSettings } from "../plugins/settings";
-import { sha256Hex } from "../utils/sha256";
+import {
+  MCP_SECRET_SLOTS,
+  OPENAI_COMPATIBLE_API_KEY_SECRET_ID,
+  OPENROUTER_API_KEY_SECRET_ID,
+  WEB_SEARCH_API_KEY_SECRET_ID,
+  ensureMcpScopeRefs,
+  legacySecretId,
+  mcpSecretId,
+  normalizeSecretId,
+} from "./secret-ids";
 import {
   OBSERVABILITY_AUTH_HEADER_VALUE_SECRET_ID,
   OBSERVABILITY_LANGFUSE_PUBLIC_KEY_SECRET_ID,
   OBSERVABILITY_LANGFUSE_SECRET_KEY_SECRET_ID,
   type ObservabilitySettings,
 } from "../observability/settings";
+
+export {
+  MCP_SECRET_SLOTS,
+  OPENAI_COMPATIBLE_API_KEY_SECRET_ID,
+  OPENROUTER_API_KEY_SECRET_ID,
+  WEB_SEARCH_API_KEY_SECRET_ID,
+  legacySecretId,
+  mcpSecretId,
+  normalizeSecretId,
+};
 
 export interface SecretStore {
   getSecret(id: string): string;
@@ -72,10 +91,6 @@ export class MemorySecretStore implements SecretStore {
   }
 }
 
-export const OPENROUTER_API_KEY_SECRET_ID = "agentic-chat-openrouter-api-key";
-export const OPENAI_COMPATIBLE_API_KEY_SECRET_ID = "agentic-chat-openai-compatible-api-key";
-export const WEB_SEARCH_API_KEY_SECRET_ID = "agentic-chat-web-search-api-key";
-
 type SettingsSecretSlot = {
   readonly valuePath: readonly string[];
   readonly secretIdPath: readonly string[];
@@ -115,46 +130,6 @@ export const SETTINGS_SECRET_SLOTS: readonly SettingsSecretSlot[] = [
   },
 ];
 
-export function mcpSecretId(serverId: string, kind: string): string {
-  return normalizeSecretId(`agentic-chat-mcp-${serverId}-${kind}`);
-}
-
-type McpSecretSlot = {
-  /** `server` is the MCP record itself; `oauth` is its `oauth` member. */
-  readonly scope: "server" | "oauth";
-  readonly valueKey: string;
-  readonly secretIdKey: string;
-  readonly secretKind: string;
-};
-
-/** Every secret-backed MCP field, for hydration, storage, and legacy migration. */
-export const MCP_SECRET_SLOTS: readonly McpSecretSlot[] = [
-  {
-    scope: "server",
-    valueKey: "authHeaderValue",
-    secretIdKey: "authHeaderValueSecretId",
-    secretKind: "auth-header-value",
-  },
-  {
-    scope: "oauth",
-    valueKey: "clientSecret",
-    secretIdKey: "clientSecretSecretId",
-    secretKind: "oauth-client-secret",
-  },
-  {
-    scope: "oauth",
-    valueKey: "accessToken",
-    secretIdKey: "accessTokenSecretId",
-    secretKind: "oauth-access-token",
-  },
-  {
-    scope: "oauth",
-    valueKey: "refreshToken",
-    secretIdKey: "refreshTokenSecretId",
-    secretKind: "oauth-refresh-token",
-  },
-];
-
 /** Omit plaintext secret keys from a settings shape; persisted JSON must never carry them. */
 type WithoutPlaintext<T, K extends keyof T> = Omit<T, K>;
 
@@ -189,31 +164,6 @@ export type PersistedSettings = WithoutPlaintext<
   // Optional: pre-S7 data.json predates client-owned plugin server state.
   plugins: Omit<PluginSettings, "mcpState"> & { mcpState?: Record<string, PersistedMcpServerState> };
 };
-
-/** Sanitize a secret id to Obsidian-safe characters (no length cap). */
-function sanitizeSecretId(input: string): string {
-  return input
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9-]+/g, "-")
-    .replace(/^-+|-+$/g, "");
-}
-
-export function normalizeSecretId(input: string): string {
-  const normalized = sanitizeSecretId(input);
-  if (!normalized) throw new Error("Secret id must not be empty.");
-  // Obsidian's native secret store caps ids at 64 chars. Truncating the tail
-  // would collapse the distinguishing kind suffix (auth-header-value vs
-  // oauth-client-secret), so long ids keep a readable prefix plus a truncated
-  // SHA-256 of the full id.
-  if (normalized.length <= 64) return normalized;
-  return `${normalized.slice(0, 51)}-${sha256Hex(normalized).slice(0, 12)}`;
-}
-
-/** The id the pre-plugins secret store used (sanitized, truncated to 120 chars). */
-export function legacySecretId(input: string): string {
-  return sanitizeSecretId(input).slice(0, 120);
-}
 
 export function hydrateSettingsSecrets(settings: AgenticChatSettings, store: SecretStore): void {
   ensureSecretRefs(settings);
@@ -251,25 +201,13 @@ export function ensureMcpServerSecretRefs(server: McpServerSettings): void {
   ensureMcpRecordSecretRefs(server.id, server);
 }
 
-export function ensureMcpOAuthSecretRefs(serverId: string, oauth: McpOAuthSettings): void {
-  ensureMcpScopeRefs(serverId, oauth, "oauth");
-}
-
 export function ensureMcpStateSecretRefs(id: string, state: McpServerState): void {
   ensureMcpRecordSecretRefs(id, state);
 }
 
 function ensureMcpRecordSecretRefs(id: string, record: McpServerSettings | McpServerState): void {
   ensureMcpScopeRefs(id, record, "server");
-  ensureMcpOAuthSecretRefs(id, record.oauth);
-}
-
-function ensureMcpScopeRefs(serverId: string, record: McpOAuthSettings | McpServerSettings | McpServerState, scope: "server" | "oauth"): void {
-  const target = record as unknown as Record<string, string>;
-  for (const slot of MCP_SECRET_SLOTS) {
-    if (slot.scope !== scope) continue;
-    target[slot.secretIdKey] ||= mcpSecretId(serverId, slot.secretKind);
-  }
+  ensureMcpScopeRefs(id, record.oauth, "oauth");
 }
 
 function hydrateMcpRecordSecrets(

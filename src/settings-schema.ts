@@ -19,7 +19,7 @@ import {
   OPENAI_COMPATIBLE_API_KEY_SECRET_ID,
   OPENROUTER_API_KEY_SECRET_ID,
   WEB_SEARCH_API_KEY_SECRET_ID,
-} from "./secrets/secret-store";
+} from "./secrets/secret-ids";
 import {
   DEFAULT_PROXY_SETTINGS,
   type ProxySettings,

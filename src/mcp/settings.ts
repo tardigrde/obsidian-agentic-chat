@@ -1,6 +1,6 @@
 import type { ApprovalPolicy } from "../agent/approval";
 import { DEFAULT_PROXY_SETTINGS, type ProxySettings, normalizeNoProxy, normalizeProxyUrl } from "../network/proxy";
-import { ensureMcpOAuthSecretRefs, mcpSecretId } from "../secrets/secret-store";
+import { ensureMcpScopeRefs, mcpSecretId } from "../secrets/secret-ids";
 import { isValidHttpHeaderName } from "./http-headers";
 import { mcpUrlProblem } from "../utils/host-policy";
 import { healMcpToolGlobs } from "./tool-filter";
@@ -337,7 +337,7 @@ export function applyMcpServerState(server: McpServerSettings, state: McpServerS
       pending: "raw",
     }),
   );
-  ensureMcpOAuthSecretRefs(server.id, server.oauth);
+  ensureMcpScopeRefs(server.id, server.oauth, "oauth");
   // lastUrl is tracked in state, not in server shape
 }
 
@@ -415,13 +415,13 @@ function healOAuthSettings(
     expiresAt: typeof stored?.expiresAt === "number" && Number.isFinite(stored.expiresAt) ? stored.expiresAt : 0,
     scope: stringValue(stored?.scope),
   };
-  ensureMcpOAuthSecretRefs(serverId, healed);
+  ensureMcpScopeRefs(serverId, healed, "oauth");
   return healed;
 }
 
 export function mcpOAuthSettingsForServer(serverId: string): McpOAuthSettings {
   const settings = { ...DEFAULT_MCP_OAUTH_SETTINGS };
-  ensureMcpOAuthSecretRefs(serverId, settings);
+  ensureMcpScopeRefs(serverId, settings, "oauth");
   return settings;
 }
 

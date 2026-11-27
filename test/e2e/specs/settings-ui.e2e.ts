@@ -635,6 +635,21 @@ async function readToggleState(): Promise<{ checked: string | null; label: strin
   });
 }
 
+/** Settings persist before the mode broadcast repaints the composer; poll the DOM. */
+async function waitForToggleState(expected: { checked: string; label: string }): Promise<void> {
+  await browser.waitUntil(
+    async () => {
+      const state = await readToggleState();
+      return state.checked === expected.checked && state.label === expected.label;
+    },
+    {
+      interval: 250,
+      timeout: 5_000,
+      timeoutMsg: `composer toggle did not become ${expected.checked} / ${expected.label}`,
+    },
+  );
+}
+
 describe("agentic-chat settings mode sync", function () {
   before(async function () {
     // The settings UI suite above leaves its window open.
@@ -677,8 +692,6 @@ describe("agentic-chat settings mode sync", function () {
     );
 
     await focusMainWindow();
-    const toggle = await readToggleState();
-    expect(toggle.checked).toBe("false");
-    expect(toggle.label).toBe("Permission mode: Safe");
+    await waitForToggleState({ checked: "false", label: "Permission mode: Safe" });
   });
 });

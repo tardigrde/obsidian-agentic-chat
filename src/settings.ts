@@ -7,7 +7,7 @@ import {
   type SettingDefinitionPage,
   type SettingDefinitionRender,
 } from "obsidian";
-import type AgenticChatPlugin from "./main";
+import type { AgenticChatHost } from "./plugin-host";
 import { createMcpServerState } from "./mcp/settings";
 import { clearAuthForUrlChange } from "./mcp/server-state";
 import { DEFAULT_OPENAI_COMPATIBLE_BASE_URL, DEFAULT_OLLAMA_BASE_URL } from "./llm/models";
@@ -69,7 +69,7 @@ const CONTROL_KEYS_THAT_REDRAW = new Set([
 export class AgenticChatSettingTab extends PluginSettingTab {
   constructor(
     app: App,
-    private readonly plugin: AgenticChatPlugin,
+    private readonly plugin: AgenticChatHost,
   ) {
     super(app, plugin);
     this.host = {

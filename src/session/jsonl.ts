@@ -1,8 +1,8 @@
 // Adapted from lhr0909/pi-obsidian (Simon Liang), MIT License.
 // https://github.com/lhr0909/pi-obsidian
 import type { AgentMessage, ThinkingLevel } from "@earendil-works/pi-agent-core";
-import type { ActionAuditEvent } from "../agent/action-audit-log";
-import type { FileCheckpoint } from "../agent/file-checkpoints";
+import type { ActionAuditEvent } from "../agent/action-audit-types";
+import type { FileCheckpoint } from "../agent/checkpoint-types";
 
 export const CURRENT_SESSION_VERSION = 1;
 

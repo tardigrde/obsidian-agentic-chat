@@ -38,7 +38,7 @@ describe("verify lanes", () => {
   it("check keeps the real-app smoke unless --no-app, and --coverage switches the unit step", () => {
     const full = labels(build("check"));
     expect(full.at(-1)).toBe("smoke e2e");
-    for (const required of ["secret scan", "typecheck", "scripts typecheck", "test manifest", "doc commands", "skip rule", "css tokens", "unit tests", "witness self-test", "production bundle"]) {
+    for (const required of ["secret scan", "circular dependencies", "typecheck", "scripts typecheck", "test manifest", "doc commands", "skip rule", "css tokens", "unit tests", "witness self-test", "production bundle"]) {
       expect(full).toContain(required);
     }
     // The release bundle boots first (no scripted hook), then the smoke runs

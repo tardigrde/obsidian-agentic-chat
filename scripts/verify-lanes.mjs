@@ -71,6 +71,7 @@ function takeFlag(args, flag) {
 export function staticSteps() {
   return [
     step("secret scan", NODE, ["scripts/check-secrets.mjs"]),
+    step("circular dependencies", NODE, ["scripts/check-cycles.mjs"]),
     step("typecheck", NODE, [TSC7, "-noEmit"]),
     step("e2e typecheck", NODE, [TSC7, "-p", "tsconfig.e2e.json", "--noEmit"]),
     step("scripts typecheck", NODE, [TSC7, "-p", "config/tsconfig.eslint.json", "--noEmit"]),

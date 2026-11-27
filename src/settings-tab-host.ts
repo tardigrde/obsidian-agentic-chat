@@ -1,5 +1,5 @@
 import type { App, SettingDefinitionRender } from "obsidian";
-import type AgenticChatPlugin from "./main";
+import type { AgenticChatHost } from "./plugin-host";
 import type { LoadedPlugin } from "./plugins/loader";
 import type { secretInputDef } from "./settings-definition-kit";
 
@@ -10,7 +10,7 @@ import type { secretInputDef } from "./settings-definition-kit";
  */
 export interface SettingsTabHost {
   readonly app: App;
-  readonly plugin: AgenticChatPlugin;
+  readonly plugin: AgenticChatHost;
   save(): Promise<void>;
   redraw(): void;
   refresh(): void;
