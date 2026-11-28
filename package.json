@@ -158,10 +158,10 @@
   },
   "overrides": {
     "@electron/get": {
-      "undici": "8.12.4"
+      "undici": "8.14.0"
     },
     "cheerio": {
-      "undici": "8.12.4"
+      "undici": "8.14.0"
     },
     "js-yaml": "4.3.2",
     "moment": "2.31.0",
@@ -170,7 +170,7 @@
       "vite": "6.4.6"
     },
     "webdriverio": {
-      "undici": "8.12.4"
+      "undici": "8.14.0"
     },
     "qs": "^6.17.1",
     "fast-xml-parser": "^5.12.0",
