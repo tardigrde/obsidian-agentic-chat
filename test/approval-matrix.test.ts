@@ -308,11 +308,7 @@ const GATE_CELLS: GateCell[] = [
   { name: "yolo keeps per-tool deny", mode: "yolo", approval: { mutating: "allow", perTool: { write: "deny" } }, tool: "write", expectedDecision: "denied", expectedConfirmed: false, expectedBlocked: true },
   { name: "yolo keeps per-tool ask", mode: "yolo", approval: { mutating: "allow", perTool: { write: "ask" } }, tool: "write", expectedDecision: "approved", expectedConfirmed: true, expectedBlocked: false },
 
-  // The persistent skill writer defaults to ask.
-  { name: "create_skill ignores mutating allow", mode: "safe", approval: { mutating: "allow", perTool: {} }, tool: "create_skill", expectedDecision: "approved", expectedConfirmed: true, expectedBlocked: false },
-  { name: "create_skill honors per-tool allow", mode: "safe", approval: { mutating: "ask", perTool: { create_skill: "allow" } }, tool: "create_skill", expectedDecision: "auto-approved", expectedConfirmed: false, expectedBlocked: false },
-  { name: "create_skill honors per-tool deny", mode: "safe", approval: { mutating: "allow", perTool: { create_skill: "deny" } }, tool: "create_skill", expectedDecision: "denied", expectedConfirmed: false, expectedBlocked: true },
-  { name: "yolo still asks create_skill", mode: "yolo", approval: { mutating: "deny", perTool: {} }, tool: "create_skill", expectedDecision: "approved", expectedConfirmed: true, expectedBlocked: false },
+  // The persistent skill writer is gone; only vault/MCP/tool families remain.
 
   // Read-only merged and loader tools run without a prompt, even when mutations are denied.
   { name: "skill runs under mutating deny", mode: "safe", approval: { mutating: "deny", perTool: {} }, tool: "skill", expectedDecision: "auto-approved", expectedConfirmed: false, expectedBlocked: false },
@@ -341,13 +337,12 @@ const GATE_CELLS: GateCell[] = [
   { name: "mcp plugin state overrides server settings", mode: "safe", approval: { mutating: "ask", perTool: {} }, tool: "mcp__docs__search", mcpServerApproval: "ask", mcpStateApproval: "allow", expectedDecision: "auto-approved", expectedConfirmed: false, expectedBlocked: false },
   { name: "mcp without a configured server defaults to ask", mode: "safe", approval: { mutating: "allow", perTool: {} }, tool: "mcp__missing__search", expectedDecision: "approved", expectedConfirmed: true, expectedBlocked: false },
 
-  // Subagent dispatch: only mutating child allowlists matter; ask auto-approves today.
+  // Subagent dispatch is not gated; the child tool calls are. An explicit
+  // per-tool `subagent` deny and an unknown agent still fail closed.
   { name: "subagent explorer dispatch auto-approves", mode: "safe", approval: { mutating: "deny", perTool: {} }, tool: "subagent", args: { agent: "explorer", task: "look" }, profiles: [EXPLORER], expectedDecision: "auto-approved", expectedConfirmed: false, expectedBlocked: false },
-  { name: "subagent mutating allow auto-approves", mode: "safe", approval: { mutating: "allow", perTool: {} }, tool: "subagent", args: { agent: "writer", task: "write" }, profiles: [WRITER], expectedDecision: "auto-approved", expectedConfirmed: false, expectedBlocked: false },
-  { name: "subagent mutating ask auto-approves today", mode: "safe", approval: { mutating: "ask", perTool: {} }, tool: "subagent", args: { agent: "writer", task: "write" }, profiles: [WRITER], expectedDecision: "auto-approved", expectedConfirmed: false, expectedBlocked: false },
-  { name: "subagent mutating deny blocks", mode: "safe", approval: { mutating: "deny", perTool: {} }, tool: "subagent", args: { agent: "writer", task: "write" }, profiles: [WRITER], expectedDecision: "denied", expectedConfirmed: false, expectedBlocked: true, expectedReason: "Subagent dispatch is blocked because mutating tools are denied." },
-  { name: "yolo subagent mutating deny auto-approves", mode: "yolo", approval: { mutating: "deny", perTool: {} }, tool: "subagent", args: { agent: "writer", task: "write" }, profiles: [WRITER], expectedDecision: "auto-approved", expectedConfirmed: false, expectedBlocked: false },
-  { name: "subagent per-tool deny makes the dispatch read-only", mode: "safe", approval: { mutating: "deny", perTool: { write: "deny" } }, tool: "subagent", args: { agent: "writer", task: "write" }, profiles: [WRITER], expectedDecision: "auto-approved", expectedConfirmed: false, expectedBlocked: false },
+  { name: "subagent dispatch ignores a mutating role allowlist", mode: "safe", approval: { mutating: "ask", perTool: {} }, tool: "subagent", args: { agent: "writer", task: "write" }, profiles: [WRITER], expectedDecision: "auto-approved", expectedConfirmed: false, expectedBlocked: false },
+  { name: "subagent per-tool deny blocks", mode: "safe", approval: { mutating: "allow", perTool: { subagent: "deny" } }, tool: "subagent", args: { agent: "explorer", task: "look" }, profiles: [EXPLORER], expectedDecision: "denied", expectedConfirmed: false, expectedBlocked: true, expectedReason: "Subagent dispatch is denied by your per-tool approval setting." },
+  { name: "yolo keeps the subagent per-tool deny", mode: "yolo", approval: { mutating: "allow", perTool: { subagent: "deny" } }, tool: "subagent", args: { agent: "explorer", task: "look" }, profiles: [EXPLORER], expectedDecision: "denied", expectedConfirmed: false, expectedBlocked: true, expectedReason: "Subagent dispatch is denied by your per-tool approval setting." },
   { name: "subagent unknown agent fails closed", mode: "safe", approval: { mutating: "ask", perTool: {} }, tool: "subagent", args: { agent: "missing", task: "write" }, profiles: [WRITER], expectedDecision: "denied", expectedConfirmed: false, expectedBlocked: true, expectedReason: "subagent: unknown agent \"missing\". Available: writer." },
 ];
 

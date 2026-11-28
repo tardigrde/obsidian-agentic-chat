@@ -172,8 +172,7 @@ export function pluginRowDefinition(
       .setTooltip(`Enable ${plugin.name}`)
       .onChange(async (value) => {
         const enabled = { ...settings.plugins.enabled };
-        if (value) delete enabled[plugin.name];
-        else enabled[plugin.name] = false;
+        enabled[plugin.name] = value;
         settings.plugins.enabled = enabled;
         host.plugin.pluginService.invalidate();
         host.invalidatePluginLoad();

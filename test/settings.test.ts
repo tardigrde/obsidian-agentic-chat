@@ -42,6 +42,10 @@ describe("default OpenRouter model", () => {
 });
 
 describe("settings format version", () => {
+  it.each(["broken", 7, true, []])("heals a data.json that is not an object (%j) to the defaults", (stored) => {
+    expect(mergeSettings(stored as never)).toEqual(mergeSettings(undefined));
+  });
+
   it("stamps the current version on a fresh or older data.json", () => {
     expect(mergeSettings(null).settingsVersion).toBe(1);
     expect(mergeSettings({ settingsVersion: 0 } as never).settingsVersion).toBe(1);

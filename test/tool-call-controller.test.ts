@@ -355,9 +355,7 @@ describe("AgentToolCallController", () => {
     expect(requests).toEqual([]);
   });
 
-  it("blocks a mutating role dispatch when mutating tools are denied", async () => {
-    // No built-in role can mutate, so the deny branch is only reachable via a
-    // custom role with mutating tools — keep it covered with a fixture.
+  it("does not gate a dispatch on a role's mutating allowlist; the child calls are gated", async () => {
     const { controller, requests } = makeController({
       settings: { mode: "safe", approval: { mutating: "deny", perTool: {} } },
       profiles: [
@@ -372,16 +370,88 @@ describe("AgentToolCallController", () => {
       confirmToolCall: async () => ({ approved: true, remember: false }),
     });
 
-    const decision = await controller.beforeToolCall({
-      toolCall: { id: "call-1", name: "subagent" },
-      args: { agent: "editor", task: "fix it" },
+    await expect(
+      controller.beforeToolCall({
+        toolCall: { id: "call-1", name: "subagent" },
+        args: { agent: "editor", task: "fix it" },
+      }),
+    ).resolves.toBeUndefined();
+    expect(requests).toEqual([]);
+  });
+
+  it("blocks a dispatch when the subagent per-tool policy is deny", async () => {
+    const approvals: ApprovalAuditInput[] = [];
+    const { controller, requests } = makeController({
+      settings: { mode: "safe", approval: { mutating: "allow", perTool: { subagent: "deny" } } },
+      profiles: [
+        {
+          name: "researcher",
+          description: "Research",
+          systemPrompt: "Research.",
+          toolAllowlist: ["read"],
+        },
+      ],
+      confirmToolCall: async () => ({ approved: true, remember: false }),
+      recordApproval: (input) => {
+        approvals.push(input);
+      },
     });
 
-    expect(decision).toEqual({
-      block: true,
-      reason: "Subagent dispatch is blocked because mutating tools are denied.",
+    const decision = await controller.beforeToolCall({
+      toolCall: { id: "call-1", name: "subagent" },
+      args: { agent: "researcher", task: "look around" },
     });
+
+    expect(decision).toEqual({ block: true, reason: expect.stringMatching(/per-tool approval setting/i) });
     expect(requests).toEqual([]);
+    expect(approvals.at(-1)?.decision).toBe("denied");
+  });
+
+  it("denies a child call that would ask, without an approval card", async () => {
+    const approvals: ApprovalAuditInput[] = [];
+    const { controller, requests } = makeController({
+      settings: { mode: "safe", approval: { mutating: "ask", perTool: {} } },
+      confirmToolCall: async () => ({ approved: true, remember: false }),
+      recordApproval: (input) => {
+        approvals.push(input);
+      },
+    });
+
+    const decision = await controller.beforeToolCall({
+      toolCall: { id: "subagent:1:call_1", name: "write" },
+      args: { path: "Notes/a.md", content: "x" },
+    });
+
+    expect(decision).toEqual({ block: true, reason: expect.stringMatching(/subagent cannot ask/i) });
+    expect(requests).toEqual([]);
+    expect(approvals.at(-1)).toMatchObject({ decision: "denied", toolName: "write" });
+  });
+
+  it("denies a child MCP call that would ask, without an approval card", async () => {
+    const approvals: ApprovalAuditInput[] = [];
+    const { controller, requests } = makeController({
+      settings: {
+        mode: "safe",
+        approval: { mutating: "ask", perTool: {} },
+        plugins: {
+          ...DEFAULT_SETTINGS.plugins,
+          mcpState: { docs: createMcpServerState("docs", { enabled: true, approval: "ask" }) },
+        },
+      },
+      confirmToolCall: async () => ({ approved: true, remember: false }),
+      recordApproval: (input) => {
+        approvals.push(input);
+      },
+    });
+
+    const decision = await controller.beforeToolCall({
+      toolCall: { id: "subagent:1:call_2", name: "mcp__docs__search" },
+      args: {},
+    });
+
+    expect(decision).toEqual({ block: true, reason: expect.stringMatching(/subagent cannot ask/i) });
+    expect(requests).toEqual([]);
+    expect(approvals.at(-1)).toMatchObject({ decision: "denied", toolName: "mcp__docs__search" });
   });
 
   it("records undo only after a captured mutating call succeeds", async () => {
@@ -542,42 +612,6 @@ describe("AgentToolCallController", () => {
     expect(await controller.undoLastChange()).toBe("Nothing to undo.");
   });
 
-  it("asks for create_skill even in yolo mode (persistent-skill injection guard)", async () => {
-    const { controller, requests } = makeController({
-      settings: { mode: "yolo", approval: { mutating: "allow", perTool: {} } },
-    });
-    const decision = await controller.beforeToolCall({
-      toolCall: { id: "call-1", name: "create_skill" },
-      args: { name: "my-skill", description: "D", body: "B" },
-    });
-    expect(decision).toBeUndefined();
-    expect(requests).toHaveLength(1);
-    expect(requests[0]?.toolName).toBe("create_skill");
-  });
-
-  it("honors an explicit per-tool allow for create_skill", async () => {
-    const { controller, requests } = makeController({
-      settings: { mode: "safe", approval: { mutating: "ask", perTool: { create_skill: "allow" } } },
-    });
-    const decision = await controller.beforeToolCall({
-      toolCall: { id: "call-1", name: "create_skill" },
-      args: { name: "my-skill", description: "D", body: "B" },
-    });
-    expect(decision).toBeUndefined();
-    expect(requests).toHaveLength(0);
-  });
-
-  it("honors an explicit per-tool deny for create_skill", async () => {
-    const { controller } = makeController({
-      settings: { mode: "yolo", approval: { mutating: "allow", perTool: { create_skill: "deny" } } },
-    });
-    const decision = await controller.beforeToolCall({
-      toolCall: { id: "call-1", name: "create_skill" },
-      args: { name: "my-skill", description: "D", body: "B" },
-    });
-    expect(decision).toEqual({ block: true, reason: expect.any(String) });
-  });
-
   it("asks for recursive delete even in yolo mode", async () => {
     const { controller, requests } = makeController({
       settings: { mode: "yolo", approval: { mutating: "allow", perTool: {} } },
@@ -613,17 +647,5 @@ describe("AgentToolCallController", () => {
     });
     expect(decision).toBeUndefined();
     expect(requests).toHaveLength(0);
-  });
-
-  it("routes create_skill through ask by default", async () => {
-    const { controller, requests } = makeController({
-      settings: { mode: "safe", approval: { mutating: "ask", perTool: {} } },
-    });
-    const decision = await controller.beforeToolCall({
-      toolCall: { id: "call-1", name: "create_skill" },
-      args: { name: "my-skill", description: "D", body: "B" },
-    });
-    expect(decision).toBeUndefined();
-    expect(requests).toHaveLength(1);
   });
 });

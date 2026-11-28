@@ -1,8 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 import { TFolder, type App } from "obsidian";
 import { DEFAULT_SETTINGS, type AgenticChatSettings } from "../src/settings-schema";
-import { PluginService } from "../src/plugins/service";
-import { pluginMcpServerId } from "../src/plugins/loader";
+import {
+  PluginService,
+  defaultOffPluginsNotice,
+  pluginsWithoutEnabledRecord,
+} from "../src/plugins/service";
+import { pluginMcpServerId, type LoadedPlugin } from "../src/plugins/loader";
 import { AGENT_PLUGINS_SCHEMA_ID } from "../src/plugins/manifest";
 import { FakeApp } from "./helpers/fake-vault";
 
@@ -85,6 +89,52 @@ describe("generated MCP packages", () => {
     expect(manifest).not.toBeNull();
     const raw = await app.vault.cachedRead(manifest as never);
     expect(JSON.parse(raw)).toMatchObject({ $schema: AGENT_PLUGINS_SCHEMA_ID, name: "docs" });
+  });
+
+  it("records a generated package as enabled", async () => {
+    const app = await seed();
+    const current = settings();
+    await serviceFor(app, current).generateMcpServerPackage({ serverName: "docs", url: "https://docs.example.com/mcp" });
+    expect(current.plugins.enabled.docs).toBe(true);
+  });
+});
+
+describe("plugin enable defaults", () => {
+  it("enables a newly scaffolded package but never re-enables an explicit false", async () => {
+    const app = await seed();
+    const current = settings();
+    const service = serviceFor(app, current);
+    await service.scaffoldSkill({ name: "fresh", description: "d", body: "# x" });
+    expect(current.plugins.enabled.fresh).toBe(true);
+
+    current.plugins.enabled.fresh = false;
+    await service.scaffoldSkill({ name: "fresh", description: "d", body: "# y" }, { allowOverwrite: true });
+    expect(current.plugins.enabled.fresh).toBe(false);
+  });
+
+  it("names only packages with no enable record in the one default-off notice", () => {
+    const plugins = [{ name: "absent" }, { name: "off" }, { name: "on" }] as LoadedPlugin[];
+    expect(pluginsWithoutEnabledRecord(plugins, { off: false, on: true })).toEqual(["absent"]);
+    expect(defaultOffPluginsNotice(["absent", "other"])).toContain("absent, other");
+    expect(defaultOffPluginsNotice(["absent"])).toContain("Settings > Advanced > Agent plugins");
+    expect(defaultOffPluginsNotice([])).toBe("");
+  });
+
+  it("notifies once per service instance for packages found without an enable record", async () => {
+    const app = await seed();
+    await app.vault.createFolder(".agentic-plugins/found");
+    await app.vault.create(
+      ".agentic-plugins/found/plugin.json",
+      JSON.stringify({ $schema: AGENT_PLUGINS_SCHEMA_ID, name: "found", version: "1.0.0", description: "Found" }),
+    );
+    const current = settings();
+    const service = serviceFor(app, current);
+    const { Notice } = await import("./mocks/obsidian");
+    Notice.instances.length = 0;
+    await service.reload();
+    await service.reload();
+    const messages = Notice.instances.map((notice) => notice.message);
+    expect(messages.filter((message) => message.includes("found"))).toHaveLength(1);
   });
 });
 

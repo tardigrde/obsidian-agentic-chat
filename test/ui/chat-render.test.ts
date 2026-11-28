@@ -113,6 +113,18 @@ describe("activity line", () => {
     expect(activityState()).toBe("done");
   });
 
+  it("renders an old session's removed create_skill call with the generic tool name", async () => {
+    startAssistantTurn();
+    ui.emit(toolStart("t-old-skill", "create_skill", { name: "old", description: "d", body: "b" }));
+    ui.emit(toolEnd("t-old-skill"));
+    ui.emit(assistantEndEmpty);
+    ui.emit({ type: "agent_end" });
+    await settle();
+    expect(head()).toBe("Used create_skill");
+    expect(text(last('[data-ac="step"]'))).toContain("create_skill");
+    expect(activityState()).toBe("done");
+  });
+
   it("is one line per turn: 3 reads and 1 failed fetch read `Read 3 notes · 1 failed` with 4 rows", async () => {
     startAssistantTurn();
     for (const [id, name, args, error] of [

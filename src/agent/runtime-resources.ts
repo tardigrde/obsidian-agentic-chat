@@ -14,7 +14,6 @@ import { createDocumentTools } from "../tools/document-tools";
 import { createObsidianBinaryFetcher, type WebBinaryFetcher, type WebFetcher } from "../tools/web-fetch";
 import { createAskUserTool, type AskUserHandler } from "../tools/ask-user-tool";
 import { createSkillTool } from "../tools/skill-tool";
-import { createCreateSkillTool, type SkillScaffolder } from "../tools/skill-tools";
 import { createCurrentTimeTool } from "../tools/current-time-tool";
 import { createMcpFetcher } from "../mcp/fetcher";
 import { createMcpToolsWithDiagnostics, type McpServerDiagnostic } from "../mcp/tools";
@@ -212,8 +211,6 @@ export interface BuildAgentParentToolsOptions {
   artifactStore?: ToolArtifactStoreLike;
   askUser?: AskUserHandler;
   subagentTool?: AgentTool;
-  /** When present, the agent gets a deferred `create_skill` tool backed by the New skill wizard writer. */
-  skillScaffolder?: SkillScaffolder;
   /** Deferred tools loaded in this session; `search_tools` adds to it. */
   loadedTools?: LoadedToolSet;
   /** Clock for `current_time`; tests inject a fixed one. */
@@ -246,7 +243,6 @@ export function buildAgentParentTools(options: BuildAgentParentToolsOptions): Ag
     ...(artifactTool ? [artifactTool] : []),
     createCurrentTimeTool(options.now),
     // Deferred: listed in the system prompt, loaded by search_tools.
-    ...(options.skillScaffolder ? [createCreateSkillTool(options.skillScaffolder)] : []),
     ...createDocumentTools(options.app, options.artifactStore),
     ...options.resources.mcpTools,
   ];

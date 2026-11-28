@@ -2,7 +2,6 @@ import { setIcon, TFile, type App } from "obsidian";
 import type { ToolApprovalRequest } from "../agent/agent-service";
 import { STOPPED_APPROVAL_REASON, type UserApprovalChoice } from "../agent/tool-call-controller";
 import { buildEditPreview, buildExactEditPreviewWindow, type EditPreview } from "../agent/edit-preview";
-import { slugifyPluginName } from "../plugins/manifest";
 import { approvalPreviewNeedsContent, toolApprovalDescription } from "../tools/tool-contracts";
 import { compactDiffLines, diffLines, diffPrefix, diffStat, diffTooLarge, type CompactDiffWindow, type DiffLine } from "../vault/diff";
 import { normalizeVaultPath } from "../vault/path";
@@ -112,22 +111,10 @@ export class ApprovalCard {
     setIcon(this.headIcon, "hand");
     this.titleEl = head.createSpan({ cls: "agentic-chat-approval-title", text: this.request.label });
     this.bodyEl = this.el.createDiv({ cls: "agentic-chat-approval-body" });
-    if (this.isCreateSkill()) {
-      this.bodyEl.createEl("p", {
-        cls: "agentic-chat-approval-warning",
-        text: "Permanent: loads in every future session and /undo cannot remove it. Open the body and read it before you allow.",
-      });
-    }
-    // The create_skill warning above says it all; a second paragraph repeated it (U7 #3).
-    if (!this.isCreateSkill()) {
-      this.descEl = this.bodyEl.createDiv({ cls: "agentic-chat-approval-desc", text: toolApprovalDescription(this.request.toolName) });
-    }
+    this.descEl = this.bodyEl.createDiv({ cls: "agentic-chat-approval-desc", text: toolApprovalDescription(this.request.toolName) });
     const preview = this.bodyEl.createDiv({ cls: "agentic-chat-approval-preview" });
-    if (this.isCreateSkill()) this.renderCreateSkillPreview(preview);
-    else {
-      preview.createEl("pre", { cls: "agentic-chat-approval-args", text: previewArgs(this.request.args) });
-      void this.renderPreview(preview);
-    }
+    preview.createEl("pre", { cls: "agentic-chat-approval-args", text: previewArgs(this.request.args) });
+    void this.renderPreview(preview);
 
     this.reasonWrap = this.bodyEl.createDiv({ cls: "agentic-chat-deny-reason" });
     this.reasonWrap.hide();
@@ -150,15 +137,9 @@ export class ApprovalCard {
     this.actionsEl = this.el.createDiv({ cls: "agentic-chat-approval-actions" });
     const allow = acHook(this.button("Allow", ["mod-cta"]), "approval-allow");
     allow.addEventListener("click", () => this.finish({ approved: true, remember: false }, "allowed"));
-    // A persistent skill write and a web download never offer "always": one fatigued
-    // click would approve every future one, and neither has a per-tool settings row.
-    if (!this.neverRemembered()) {
-      const always = acHook(this.button(`Always allow ${this.request.toolName}`, []), "approval-always");
-      always.setAttr("title", "Allow now and stop asking for this tool. Changeable in settings.");
-      always.addEventListener("click", () => this.finish({ approved: true, remember: true }, "always"));
-    } else {
-      this.bodyEl.createEl("p", { cls: "agentic-chat-approval-note", text: "This decision cannot be remembered — each use asks again." });
-    }
+    const always = acHook(this.button(`Always allow ${this.request.toolName}`, []), "approval-always");
+    always.setAttr("title", "Allow now and stop asking for this tool. Changeable in settings.");
+    always.addEventListener("click", () => this.finish({ approved: true, remember: true }, "always"));
     this.denyButton = acHook(this.button("Deny", ["agentic-chat-approval-deny"]), "approval-deny");
     this.denyButton.addEventListener("click", () => {
       if (this.phaseValue === "deny-armed") this.deny();
@@ -270,36 +251,6 @@ export class ApprovalCard {
     this.headIcon.removeClass("is-needs-you");
     this.headIcon.addClass(outcome === "allowed" || outcome === "always" ? "is-done" : "is-error");
     setIcon(this.headIcon, outcome === "allowed" || outcome === "always" ? "check-circle-2" : "x-circle");
-  }
-
-  private isCreateSkill(): boolean {
-    return this.request.toolName === "create_skill";
-  }
-
-  private neverRemembered(): boolean {
-    return this.isCreateSkill() || this.request.toolName === "download_file";
-  }
-
-  /** Full-body preview for create_skill: slug, package path, and the whole body. */
-  private renderCreateSkillPreview(container: HTMLElement): void {
-    const raw = (this.request.args ?? {}) as { name?: unknown; description?: unknown; body?: unknown; overwrite?: unknown };
-    const requested = typeof raw.name === "string" ? raw.name.trim() : "";
-    const slug = slugifyPluginName(requested);
-    const description = typeof raw.description === "string" ? raw.description : "";
-    const body = typeof raw.body === "string" ? raw.body : "";
-    const overwrite = raw.overwrite === true;
-    const slugNote = slug !== requested.toLowerCase() ? ` (from "${requested}")` : "";
-    container.createEl("p", {
-      cls: "agentic-chat-approval-summary",
-      text: `Create skill "${slug}"${slugNote} → .agentic-plugins/${slug}/skills/${slug}/SKILL.md${overwrite ? " (REPLACE existing package)" : ""}`,
-    });
-    if (description) container.createEl("p", { cls: "agentic-chat-approval-summary", text: `Description: ${description}` });
-    // The body is folded: Allow and Deny must stay on screen on a phone (U7 #3). The
-    // <pre> stays in the DOM, so the owner can still read every line before allowing.
-    const fold = container.createEl("details", { cls: "agentic-chat-approval-details" });
-    const lineCount = body ? body.split("\n").length : 0;
-    fold.createEl("summary", { text: `Show SKILL.md · ${lineCount} ${lineCount === 1 ? "line" : "lines"}` });
-    fold.createDiv({ cls: "agentic-chat-approval-skill-body" }).createEl("pre", { cls: "agentic-chat-approval-args", text: body || "(empty body)" });
   }
 
   /** Read the target file and render the change; the raw arguments show until then. */

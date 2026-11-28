@@ -3,6 +3,7 @@
 - Status: Accepted
 - Date: 2026-11-16
 - Supersedes: [0002 — Do not merge granular tools](0002-do-not-merge-tools.md)
+- Amended 2026-11-27: `create_skill` was removed (#447). Deferred built-ins are now `import_document` and every MCP tool.
 
 ## Decision
 

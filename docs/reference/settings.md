@@ -39,7 +39,7 @@ customize the prompt, edit that file.
 | Setting | Default | Notes |
 | --- | --- | --- |
 | Before mutating tools | ask | Global allow, ask, or deny for vault-changing tools. |
-| Per-tool overrides | default | Per-tool allow, ask, or deny. Deny wins over everything, including YOLO. |
+| Per-tool overrides | default | One row for every built-in tool: allow, ask, or deny (dispatch is allow/deny only; a recursive delete always asks unless deletes are explicitly allowed). The **Default** label shows what an unset tool really follows (read-only tools default allow; mutating tools follow the global policy). Deny wins over everything, including YOLO. |
 
 ## Advanced
 
@@ -70,7 +70,7 @@ The master switch controls background toasts. Errors always show. **Cost alert (
 
 ### Agent plugins
 
-Plugin management and diagnostics. Buttons: **Install plugin…** and **New skill…**. The installed plugin list shows enable toggles, spec status, component counts, and open-folder shortcuts. See [Install](../guide/install.md#installing-agent-plugins).
+Plugin management and diagnostics. Buttons: **Install plugin…** and **New skill…**. The installed plugin list shows enable toggles, spec status, component counts, and open-folder shortcuts. Packages you install or create start enabled. A package found in the plugins folder without an enable record starts disabled; the plugin shows one notice naming those packages, and you turn them on here. See [Install](../guide/install.md#installing-agent-plugins).
 
 ### Subagents
 

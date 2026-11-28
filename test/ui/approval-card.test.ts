@@ -151,28 +151,6 @@ describe("ApprovalCard rendering", () => {
     expect($(".agentic-chat-approval-args")?.textContent).toContain('"oldText": "gone"');
     expect($(".agentic-chat-diff-window")).toBeNull();
   });
-
-  it("shows the full create_skill body, a persistence warning, and no Always button", async () => {
-    const app = fakeApp();
-    const body = `${"x".repeat(3_000)}\nTAIL MARKER`;
-    ask(app, { toolName: "create_skill", args: { name: "My Skill", description: "does things", body } });
-    await settle();
-    // U7 #3: one short warning (no second paragraph), and the body is folded so
-    // Allow and Deny stay on screen on a phone.
-    expect($(".agentic-chat-approval-warning")?.textContent).toContain("/undo cannot remove it");
-    expect($(".agentic-chat-approval-desc")).toBeNull();
-    const fold = $("details.agentic-chat-approval-details");
-    expect(fold).not.toBeNull();
-    expect(fold?.hasAttribute("open")).toBe(false);
-    expect(fold?.querySelector("summary")?.textContent).toMatch(/^Show SKILL\.md · \d+ lines$/);
-    expect($$(".agentic-chat-approval-summary").map((el) => el.textContent)).toEqual([
-      'Create skill "my-skill" (from "My Skill") → .agentic-plugins/my-skill/skills/my-skill/SKILL.md',
-      "Description: does things",
-    ]);
-    expect($(".agentic-chat-approval-skill-body pre")?.textContent).toContain("TAIL MARKER");
-    expect($('[data-ac="approval-always"]')).toBeNull();
-    expect($(".agentic-chat-approval-note")?.textContent).toContain("cannot be remembered");
-  });
 });
 
 describe("ApprovalCard decisions", () => {
@@ -183,11 +161,11 @@ describe("ApprovalCard decisions", () => {
     expect($(".agentic-chat-approval-outcome")?.textContent).toBe("Allowed: always for write");
   });
 
-  it("a web download never offers Always allow (it has no settings row to revoke it)", async () => {
+  it("a web download offers Always allow now that it has a settings row", async () => {
     ask(fakeApp(), { toolName: "download_file", args: { url: "https://example.com/a.pdf", path: "a.pdf" } });
     await settle();
-    expect($('[data-ac="approval-always"]')).toBeNull();
-    expect(button("Allow")).toBeDefined();
+    expect($('[data-ac="approval-always"]')).not.toBeNull();
+    expect($(".agentic-chat-approval-note")?.textContent ?? "").not.toContain("cannot be remembered");
   });
 
   it("Enter allows; Esc arms the deny, and Enter in the reason confirms it with the reason", async () => {
@@ -204,18 +182,6 @@ describe("ApprovalCard decisions", () => {
     key(reason!, "Enter");
     await expect(denied.choice).resolves.toEqual({ approved: false, remember: false, reason: "wrong folder" });
     expect($(".agentic-chat-approval-outcome")?.textContent).toBe("Denied");
-  });
-
-  it("Enter on the 'Show SKILL.md' summary opens the body and never allows the skill (U7 review)", async () => {
-    const c = ask(fakeApp(), { toolName: "create_skill", args: { name: "s", description: "d", body: "line" } });
-    await settle();
-    const summary = $<HTMLElement>("details.agentic-chat-approval-details > summary")!;
-    const event = new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true });
-    summary.dispatchEvent(event);
-    // The card did not take Enter: no decision, and the browser's own toggle is not cancelled.
-    expect(c.phase).toBe("open");
-    expect(event.defaultPrevented).toBe(false);
-    key(c.el, "Escape");
   });
 
   it("Esc in the reason disarms the deny; Enter on the card with the deny armed never allows", async () => {

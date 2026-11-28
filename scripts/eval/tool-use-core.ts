@@ -344,12 +344,7 @@ export interface OverallSummary {
  * list as small as possible: every other mutating tool must come from the
  * product's own `MUTATING_TOOLS` set.
  */
-const EVAL_EXTRA_MUTATING = ["create_skill"] as const;
-
-export const MUTATING_TOOL_NAMES: ReadonlySet<string> = new Set([
-  ...MUTATING_TOOLS,
-  ...EVAL_EXTRA_MUTATING,
-]);
+export const MUTATING_TOOL_NAMES: ReadonlySet<string> = new Set(MUTATING_TOOLS);
 
 export function validateToolUseSuite(input: unknown): ToolUseSuite {
   const problems: string[] = [];

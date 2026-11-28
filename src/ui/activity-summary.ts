@@ -68,8 +68,6 @@ export function stepVerb(name: string, rawArgs: string): Verb {
       return { key: "import", phrase: (n) => `imported ${plural(n, "document")}` };
     case "download_file":
       return { key: "download", phrase: (n) => `downloaded ${plural(n, "file")}` };
-    case "create_skill":
-      return { key: "skill-new", phrase: (n) => (n === 1 ? "created a skill" : `created ${n} skills`) };
     case "skill":
       return { key: "skill", phrase: (n) => (n === 1 ? "loaded a skill" : `loaded ${n} skills`) };
     case "ask_user":
@@ -227,8 +225,6 @@ function stepRowPartsRaw(name: string, rawArgs: string): { verb: string; arg: st
       return { verb: "Ask", arg: text(args.question), path: "" };
     case "skill":
       return { verb: "Skill", arg: text(args.name), path: "" };
-    case "create_skill":
-      return { verb: "New skill", arg: text(args.name), path: "" };
     case "import_document":
       return { verb: "Import", arg: text(args.path) || text(args.url), path: "" };
     case "download_file":

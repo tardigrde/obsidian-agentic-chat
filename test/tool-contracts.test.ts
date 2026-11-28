@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
+import type { AgentTool } from "@earendil-works/pi-agent-core";
 import type { App } from "obsidian";
+import { buildAgentParentTools } from "../src/agent/runtime-resources";
+import { DEFAULT_SETTINGS } from "../src/settings-schema";
 import {
   BUILTIN_TOOL_CONTRACTS,
   BUILTIN_TOOL_NAMES,
@@ -11,7 +14,11 @@ import {
   getBuiltinToolContract,
   toolApprovalDescription,
 } from "../src/tools/tool-contracts";
+import { TOOL_CATALOG } from "../src/tools/tool-catalog";
+import { createSubagentTool } from "../src/tools/subagent-tool";
 import { createVaultTools } from "../src/tools/vault-tools";
+import { ReadMemo } from "../src/vault/read-memo";
+import { noopArtifactStore } from "./support/fake-adapter";
 
 describe("built-in tool contracts", () => {
   it("lists every built-in vault tool exactly once", () => {
@@ -92,5 +99,42 @@ describe("built-in tool contracts", () => {
   it("handles unknown tool names without classifying them as built-in vault tools", () => {
     expect(getBuiltinToolContract("web_search")).toBeUndefined();
     expect(approvalPreviewNeedsContent("web_search")).toBe(false);
+  });
+});
+
+describe("tool catalog", () => {
+  it("lists every tool the real parent build registers, with its real label", () => {
+    const subagentTool = createSubagentTool({
+      getProfiles: () => [],
+      createChildAgent: () => {
+        throw new Error("n/a");
+      },
+    }) as unknown as AgentTool;
+    const { all } = buildAgentParentTools({
+      app: { vault: {}, workspace: {} } as unknown as App,
+      settings: { ...DEFAULT_SETTINGS, web: { ...DEFAULT_SETTINGS.web, enabled: true } },
+      resources: {
+        skills: [],
+        plugins: [],
+        profiles: [],
+        instructionsOverlay: "",
+        ignoreMatcher: () => false,
+        mcpTools: [],
+        mcpDiagnostics: [],
+      },
+      readMemo: new ReadMemo(),
+      webFetch: async () => ({ status: 200, text: "", headers: {} }),
+      artifactStore: noopArtifactStore,
+      askUser: async () => "answer",
+      subagentTool,
+    });
+
+    // If a built-in tool is registered without a catalog row, this fails.
+    expect(TOOL_CATALOG.map((entry) => entry.name).sort()).toEqual(all.map((tool) => tool.name).sort());
+    for (const tool of all) {
+      const entry = TOOL_CATALOG.find((candidate) => candidate.name === tool.name);
+      expect(entry?.label, tool.name).toBe(tool.label);
+      expect(entry?.mutating, tool.name).toBe(MUTATING_TOOLS.has(tool.name));
+    }
   });
 });

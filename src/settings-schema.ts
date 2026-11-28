@@ -361,7 +361,8 @@ function healPrimitiveLeaves<T>(value: T, fallback: unknown, path = ""): T {
 function dropRetiredSettingKeys(
   stored: Partial<AgenticChatSettings> | null | undefined,
 ): Partial<AgenticChatSettings> {
-  const remaining = structuredClone(stored ?? {}) as Record<string, unknown>;
+  // A data.json that is not an object (a string, a number) heals to defaults.
+  const remaining = structuredClone(isRecord(stored) ? stored : {}) as Record<string, unknown>;
   const retiredKeys = RETIRED_SETTING_KEYS.filter((key) => deleteSettingPath(remaining, key));
   // Make the silent drop of hand-authored config visible (until the next save).
   if (retiredKeys.length > 0) {

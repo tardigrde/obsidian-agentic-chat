@@ -49,6 +49,20 @@ function claudePluginTree(): Map<string, Uint8Array> {
 }
 
 describe("PluginService.installFromTree", () => {
+  it("records a new package as enabled", async () => {
+    const { app } = await seed();
+    const current = settings();
+    await serviceFor(app, current).installFromTree(claudePluginTree(), "github:example/docs-helper");
+    expect(current.plugins.enabled["docs-helper"]).toBe(true);
+  });
+
+  it("does not re-enable a disabled package on re-install", async () => {
+    const { app } = await seed();
+    const current = settings();
+    current.plugins.enabled["docs-helper"] = false;
+    await serviceFor(app, current).installFromTree(claudePluginTree(), "github:example/docs-helper");
+    expect(current.plugins.enabled["docs-helper"]).toBe(false);
+  });
   it("converts a Claude plugin into a loadable Agent Plugins package", async () => {
     const { app, vault } = await seed();
     const current = settings();
@@ -414,6 +428,7 @@ describe("PluginService.scaffoldSkill", () => {
     await service.scaffoldSkill({ name: "Release Notes", description: "", body: "# x\n" });
 
     expect(current.plugins.sources["release-notes"]).toBe("New skill wizard");
+    expect(current.plugins.enabled["release-notes"]).toBe(true);
     expect(saves).toBe(1);
   });
 
@@ -479,6 +494,7 @@ describe("PluginService.materializeLegacySkills", () => {
     const plugins = await service.reload();
     const pkg = plugins.find((plugin) => plugin.name === "legacy-skills");
     expect(pkg?.auditStatus).toBe("ok");
+    expect(pkg?.enabled).toBe(true);
     expect(pkg?.skills.map((skill) => skill.name).sort()).toEqual(["my-skill", "top-note"]);
   });
 
