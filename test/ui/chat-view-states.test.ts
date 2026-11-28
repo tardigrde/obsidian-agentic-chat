@@ -549,7 +549,7 @@ describe("chat view state machine", () => {
     try {
       ui.$(".agentic-chat-mode-toggle")?.click();
       await settle();
-      expect(ui.settings.mode).toBe("yolo");
+      expect(ui.plugin.mode).toBe("yolo");
       expect(iconClass()).toContain("lucide-zap");
     } finally {
       document.body.classList.remove("is-mobile");

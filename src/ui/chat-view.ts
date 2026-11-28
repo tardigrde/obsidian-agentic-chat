@@ -860,7 +860,7 @@ export class ChatView extends ItemView {
     const modeName = mode === "yolo" ? "YOLO" : "Safe";
     this.modeToggleEl.setAttr("aria-label", `Permission mode: ${modeName}`);
     // Phones hide the label, so the icon itself must carry Safe vs YOLO.
-    if (this.modeIconEl) setIcon(this.modeIconEl, MODES[settings.mode].icon);
+    if (this.modeIconEl) setIcon(this.modeIconEl, MODES[mode].icon);
     this.modeLabelEl?.setText(modeName);
     // Effort can't change mid-turn (it would disagree with the in-flight request).
     this.effortKnobEl?.toggleClass("is-disabled", streaming);
