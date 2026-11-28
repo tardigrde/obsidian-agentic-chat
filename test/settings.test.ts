@@ -313,6 +313,27 @@ describe("mergeSettings — MCP", () => {
     expect(notices.join(" ")).not.toContain("secret-token");
   });
 
+  it("keeps credentials in a legacy server URL out of the one-time notice", () => {
+    const notices = retiredSettingsNotices({
+      mcp: {
+        servers: [
+          {
+            id: "private",
+            name: "Private",
+            url: "https://user:pass@mcp.example.com/mcp?token=abc#fragment",
+            source: "user",
+          },
+        ],
+      },
+    });
+    const text = notices.join(" ");
+    expect(text).toContain('"Private" (https://mcp.example.com/mcp)');
+    expect(text).not.toContain("user");
+    expect(text).not.toContain("pass");
+    expect(text).not.toContain("token=abc");
+    expect(text).not.toContain("fragment");
+  });
+
   it("heals MCP proxy settings and rejects a non-http proxy", () => {
     const merged = mergeSettings({
       mcp: {

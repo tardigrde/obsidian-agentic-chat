@@ -23,7 +23,9 @@ export class SessionVersionError extends Error {
  */
 export function sessionHeaderVersion(header: SessionHeaderEntry | undefined): number {
   if (!header || typeof header.version !== "number" || !Number.isFinite(header.version)) {
-    return CURRENT_SESSION_VERSION;
+    // Pre-versioning files are format 1, not whatever the current build uses:
+    // when the format advances, their migration must still run from step 1.
+    return 1;
   }
   return Math.trunc(header.version);
 }

@@ -210,10 +210,27 @@ const SETTING_NUMBER_RANGES: Readonly<Record<string, readonly [number, number]>>
 
 /** Version of a stored data.json; pre-versioning files are format 1. */
 export function settingsVersionOf(stored: unknown): number {
-  if (!isRecord(stored)) return CURRENT_SETTINGS_VERSION;
+  if (!isRecord(stored)) return 1;
   const version = stored.settingsVersion;
-  if (typeof version !== "number" || !Number.isFinite(version)) return CURRENT_SETTINGS_VERSION;
+  if (typeof version !== "number" || !Number.isFinite(version)) return 1;
   return Math.trunc(version);
+}
+
+/**
+ * A URL safe to put in a user-visible notice: drop userinfo, query, and hash,
+ * which can carry credentials or tokens. The host and path still identify it.
+ */
+export function noticeSafeUrl(value: string): string {
+  try {
+    const url = new URL(value);
+    url.username = "";
+    url.password = "";
+    url.search = "";
+    url.hash = "";
+    return url.toString();
+  } catch {
+    return "(invalid URL)";
+  }
 }
 
 type SettingsMigration = (stored: Record<string, unknown>) => Record<string, unknown>;
@@ -460,7 +477,7 @@ export function retiredSettingsNotices(stored: unknown): string[] {
     for (const server of mcp.servers) {
       if (!isRecord(server) || server.source === "plugin") continue;
       const name = typeof server.name === "string" && server.name.trim() ? server.name.trim() : "Unnamed server";
-      const url = typeof server.url === "string" && server.url.trim() ? server.url.trim() : "(no URL)";
+      const url = typeof server.url === "string" && server.url.trim() ? noticeSafeUrl(server.url.trim()) : "(no URL)";
       notices.push(
         `The MCP server "${name}" (${url}) was not carried over: server endpoints now live in plugin packages. ` +
           "Add it again in Settings → Advanced → MCP.",
