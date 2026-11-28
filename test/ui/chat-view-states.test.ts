@@ -292,6 +292,10 @@ describe("chat view state machine", () => {
     expect(card?.closest('[data-ac="messages"]')).not.toBeNull();
     expect(card?.parentElement?.previousElementSibling?.getAttribute("data-ac")).toBe("activity");
     expect(ui.$('[data-ac="activity"]')?.getAttribute("data-ac-state")).toBe("needs-you");
+    // The approval card lives outside the activity body, so the block stays
+    // closed until the user opens it (the needs-you head state still shows).
+    expect(ui.$('[data-ac="activity"]')?.classList.contains("is-open")).toBe(false);
+    expect(ui.$('[data-ac="activity-head"]')?.getAttribute("aria-expanded")).toBe("false");
     expect(ui.$('[data-ac="status"]')?.textContent).toBe("Waiting for your approval");
     expect(ui.$('[data-ac="tab"]')?.getAttribute("data-ac-state")).toBe("needs-you");
     expect(chrome()).toEqual(STREAMING);
@@ -534,6 +538,22 @@ describe("chat view state machine", () => {
     expect(ui.settings.mode).toBe("safe");
     held.release();
     await ui.idle();
+  });
+
+  it("the mode icon follows Safe <-> YOLO when the label is hidden on mobile", async () => {
+    await mount([], undefined, { mode: "safe" });
+    const iconClass = () => ui.$(".agentic-chat-mode-icon svg")?.getAttribute("class") ?? "";
+    expect(iconClass()).toContain("lucide-shield-check");
+
+    document.body.classList.add("is-mobile");
+    try {
+      ui.$(".agentic-chat-mode-toggle")?.click();
+      await settle();
+      expect(ui.settings.mode).toBe("yolo");
+      expect(iconClass()).toContain("lucide-zap");
+    } finally {
+      document.body.classList.remove("is-mobile");
+    }
   });
 
   it("an attached note shows as a chip, goes out with the prompt, and stays for the next turn", async () => {

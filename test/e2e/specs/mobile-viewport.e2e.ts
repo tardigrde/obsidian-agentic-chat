@@ -379,6 +379,40 @@ describe("agentic-chat mobile viewport", function () {
     await expectWithinWindow(COMPOSER_PARTS);
   });
 
+  it("keeps the mode readable when the label is hidden: the icon changes", async function () {
+    const iconClass = async () =>
+      await browser.execute(
+        () => document.querySelector(".agentic-chat-mode-icon svg")?.getAttribute("class") ?? "",
+      );
+    expect(await iconClass()).toContain("lucide-shield-check");
+    expect(
+      await browser.execute(
+        () => getComputedStyle(document.querySelector(".agentic-chat-mode-label") as Element).display,
+      ),
+    ).toBe("none");
+
+    await $('[data-ac="mode-toggle"]').click();
+    try {
+      await browser.waitUntil(async () => (await iconClass()).includes("lucide-zap"), {
+        timeout: 5_000,
+        timeoutMsg: "the mode icon did not switch to zap in YOLO",
+      });
+      if (process.env.AGENTIC_CHAT_SCREENSHOT_DIR) {
+        await browser.saveScreenshot(`${process.env.AGENTIC_CHAT_SCREENSHOT_DIR}/mobile-mode-yolo.png`);
+      }
+    } finally {
+      // Leave Safe for the approval tests that follow, even when an assertion
+      // or the screenshot above fails.
+      if ((await iconClass()).includes("lucide-zap")) {
+        await $('[data-ac="mode-toggle"]').click();
+        await browser.waitUntil(async () => (await iconClass()).includes("lucide-shield-check"), {
+          timeout: 5_000,
+          timeoutMsg: "the mode icon did not return to shield-check in Safe",
+        });
+      }
+    }
+  });
+
   it("lifts the composer above the keyboard in the sidebar drawer (U7 #1)", async function () {
     // On a phone the app container shrinks above the keyboard but the drawer does not.
     // Emulate that: shrink .app-container by 300px and check the composer ends above its

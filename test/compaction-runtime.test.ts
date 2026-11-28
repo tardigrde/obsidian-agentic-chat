@@ -108,6 +108,89 @@ describe("AgentCompactionRuntime", () => {
     expect(entries.filter((entry) => entry.type === "message")).toHaveLength(compacted!.length);
   });
 
+  it("manual compaction keeps the latest turn instead of filling the automatic keep budget", async () => {
+    let summarized = "";
+    const { runtime } = await setup({
+      summarize: async (messages) => {
+        summarized = JSON.stringify(messages);
+        return "Summary of earlier turns.";
+      },
+    });
+    const transcript = [
+      user("first turn ".repeat(200)),
+      assistant("first answer ".repeat(200), usage(10, 0.01)),
+      user("second turn ".repeat(200)),
+      assistant("second answer ".repeat(200), usage(20, 0.02)),
+      user("third turn"),
+      assistant("third answer", usage(30, 0.03)),
+    ];
+
+    const compacted = await runtime.compact(transcript, 1_000_000, { force: true });
+
+    expect(compacted).not.toBeNull();
+    // keepFraction: 0 keeps the final user turn and its answer, never a wide
+    // automatic keep budget that leaves most of the transcript unsummarized.
+    expect(compacted!.slice(1).map((message) => message.role)).toEqual(["user", "assistant"]);
+    expect(JSON.stringify(compacted!.slice(1))).toContain("third turn");
+    expect(summarized).toContain("first turn");
+    expect(summarized).toContain("second turn");
+    expect(summarized).not.toContain("third turn");
+  });
+
+  it("does not replace an existing summary when a second manual compaction has nothing new to fold", async () => {
+    let summarizeCalls = 0;
+    const { adapter, runtime, path } = await setup({
+      summarize: async () => {
+        summarizeCalls += 1;
+        return "Summary of earlier turns.";
+      },
+    });
+    const transcript = [
+      user("first turn ".repeat(200)),
+      assistant("first answer ".repeat(200), usage(10, 0.01)),
+      user("second turn ".repeat(200)),
+      assistant("second answer ".repeat(200), usage(20, 0.02)),
+      user("third turn"),
+      assistant("third answer", usage(30, 0.03)),
+    ];
+    const first = await runtime.compact(transcript, 1_000_000, { force: true });
+    expect(first).not.toBeNull();
+    const afterFirst = adapter.files.get(path);
+
+    const second = await runtime.compactWithResult(first!, 1_000_000, { force: true });
+
+    expect(second).toMatchObject({
+      status: "skipped",
+      message: expect.stringContaining("Nothing to compact"),
+    });
+    expect(summarizeCalls).toBe(1);
+    expect(adapter.files.get(path)).toBe(afterFirst);
+  });
+
+  it("does not commit when the estimate after compaction is not lower than before", async () => {
+    const { adapter, runtime, path } = await setup({
+      // A summary larger than the turns it replaces: the exact loop the user
+      // saw as an unchanged 23,678 -> 23,678 result.
+      summarize: async () => "x".repeat(100_000),
+    });
+    const transcript = [
+      user("a".repeat(1_000)),
+      assistant("b".repeat(1_000), usage(10, 0.01)),
+      user("c".repeat(1_000)),
+      assistant("d".repeat(1_000), usage(20, 0.02)),
+    ];
+    const before = adapter.files.get(path);
+
+    const result = await runtime.compactWithResult(transcript, 1_000_000, { force: true });
+
+    expect(result).toMatchObject({
+      status: "skipped",
+      reason: "no_gain",
+      message: expect.stringContaining("not smaller"),
+    });
+    expect(adapter.files.get(path)).toBe(before);
+  });
+
   it("preserves artifact cache references on the summary message", async () => {
     const { adapter, runtime, path } = await setup();
     const artifactResult = {

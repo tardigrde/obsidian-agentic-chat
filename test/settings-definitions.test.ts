@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { App, SettingDefinitionGroup, SettingDefinitionPage } from "obsidian";
 import { AgenticChatSettingTab } from "../src/settings";
+import { secretInputDef } from "../src/settings-definition-kit";
 import { perToolApprovalRows } from "../src/settings-tab-agent";
 import { createMcpServerSettings } from "../src/mcp/settings";
 import { DEFAULT_SETTINGS } from "../src/settings-schema";
@@ -56,6 +57,61 @@ function groups(page: SettingDefinitionPage): Array<SettingDefinitionGroup & { i
     return "type" in item && (item.type === "group" || item.type === "list");
   });
 }
+
+describe("secret inputs", () => {
+  function renderSecret(hasValue: boolean): { placeholder: string; values: string[] } {
+    let placeholder = "";
+    const values: string[] = [];
+    const text = {
+      inputEl: { type: "" },
+      setPlaceholder(value: string) {
+        placeholder = value;
+        return this;
+      },
+      setValue(value: string) {
+        values.push(value);
+        return this;
+      },
+      onChange() {
+        return this;
+      },
+    };
+    const setting = {
+      setDesc() {
+        return this;
+      },
+      addText(callback: (component: typeof text) => void) {
+        callback(text);
+        return this;
+      },
+      addButton() {
+        return this;
+      },
+    };
+    secretInputDef(
+      {
+        name: "API key",
+        desc: "Stored with Obsidian secret storage.",
+        placeholder: "paste key",
+        hasValue: () => hasValue,
+        onSet: async () => {},
+        onForget: async () => {},
+      },
+      () => {},
+    ).render?.(setting as never, {} as never);
+    return { placeholder, values };
+  }
+
+  it("shows dots when a value is stored, and never puts the value in the field", () => {
+    const stored = renderSecret(true);
+    expect(stored.placeholder).toBe("••••••••");
+    expect(stored.values).toEqual([""]);
+  });
+
+  it("keeps the normal placeholder when no value is stored", () => {
+    expect(renderSecret(false).placeholder).toBe("paste key");
+  });
+});
 
 describe("declarative settings definitions", () => {
   it("exposes exactly the three tabs from the pure tab map, in order", () => {
@@ -122,6 +178,18 @@ describe("declarative settings definitions", () => {
     expect(rows.find((row) => row.toolName === "read")?.defaultLabel).toBe("Default (allow)");
     expect(rows.find((row) => row.toolName === "write")?.defaultLabel).toBe("Default (ask)");
     expect(rows.find((row) => row.toolName === "subagent")?.defaultLabel).toBe("Default (allow)");
+  });
+
+  it("rebuilds the rows when the global mutating policy changes, so the Default labels follow it", async () => {
+    const { tab } = makeHarness();
+    let updates = 0;
+    (tab as unknown as { update: () => void }).update = () => {
+      updates += 1;
+    };
+
+    await tab.setControlValue("approval.mutating", "allow");
+
+    expect(updates).toBe(1);
   });
 
   it("reads and writes nested control keys through the plugin settings", async () => {

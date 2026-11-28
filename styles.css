@@ -673,14 +673,20 @@ body.is-mobile,
   display: none;
 }
 
-/* Plain blocks (warnings, inline notes) are not real setting rows. */
+/* Plain blocks (warnings, inline notes) are not real setting rows. They sit in
+   the same card as the rows, so they take the card's row padding; a block that
+   only wraps nested rows stays flush so those rows are not indented twice. */
 .agentic-chat-settings-block {
   display: block;
   width: 100%;
   min-width: 0;
   border: 0;
-  padding: 0;
+  padding: var(--ac-settings-row-pad-y) var(--ac-settings-row-pad-x);
   min-height: 0;
+}
+
+.agentic-chat-settings-block.agentic-chat-settings-block-wraps-rows {
+  padding: 0;
 }
 
 .agentic-chat-settings-tab {
@@ -2629,9 +2635,12 @@ body.is-mobile,
 /* --- Settings → Resources: Agent plugins sections --- */
 
 /* The settings body must never let a row push the pane wider than the window;
-   children handle their own wrapping/ellipsis instead. */
+   children handle their own wrapping/ellipsis instead. The row padding tokens
+   mirror Obsidian's card rows so plain blocks line up with them. */
 .agentic-chat-settings-tabbody {
   min-width: 0;
+  --ac-settings-row-pad-y: var(--setting-items-padding-y, var(--size-4-3));
+  --ac-settings-row-pad-x: var(--setting-items-padding-x, var(--size-4-4));
 }
 
 /* The three Import actions (Install plugin…, New skill…, Repair built-ins)
