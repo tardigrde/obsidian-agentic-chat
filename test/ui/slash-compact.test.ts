@@ -32,6 +32,29 @@ describe("/compact", () => {
     // The rewrite landed, so the redraw that would have wiped the bubble ran.
     expect(ui.root.textContent).toContain("Compacted.");
 
+    // The summary lives in the one Compact card below the kept turn and the
+    // command, not in a block at the top of the transcript.
+    const order = () =>
+      ui.$$(".agentic-chat-user, .agentic-chat-info").map((el) =>
+        el.classList.contains("agentic-chat-info") ? "card" : (el.textContent ?? "").trim().split(" ")[0],
+      );
+    expect(order()).toEqual(["second", "/compact", "card"]);
+    const card = ui.$(".agentic-chat-info");
+    expect(card?.textContent).toContain("Compacted.");
+    expect(card?.textContent).toContain("Summarized earlier conversation");
+    expect(card?.textContent).toContain("summary text");
+
+    // A redraw (reopen, tab switch) keeps the card where the compaction ran,
+    // before any later turn.
+    const redraw = () =>
+      (ui.view as unknown as { renderTranscript(messages: unknown[]): void }).renderTranscript([
+        ...(ui.view as unknown as { service: { getMessages(): unknown[] } }).service.getMessages(),
+        { role: "user", content: [{ type: "text", text: "third question" }], timestamp: Date.now() + 60_000 },
+      ]);
+    redraw();
+    await settle();
+    expect(order()).toEqual(["second", "card", "third"]);
+
     // A user message delivered outside the composer (a steer drained after the
     // rewrite) must still render; the redraw reset the pending local-render slot.
     const transcript = (

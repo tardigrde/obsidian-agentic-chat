@@ -3,7 +3,7 @@ import {
   renderActionPanel,
   renderErrorPanel,
   renderInfoPanel,
-  renderSummaryPanel,
+  renderCompactionPanel,
 } from "../../src/ui/info-panel-renderer";
 
 function root(): HTMLElement {
@@ -39,9 +39,9 @@ describe("info panel renderer", () => {
     expect(clicked).toBe(1);
   });
 
-  it("renders summary panels from tagged or plain text", () => {
-    const tagged = renderSummaryPanel(root(), "<conversation-summary>\nEarlier context.\n</conversation-summary>");
-    const plain = renderSummaryPanel(root(), "Plain summary.");
+  it("renders compaction cards from tagged or plain text", () => {
+    const tagged = renderCompactionPanel(root(), "<conversation-summary>\nEarlier context.\n</conversation-summary>");
+    const plain = renderCompactionPanel(root(), "Plain summary.");
 
     expect(tagged.textContent).toContain("Summarized earlier conversation");
     expect(tagged.textContent).toContain("Earlier context.");

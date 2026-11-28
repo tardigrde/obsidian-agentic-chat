@@ -57,14 +57,30 @@ export function renderDoctorPanel(parent: HTMLElement, report: DoctorReport): HT
   return el;
 }
 
-export function renderSummaryPanel(parent: HTMLElement, text: string): HTMLElement {
+/**
+ * The one card for a compaction: titled like the `/compact` result, with the
+ * summary folded inside. It sits where the compaction ran, not at the top.
+ */
+export function renderCompactionPanel(parent: HTMLElement, text: string): HTMLElement {
   const inner = /<conversation-summary>\n?([\s\S]*?)\n?<\/conversation-summary>/.exec(text);
   const summary = (inner ? inner[1] : text).trim();
-  const el = acHook(parent.createDiv({ cls: ["agentic-chat-message", "agentic-chat-info"] }), "info");
+  const el = acHook(parent.createDiv({ cls: ["agentic-chat-message", "agentic-chat-info", "agentic-chat-compaction"] }), "info");
   const details = el.createEl("details", { cls: "agentic-chat-info-details" });
-  details.createEl("summary", { text: "Summarized earlier conversation" });
-  details.createDiv({ cls: "agentic-chat-info-body", text: summary });
+  details.open = true;
+  details.createEl("summary", { text: "Compact" });
+  const body = details.createDiv({ cls: "agentic-chat-info-body" });
+  const fold = body.createEl("details", { cls: "agentic-chat-compaction-summary" });
+  fold.createEl("summary", { text: "Summarized earlier conversation" });
+  fold.createDiv({ text: summary });
   return el;
+}
+
+/** Put the result of a manual `/compact` above the folded summary. */
+export function addCompactionResult(card: HTMLElement, result: string): void {
+  const body = card.querySelector<HTMLElement>(".agentic-chat-info-body");
+  if (!body) return;
+  const line = body.createDiv({ cls: "agentic-chat-compaction-result", text: result });
+  body.prepend(line);
 }
 
 export function renderActionPanel(parent: HTMLElement, title: string, subtitle: string, items: ActionRow[]): HTMLElement {

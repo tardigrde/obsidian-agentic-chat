@@ -937,6 +937,7 @@ export class ChatView extends ItemView {
       renderOutgoingUserMessage: (text, attachments, images, pendingMessageEnd) =>
         view.renderOutgoingUserMessage(text, attachments, images, pendingMessageEnd),
       renderTranscript: (messages) => view.renderTranscript(messages),
+      showCompactionResult: (result) => view.transcript.showCompactionResult(result),
       syncChrome: () => view.syncChrome(),
       setComposerValue: (text) => view.setComposerValue(text),
       createSessionWorkflow: () => view.actions.createSessionWorkflow(),

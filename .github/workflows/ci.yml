@@ -194,6 +194,7 @@ jobs:
         with:
           name: dogfood-scripted
           path: |
+            logs/e2e-artifacts/
             logs/verify/*/run-result.json
             logs/verify/*/summary.json
             logs/eval-runs/

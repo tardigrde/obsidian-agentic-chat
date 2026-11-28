@@ -56,7 +56,8 @@ export async function runCompact(ctx: SlashContext, instructions = ""): Promise<
     // before compaction; put it back above the compacted transcript.
     ctx.renderOutgoingUserMessage(display, [], undefined, false);
     ctx.syncChrome();
-    ctx.renderInfoMessage("Compact", [["result", formatCompactionSummary(result)]]);
+    const line = formatCompactionSummary(result);
+    if (!ctx.showCompactionResult(line)) ctx.renderInfoMessage("Compact", [["result", line]]);
     return;
   }
   ctx.renderInfoMessage("Compact", [["result", result.message]]);

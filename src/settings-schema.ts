@@ -9,6 +9,7 @@ import {
 } from "./llm/models";
 import { healPerToolMap, type ApprovalSettings, DEFAULT_APPROVAL_SETTINGS } from "./agent/approval";
 
+import { isShippedSystemPrompt } from "./agent/past-default-prompts";
 import { DEFAULT_SYSTEM_PROMPT } from "./agent/system-prompt";
 import { isRecord } from "./utils/records";
 import { DEFAULT_PLUGIN_SETTINGS, healPluginMcpState, type PluginSettings } from "./plugins/settings";
@@ -457,7 +458,8 @@ export function retiredSettingsNotices(stored: unknown): string[] {
   if (
     typeof systemPrompt === "string" &&
     systemPrompt.trim() &&
-    systemPrompt.trim() !== DEFAULT_SYSTEM_PROMPT.trim()
+    systemPrompt.trim() !== DEFAULT_SYSTEM_PROMPT.trim() &&
+    !isShippedSystemPrompt(systemPrompt)
   ) {
     notices.push(
       "The custom System prompt setting was removed in this version. It was not copied automatically: " +
