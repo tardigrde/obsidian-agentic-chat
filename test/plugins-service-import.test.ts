@@ -17,7 +17,6 @@ function settings(overrides: Partial<AgenticChatSettings> = {}): AgenticChatSett
   return {
     ...DEFAULT_SETTINGS,
     plugins: { ...DEFAULT_SETTINGS.plugins, enabled: {} },
-    mcp: { ...DEFAULT_SETTINGS.mcp, servers: [] },
     ...overrides,
   };
 }
@@ -139,8 +138,6 @@ describe("PluginService.installFromTree", () => {
     const id = pluginMcpServerId("docs-helper", "files");
     expect(current.plugins.mcpState[id]?.enabled).toBe(false);
     expect(current.plugins.mcpState[id]).toBeDefined();
-    // Legacy location must no longer be used for plugin servers
-    expect(current.mcp.servers.find((s) => s.source === "plugin")).toBeUndefined();
   });
 
   it("re-importing the same name updates the package in place", async () => {
@@ -346,7 +343,7 @@ describe("PluginService.installFromSource", () => {
     expect(result.name).toBe("rootly");
     expect(JSON.parse(vault.contentOf(".agentic-plugins/rootly/plugin.json") as string)).toEqual(manifest);
     expect(current.plugins.sources["rootly"]).toBe("github:owner/repo");
-    expect(current.mcp.servers).toHaveLength(0);
+    expect(current.plugins.mcpState).toEqual({});
   });
 
   it("rejects HTTP failures instead of installing error pages", async () => {
@@ -402,7 +399,7 @@ describe("PluginService.removePackage", () => {
 
     await service.removePackage("docs-helper", ".agentic-plugins/docs-helper");
     expect(app.vault.getAbstractFileByPath(".agentic-plugins/docs-helper")).toBeNull();
-    expect(current.mcp.servers.filter((s) => s.source === "plugin")).toHaveLength(0);
+    expect(current.plugins.mcpState).toEqual({});
     expect(current.plugins.sources["docs-helper"]).toBeUndefined();
   });
 

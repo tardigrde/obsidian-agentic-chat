@@ -67,7 +67,6 @@ async function configurePlugin(): Promise<boolean> {
     };
     settings.provider = "openrouter";
     settings.openrouterApiKey = "e2e-scripted-key";
-    settings.mode = "safe";
     settings.approval.mutating = "ask";
     settings.approval.perTool = {};
     settings.web.enabled = false;

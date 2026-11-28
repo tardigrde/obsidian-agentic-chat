@@ -79,9 +79,8 @@ interface MigrationState {
     openaiCompatibleBaseUrl: string;
     openaiCompatibleApiKey: string;
     openaiCompatibleModel: string;
-    mode: string;
     approval: { mutating: string; perTool: Record<string, string> };
-    web: { enabled: boolean; searchProvider: string; searchApiKey: string; searxngUrl: string; maxResults: number; fetchCharLimit: number };
+    web: { enabled: boolean; searchProvider: string; searchApiKey: string; searxngUrl: string };
     observability: {
       enabled: boolean;
       backend: string;
@@ -96,27 +95,6 @@ interface MigrationState {
       enabled: boolean;
       proxyUrl: string;
       noProxy: string;
-      servers: Array<{
-        id: string;
-        name: string;
-        url: string;
-        authType: string;
-        authHeaderValueSecretId: string;
-        authHeaderValue: string;
-        approval: string;
-        knownTools: Array<{ name: string; localName?: string; title: string; readOnlyHint: boolean }>;
-        oauth: {
-          clientId: string;
-          clientSecretSecretId: string;
-          clientSecret: string;
-          accessTokenSecretId: string;
-          accessToken: string;
-          refreshTokenSecretId: string;
-          refreshToken: string;
-          expiresAt: number;
-          scope: string;
-        };
-      }>;
     };
   };
   stored: Record<string, unknown>;
@@ -206,7 +184,7 @@ describe("agentic-chat settings migration", function () {
     expect(state.settings.openaiCompatibleBaseUrl).toBe("https://legacy-gateway.example/api");
     expect(state.settings.openaiCompatibleApiKey).toBe("legacy-openai-compatible-key");
     expect(state.settings.openaiCompatibleModel).toBe("legacy/model");
-    expect(state.settings.mode).toBe("safe");
+    expect("mode" in state.settings).toBe(false);
     expect(state.settings.approval).toMatchObject({
       mutating: "ask",
       perTool: { write: "allow" },
@@ -218,9 +196,9 @@ describe("agentic-chat settings migration", function () {
       searchProvider: "searxng",
       searchApiKey: "legacy-web-key",
       searxngUrl: "https://search.example.com",
-      maxResults: 8,
-      fetchCharLimit: 15_000,
     });
+    expect("maxResults" in state.settings.web).toBe(false);
+    expect("fetchCharLimit" in state.settings.web).toBe(false);
     expect(state.settings.observability).toMatchObject({
       enabled: true,
       backend: "langfuse",
@@ -232,31 +210,12 @@ describe("agentic-chat settings migration", function () {
       authHeaderValue: "Bearer legacy-otel",
     });
 
-    const server = state.settings.mcp.servers[0];
+    // A legacy user server is not migrated into a package; its secret must not
+    // be copied into storage either.
     expect(state.settings.mcp.enabled).toBe(true);
     expect(state.settings.mcp.proxyUrl).toBe("http://proxy.example.com:8080/");
     expect(state.settings.mcp.noProxy).toBe("localhost,*.example.com");
-    expect(server).toMatchObject({
-      id: "docs",
-      name: "Docs MCP",
-      url: "https://docs.example.com/mcp",
-      authType: "bearer",
-      authHeaderValueSecretId: SECRET_IDS.mcpAuth,
-      authHeaderValue: "legacy-mcp-token",
-      approval: "allow",
-      knownTools: [{ name: "search", title: "Search docs", readOnlyHint: true }],
-    });
-    expect(server.oauth).toMatchObject({
-      clientId: "legacy-client",
-      clientSecretSecretId: SECRET_IDS.mcpClientSecret,
-      clientSecret: "legacy-client-secret",
-      accessTokenSecretId: SECRET_IDS.mcpAccessToken,
-      accessToken: "legacy-access-token",
-      refreshTokenSecretId: SECRET_IDS.mcpRefreshToken,
-      refreshToken: "legacy-refresh-token",
-      expiresAt: 123,
-      scope: "docs.read",
-    });
+    expect("servers" in state.settings.mcp).toBe(false);
 
     expect(state.secrets[SECRET_IDS.openrouter]).toBe("legacy-openrouter-key");
     expect(state.secrets[SECRET_IDS.openaiCompatible]).toBe("legacy-openai-compatible-key");
@@ -264,10 +223,10 @@ describe("agentic-chat settings migration", function () {
     expect(state.secrets[SECRET_IDS.langfusePublic]).toBe("legacy-lf-public");
     expect(state.secrets[SECRET_IDS.langfuseSecret]).toBe("legacy-lf-secret");
     expect(state.secrets[SECRET_IDS.obsAuth]).toBe("Bearer legacy-otel");
-    expect(state.secrets[SECRET_IDS.mcpAuth]).toBe("legacy-mcp-token");
-    expect(state.secrets[SECRET_IDS.mcpClientSecret]).toBe("legacy-client-secret");
-    expect(state.secrets[SECRET_IDS.mcpAccessToken]).toBe("legacy-access-token");
-    expect(state.secrets[SECRET_IDS.mcpRefreshToken]).toBe("legacy-refresh-token");
+    expect(state.secrets[SECRET_IDS.mcpAuth]).toBe("");
+    expect(state.secrets[SECRET_IDS.mcpClientSecret]).toBe("");
+    expect(state.secrets[SECRET_IDS.mcpAccessToken]).toBe("");
+    expect(state.secrets[SECRET_IDS.mcpRefreshToken]).toBe("");
 
     expect(state.stored.openrouterApiKey).toBeUndefined();
     expect(state.stored.openaiCompatibleApiKey).toBeUndefined();
@@ -286,16 +245,9 @@ describe("agentic-chat settings migration", function () {
     expect("langfuseSecretKey" in storedObs).toBe(false);
     expect("authHeaderValue" in storedObs).toBe(false);
     const storedMcp = objectAt(state.stored, "mcp");
-    const storedServer = (storedMcp.servers as Array<Record<string, unknown>>)[0];
-    expect(storedServer.authHeaderValue).toBeUndefined();
-    expect("authHeaderValue" in storedServer).toBe(false);
-    const storedOAuth = objectAt(storedServer, "oauth");
-    expect(storedOAuth.clientSecret).toBeUndefined();
-    expect(storedOAuth.accessToken).toBeUndefined();
-    expect(storedOAuth.refreshToken).toBeUndefined();
-    expect("clientSecret" in storedOAuth).toBe(false);
-    expect("accessToken" in storedOAuth).toBe(false);
-    expect("refreshToken" in storedOAuth).toBe(false);
+    expect("servers" in storedMcp).toBe(false);
+    expect(JSON.stringify(state.stored)).not.toContain("legacy-mcp-token");
+    expect(JSON.stringify(state.stored)).not.toContain("legacy-client-secret");
 
     await browser.executeObsidianCommand("agentic-chat:open-chat");
     await $('[data-ac="view"]').waitForExist();

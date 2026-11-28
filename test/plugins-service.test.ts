@@ -20,7 +20,6 @@ function settings(overrides: Partial<AgenticChatSettings> = {}): AgenticChatSett
   return {
     ...DEFAULT_SETTINGS,
     plugins: { ...DEFAULT_SETTINGS.plugins, enabled: {} },
-    mcp: { ...DEFAULT_SETTINGS.mcp, servers: [] },
     ...overrides,
   };
 }
@@ -123,10 +122,10 @@ describe("plugin enable defaults", () => {
 
   it("notifies once per service instance for packages found without an enable record", async () => {
     const app = await seed();
-    await app.vault.createFolder(".agentic-plugins/found");
+    await app.vault.createFolder(".agentic-plugins/legacy-notes");
     await app.vault.create(
-      ".agentic-plugins/found/plugin.json",
-      JSON.stringify({ $schema: AGENT_PLUGINS_SCHEMA_ID, name: "found", version: "1.0.0", description: "Found" }),
+      ".agentic-plugins/legacy-notes/plugin.json",
+      JSON.stringify({ $schema: AGENT_PLUGINS_SCHEMA_ID, name: "legacy-notes", version: "1.0.0", description: "Found" }),
     );
     const current = settings();
     const service = serviceFor(app, current);
@@ -135,7 +134,7 @@ describe("plugin enable defaults", () => {
     await service.reload();
     await service.reload();
     const messages = Notice.instances.map((notice) => notice.message);
-    expect(messages.filter((message) => message.includes("found"))).toHaveLength(1);
+    expect(messages.filter((message) => message.includes("legacy-notes"))).toHaveLength(1);
   });
 });
 

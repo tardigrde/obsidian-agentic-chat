@@ -26,10 +26,6 @@ type CompatibleCapturedCall = CapturedCall & {
 function settings(overrides: Partial<AgenticChatSettings> = {}): AgenticChatSettings {
   return {
     ...DEFAULT_SETTINGS,
-    temperature: 0.7,
-    maxTokens: 64,
-    requestTimeoutMs: 12_345,
-    maxNetworkRetries: 3,
     ...overrides,
   };
 }
@@ -66,7 +62,7 @@ describe("AgentStreamRuntime", () => {
     expect(runtime.buildStreamFn()).toBe(injected);
   });
 
-  it("maps settings into stream options and lets caller headers override defaults", () => {
+  it("maps the fixed sampling defaults into stream options and lets caller headers override defaults", () => {
     const calls: CapturedCall[] = [];
     const streamSimpleFn: StreamSimpleFn = (model, context, options) => {
       calls.push({ model, context, options });
@@ -79,21 +75,18 @@ describe("AgentStreamRuntime", () => {
     void runtime.buildStreamFn()(openRouterModel(), context, {
       apiKey: "test-key",
       signal,
-      temperature: 0.1,
-      maxTokens: 1,
       headers: { "X-Title": "Custom Title", "X-Extra": "1" },
     });
 
     expect(calls).toHaveLength(1);
     expect(calls[0].context).toBe(context);
     // StreamSimple path is wrapped with harness retry: inner receives maxRetries 0 so the
-    // harness (not pi-ai) owns backoff+jitter+Retry-After. Outer setting still 3 retries.
+    // harness (not pi-ai) owns backoff+jitter+Retry-After.
     expect(calls[0].options).toMatchObject({
       apiKey: "test-key",
       signal,
-      temperature: 0.7,
-      maxTokens: 64,
-      timeoutMs: 12_345,
+      temperature: 0.3,
+      timeoutMs: 90_000,
       maxRetries: 0,
       headers: {
         "HTTP-Referer": "https://github.com/tardigrde/obsidian-agentic-chat",
@@ -103,13 +96,13 @@ describe("AgentStreamRuntime", () => {
     });
   });
 
-  it("omits maxTokens when the setting delegates output length to the provider", () => {
+  it("omits maxTokens so the provider decides output length", () => {
     const calls: CapturedCall[] = [];
     const streamSimpleFn: StreamSimpleFn = (model, context, options) => {
       calls.push({ model, context, options });
       return stream();
     };
-    const runtime = new AgentStreamRuntime({ getSettings: () => settings({ maxTokens: 0 }), streamSimpleFn });
+    const runtime = new AgentStreamRuntime({ getSettings: () => settings(), streamSimpleFn });
 
     void runtime.buildStreamFn()(openRouterModel(), normalizeContext({ messages: [] }));
 
@@ -139,7 +132,7 @@ describe("AgentStreamRuntime", () => {
     expect(simpleCalls).toHaveLength(0);
     expect(compatibleCalls).toHaveLength(1);
     expect(compatibleCalls[0].context).toBe(context);
-    expect(compatibleCalls[0].options).toMatchObject({ apiKey: "test-key", temperature: 0.7 });
+    expect(compatibleCalls[0].options).toMatchObject({ apiKey: "test-key", temperature: 0.3 });
     expect(compatibleCalls[0].requester).toBeUndefined();
   });
 

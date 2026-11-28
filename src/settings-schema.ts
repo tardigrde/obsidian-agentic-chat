@@ -8,12 +8,12 @@ import {
   type ProviderId,
 } from "./llm/models";
 import { healPerToolMap, type ApprovalSettings, DEFAULT_APPROVAL_SETTINGS } from "./agent/approval";
-import { type AgentMode, DEFAULT_MODE, healMode } from "./agent/modes";
+
 import { DEFAULT_SYSTEM_PROMPT } from "./agent/system-prompt";
 import { isRecord } from "./utils/records";
 import { DEFAULT_PLUGIN_SETTINGS, healPluginMcpState, type PluginSettings } from "./plugins/settings";
 import { DEFAULT_PLUGINS_FOLDER } from "./plugins/loader";
-import { healMcpSettings, mcpServerStateFromServer, type McpSettings } from "./mcp/settings";
+import { healMcpSettings, type McpSettings } from "./mcp/settings";
 import { WEB_SEARCH_PROVIDERS, type WebSearchProvider } from "./tools/web-search";
 import {
   OPENAI_COMPATIBLE_API_KEY_SECRET_ID,
@@ -33,14 +33,35 @@ import {
   type ObservabilitySettings,
 } from "./observability/settings";
 
+/** The data.json format this build reads and writes. */
+export const CURRENT_SETTINGS_VERSION = 1;
+
+/** Sampling defaults that are no longer user settings. */
+export const DEFAULT_TEMPERATURE = 0.3;
+export const DEFAULT_MAX_TOKENS = 0;
+export const DEFAULT_REQUEST_TIMEOUT_MS = 90_000;
+export const DEFAULT_MAX_NETWORK_RETRIES = 2;
+export const DEFAULT_COMPACTION_THRESHOLD_PERCENT = 80;
+export const DEFAULT_WEB_MAX_RESULTS = 5;
+export const DEFAULT_WEB_FETCH_CHAR_LIMIT = 10_000;
+
+/** A data.json written by a newer build must never be replaced with defaults. */
+export class SettingsVersionError extends Error {
+  constructor(readonly version: number) {
+    super(
+      `Your Agentic Chat settings use format ${version} from a newer version of Agentic Chat, but this build supports ${CURRENT_SETTINGS_VERSION}. ` +
+        "Update the plugin to change settings. The file was left unchanged.",
+    );
+    this.name = "SettingsVersionError";
+  }
+}
+
 /** Subagents that run at once by default; the rest queue. */
 export const DEFAULT_PARALLEL_SUBAGENTS = 10;
-/** Bounds for the parallel-subagent setting. */
-export const MIN_PARALLEL_SUBAGENTS = 1;
-export const MAX_PARALLEL_SUBAGENTS = 20;
-
 
 export interface AgenticChatSettings {
+  /** data.json schema version; see {@link CURRENT_SETTINGS_VERSION}. */
+  settingsVersion: number;
   provider: ProviderId;
   /** Secret id in Obsidian secretStorage. */
   openrouterApiKeySecretId: string;
@@ -72,23 +93,10 @@ export interface AgenticChatSettings {
   openaiCompatibleContextWindow: number;
   /** Reasoning effort for your messages, set via the composer knob or `/effort`. */
   thinkingLevel: ThinkingLevel;
-  temperature: number;
-  /** 0 means "let the provider decide". */
-  maxTokens: number;
-  requestTimeoutMs: number;
-  maxNetworkRetries: number;
-  systemPrompt: string;
-  /**
-   * Session permission posture: `safe` honors the approval policy, `yolo` auto-approves
-   * mutating tools.
-   */
-  mode: AgentMode;
   privacy: PrivacySettings;
   approval: ApprovalSettings;
   /** Agent Plugins packages loaded from a vault folder. */
   plugins: PluginSettings;
-  /** Subagents that run at once in one turn; the rest queue (U4). */
-  maxParallelSubagents: number;
   /**
    * Newline-separated gitignore-style globs the agent may never read or see.
    * Enforced at the tool layer; matched files are invisible, not just denied.
@@ -133,10 +141,6 @@ export interface WebSettings {
   searchApiKey: string;
   /** Base URL of a self-hosted SearXNG instance (used only when provider is SearXNG). */
   searxngUrl: string;
-  /** Default number of search results to return (1–10). */
-  maxResults: number;
-  /** Default cap on characters of fetched page text returned to the model. */
-  fetchCharLimit: number;
   /** Comma-separated host suffixes for fetch_url allowlist; empty allows all public hosts. */
   allowedHosts: string;
 }
@@ -144,8 +148,6 @@ export interface WebSettings {
 export interface CompactionSettings {
   /** Summarize old turns automatically as the context window fills. */
   enabled: boolean;
-  /** Context fill percent (50–95) at which compaction triggers. */
-  thresholdPercent: number;
 }
 
 export interface NotificationSettings {
@@ -160,6 +162,7 @@ export interface NotificationSettings {
 export const THINKING_LEVELS: ThinkingLevel[] = ["off", "minimal", "low", "medium", "high", "xhigh"];
 
 export const DEFAULT_SETTINGS: AgenticChatSettings = {
+  settingsVersion: CURRENT_SETTINGS_VERSION,
   provider: "openrouter",
   openrouterApiKeySecretId: OPENROUTER_API_KEY_SECRET_ID,
   openrouterApiKey: "",
@@ -172,21 +175,14 @@ export const DEFAULT_SETTINGS: AgenticChatSettings = {
   openaiCompatibleModel: "",
   openaiCompatibleContextWindow: 0,
   thinkingLevel: "off",
-  temperature: 0.3,
-  maxTokens: 0,
-  requestTimeoutMs: 90_000,
-  maxNetworkRetries: 2,
-  systemPrompt: DEFAULT_SYSTEM_PROMPT,
-  mode: DEFAULT_MODE,
   // Strongest privacy out of the box: zero data retention, no prompt
   // logging/training, and any fallback provider must also satisfy both.
   privacy: { denyDataCollection: true, requireZDR: true, allowFallbacks: true },
   approval: DEFAULT_APPROVAL_SETTINGS,
   plugins: DEFAULT_PLUGIN_SETTINGS,
-  maxParallelSubagents: DEFAULT_PARALLEL_SUBAGENTS,
   ignoredGlobs: "",
   notifications: { enabled: true, costAlertUsd: 0, costCapUsd: 0 },
-  compaction: { enabled: true, thresholdPercent: 80 },
+  compaction: { enabled: true },
   network: { ...DEFAULT_PROXY_SETTINGS },
   web: {
     enabled: false,
@@ -194,47 +190,71 @@ export const DEFAULT_SETTINGS: AgenticChatSettings = {
     searchApiKeySecretId: WEB_SEARCH_API_KEY_SECRET_ID,
     searchApiKey: "",
     searxngUrl: "",
-    maxResults: 5,
-    fetchCharLimit: 10_000,
     allowedHosts: "",
   },
   mcp: {
     enabled: false,
     ...DEFAULT_PROXY_SETTINGS,
-    servers: [],
   },
   observability: DEFAULT_OBSERVABILITY_SETTINGS,
 };
 
-/** Upper bound for "Max response tokens": above every model's output limit, below absurd. */
-export const MAX_RESPONSE_TOKENS = 1_000_000;
-
 /**
  * Numeric leaves the settings UI bounds. A persisted value outside its range is
- * treated like a wrong type and falls back to the default. Fields with a
- * dedicated heal (parallel subagents, sampling) keep their own policy.
+ * treated like a wrong type and falls back to the default.
  */
 const SETTING_NUMBER_RANGES: Readonly<Record<string, readonly [number, number]>> = {
-  temperature: [0, 2],
-  maxTokens: [0, MAX_RESPONSE_TOKENS],
-  requestTimeoutMs: [5_000, Number.POSITIVE_INFINITY],
-  maxNetworkRetries: [0, 5],
   "notifications.costAlertUsd": [0, Number.POSITIVE_INFINITY],
   "notifications.costCapUsd": [0, Number.POSITIVE_INFINITY],
-  "compaction.thresholdPercent": [50, 95],
-  "web.maxResults": [1, 10],
-  "web.fetchCharLimit": [500, Number.POSITIVE_INFINITY],
 };
+
+/** Version of a stored data.json; pre-versioning files are format 1. */
+export function settingsVersionOf(stored: unknown): number {
+  if (!isRecord(stored)) return 1;
+  const version = stored.settingsVersion;
+  if (typeof version !== "number" || !Number.isFinite(version)) return 1;
+  return Math.trunc(version);
+}
+
+/**
+ * A URL safe to put in a user-visible notice: drop userinfo, query, and hash,
+ * which can carry credentials or tokens. The host and path still identify it.
+ */
+export function noticeSafeUrl(value: string): string {
+  try {
+    const url = new URL(value);
+    url.username = "";
+    url.password = "";
+    url.search = "";
+    url.hash = "";
+    return url.toString();
+  } catch {
+    return "(invalid URL)";
+  }
+}
+
+type SettingsMigration = (stored: Record<string, unknown>) => Record<string, unknown>;
+
+/**
+ * Older data.json formats migrate here, one step per version. Empty today:
+ * version 1 is the first stamped format.
+ */
+const SETTINGS_MIGRATIONS: Readonly<Record<number, SettingsMigration>> = {};
 
 /** Merge stored settings over defaults, healing nested objects. */
 export function mergeSettings(stored: Partial<AgenticChatSettings> | null | undefined): AgenticChatSettings {
+  const version = settingsVersionOf(stored);
+  if (version > CURRENT_SETTINGS_VERSION) throw new SettingsVersionError(version);
+  const migrated = migrateSettings(stored, version);
+  stored = migrated;
   const remaining = dropRetiredSettingKeys(stored);
+  stored = remaining;
   const healedMcp = healMcpSettings(sanitizeProxyLeaves(stored?.mcp));
   const healedPlugins = healPluginSettings(stored?.plugins);
-  migrateLegacyPluginServers(healedMcp, healedPlugins);
   const merged: AgenticChatSettings = {
     ...DEFAULT_SETTINGS,
     ...remaining,
+    settingsVersion: CURRENT_SETTINGS_VERSION,
     // Plaintext secret keys are never read from persisted data once loaded;
     // migrateLegacyPlaintextSecrets() moves legacy values to secretStorage
     // before merge, and hydrateSettingsSecrets() fills the runtime cache.
@@ -248,7 +268,6 @@ export function mergeSettings(stored: Partial<AgenticChatSettings> | null | unde
       stored?.openaiCompatibleApiKeySecretId,
       OPENAI_COMPATIBLE_API_KEY_SECRET_ID,
     ),
-    mode: healMode(stored?.mode),
     openaiCompatibleContextWindow: healContextWindow(stored?.openaiCompatibleContextWindow),
     privacy: { ...DEFAULT_SETTINGS.privacy, ...(stored?.privacy ?? {}) },
     approval: healApprovalSettings(stored?.approval),
@@ -268,12 +287,24 @@ export function mergeSettings(stored: Partial<AgenticChatSettings> | null | unde
     },
     mcp: healedMcp,
     plugins: healedPlugins,
-    maxParallelSubagents: healParallelSubagents(stored?.maxParallelSubagents),
     observability: healObservabilitySettings(sanitizeProxyLeaves(stored?.observability)),
   };
   // Last pass: a persisted leaf whose type (or UI-bounded number) is invalid
   // falls back to the default, including leaves no dedicated heal covers yet.
   return healPrimitiveLeaves(merged, DEFAULT_SETTINGS);
+}
+
+function migrateSettings(
+  stored: Record<string, unknown> | null | undefined,
+  fromVersion: number,
+): Record<string, unknown> | null | undefined {
+  if (!stored) return stored;
+  let migrated = stored;
+  for (let version = fromVersion; version < CURRENT_SETTINGS_VERSION; version += 1) {
+    const migration = SETTINGS_MIGRATIONS[version];
+    if (migration) migrated = migration(migrated);
+  }
+  return migrated;
 }
 
 function stringSetting(value: unknown, fallback: string): string {
@@ -330,11 +361,9 @@ function healPrimitiveLeaves<T>(value: T, fallback: unknown, path = ""): T {
 function dropRetiredSettingKeys(
   stored: Partial<AgenticChatSettings> | null | undefined,
 ): Partial<AgenticChatSettings> {
-  const remaining = { ...(stored ?? {}) };
-  const retiredKeys = RETIRED_SETTING_KEYS.filter((key) => key in remaining);
-  for (const key of retiredKeys) {
-    delete (remaining as Record<string, unknown>)[key];
-  }
+  // A data.json that is not an object (a string, a number) heals to defaults.
+  const remaining = structuredClone(isRecord(stored) ? stored : {}) as Record<string, unknown>;
+  const retiredKeys = RETIRED_SETTING_KEYS.filter((key) => deleteSettingPath(remaining, key));
   // Make the silent drop of hand-authored config visible (until the next save).
   if (retiredKeys.length > 0) {
     console.warn(`Agentic chat: dropped retired setting(s): ${retiredKeys.join(", ")}.`);
@@ -342,29 +371,19 @@ function dropRetiredSettingKeys(
   return remaining;
 }
 
-/**
- * One-time migration S10: legacy plugin servers persisted in mcp.servers → plugins.mcpState map.
- * Client state (enabled/approval/auth/knownTools/oauth) moves by stable id; shape stays in mcp.json.
- * User servers (source=user) stay in mcp.servers for backward compat until they are re-created as plugins.
- */
-function migrateLegacyPluginServers(healedMcp: McpSettings, healedPlugins: PluginSettings): void {
-  if (healedMcp.servers.length === 0) return;
-  let migrated = false;
-  const remainingServers: McpSettings["servers"] = [];
-  for (const server of healedMcp.servers) {
-    if (server.source !== "plugin") {
-      remainingServers.push(server);
-      continue;
-    }
-    // Move client state once; an already-migrated copy is dropped to avoid divergence.
-    if (!healedPlugins.mcpState[server.id]) {
-      healedPlugins.mcpState[server.id] = mcpServerStateFromServer(server);
-    }
-    migrated = true;
+/** Delete one dotted settings path; true when the leaf existed. */
+function deleteSettingPath(target: Record<string, unknown>, key: string): boolean {
+  const parts = key.split(".");
+  let parent = target;
+  for (const part of parts.slice(0, -1)) {
+    const next = parent[part];
+    if (!next || typeof next !== "object" || Array.isArray(next)) return false;
+    parent = next as Record<string, unknown>;
   }
-  if (migrated) {
-    healedMcp.servers = remainingServers;
-  }
+  const leaf = parts[parts.length - 1];
+  if (!(leaf in parent)) return false;
+  delete parent[leaf];
+  return true;
 }
 
 /** Retired feature keys removed from persisted data.json on load. */
@@ -377,6 +396,16 @@ const RETIRED_SETTING_KEYS = [
   "toolBudget",
   "maxTurnsPerPrompt",
   "subagentTimeoutSeconds",
+  "mode",
+  "temperature",
+  "maxTokens",
+  "requestTimeoutMs",
+  "maxNetworkRetries",
+  "systemPrompt",
+  "maxParallelSubagents",
+  "compaction.thresholdPercent",
+  "web.maxResults",
+  "web.fetchCharLimit",
 ] as const;
 
 /**
@@ -424,6 +453,17 @@ export function retiredSettingsNotices(stored: unknown): string[] {
   if (typeof mode === "string" && Object.prototype.hasOwnProperty.call(RETIRED_MODE_LABELS, mode)) {
     notices.push(`${RETIRED_MODE_LABELS[mode]} mode was removed in this version. Agentic Chat now starts in Safe mode.`);
   }
+  const systemPrompt = stored.systemPrompt;
+  if (
+    typeof systemPrompt === "string" &&
+    systemPrompt.trim() &&
+    systemPrompt.trim() !== DEFAULT_SYSTEM_PROMPT.trim()
+  ) {
+    notices.push(
+      "The custom System prompt setting was removed in this version. It was not copied automatically: " +
+        "put the prompt you want in AGENTS.md at the vault root.",
+    );
+  }
   const style = stored.outputStyle;
   if (typeof style === "string" && style !== "default") {
     notices.push(
@@ -433,15 +473,21 @@ export function retiredSettingsNotices(stored: unknown): string[] {
   if (isRecord(stored.embeddings) && stored.embeddings.enabled === true) {
     notices.push("The semantic index was removed in this version. No tool read it. The agent uses vault search.");
   }
+  const mcp = stored.mcp;
+  if (isRecord(mcp) && Array.isArray(mcp.servers)) {
+    for (const server of mcp.servers) {
+      if (!isRecord(server) || server.source === "plugin") continue;
+      const name = typeof server.name === "string" && server.name.trim() ? server.name.trim() : "Unnamed server";
+      const url = typeof server.url === "string" && server.url.trim() ? noticeSafeUrl(server.url.trim()) : "(no URL)";
+      notices.push(
+        `The MCP server "${name}" (${url}) was not carried over: server endpoints now live in plugin packages. ` +
+          "Add it again in Settings → Advanced → MCP.",
+      );
+    }
+  }
   return notices;
 }
 
-
-/** Heal the parallel-subagent setting: a whole number in [1, 20], default 10. */
-export function healParallelSubagents(value: unknown): number {
-  if (typeof value !== "number" || !Number.isFinite(value)) return DEFAULT_PARALLEL_SUBAGENTS;
-  return Math.min(Math.max(MIN_PARALLEL_SUBAGENTS, Math.trunc(value)), MAX_PARALLEL_SUBAGENTS);
-}
 
 /** Heal the context-window override: 0 = auto-detect, otherwise a positive integer. */
 function healContextWindow(value: unknown): number {

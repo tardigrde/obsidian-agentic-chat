@@ -67,7 +67,7 @@ await clickMcpAddButton("Add MCP server");
 | Tool allowlist/denylist | `src/settings-mcp-section.ts#mcpToolFilterDefinitions` | `test/mcp-tools.test.ts#filters discovered tools by enabled/disabled globs before registration` (unit only) | `partial` |
 | Per-tool MCP approvals | `src/settings-mcp-section.ts#mcpToolApprovalDefinitions` | no committed check | `NONE` |
 | Setup guide and Copy config removed (U7 #7) | `src/settings-mcp-section.ts#mcpServerDefinitions` | `test/e2e/specs/settings-ui.e2e.ts#generates a plugin package and persists its MCP server through the Advanced tab` (asserts no "Copy config") | `covered` |
-| MCP settings: Network (advanced), proxy rows last (U7 #6) | `src/settings-mcp-section.ts#"Network (advanced)"` | `test/settings-definitions.test.ts#rebuilds the MCP section when MCP is enabled and servers change` (order; unit only) | `partial` |
+| MCP settings: Network (advanced), proxy rows last (U7 #6) | `src/settings-mcp-section.ts#"Network (advanced)"` | `test/settings-definitions.test.ts#rebuilds the MCP section when MCP is enabled` (order; unit only) | `partial` |
 | One card per server, Advanced fold closed by default, long text wraps (U7 #6, #8) | `src/settings-mcp-section.ts#agentic-chat-mcp-card` | `test/e2e/specs/mobile-viewport.e2e.ts#keeps the settings tab UI usable at phone width` | `covered` |
 | Server Remove: asks first, removes a one-server package; hidden for a shared package (U7 #5) | `src/settings-mcp-section.ts#soleServerPackage` | `test/e2e/specs/settings-mcp-dynamic.e2e.ts#adds a server, tests it, and removes its package` | `covered` |
 | A bare 401 with well-known OAuth metadata flags OAuth (U7 #11) | `src/mcp/client.ts#probeProtectedResourceMetadataUrl` | `test/mcp-client.test.ts#flags OAuth when a bare 401 server publishes protected-resource metadata` (unit only) | `partial` |
@@ -85,13 +85,16 @@ await clickMcpAddButton("Add MCP server");
 | MCP server: Auth header | `src/settings-mcp-section.ts#row("Auth header"` | `test/e2e/specs/settings-ui.e2e.ts#generates a plugin package and persists its MCP server through the Advanced tab` | `covered` |
 | MCP server: OAuth status | `src/settings-mcp-section.ts#row("OAuth status"` | no committed check | `NONE` |
 | MCP server: OAuth client id | `src/settings-mcp-section.ts#row("OAuth client id"` | no committed check | `NONE` |
+| Legacy user server on upgrade: one notice with its name and URL, no secret | `src/settings-schema.ts#retiredSettingsNotices` | `test/settings.test.ts#drops the retired mcp.servers list and keeps only proxy settings` (unit only) | `partial` |
 
 ## Gotchas
 
 - The plugin supports HTTPS Streamable HTTP for routable hosts. It allows plain
   HTTP only for loopback. stdio and subprocess servers are out of scope.
 - Adding a server writes a plugin package. The package defines the endpoint
-  after creation. Editing `settings.mcp.servers` directly is a legacy path.
+  after creation. There is no `settings.mcp.servers`; an older user server is
+  reported by name and URL on upgrade (never its secret) and must be added again.
+- Client state lives in `plugins.mcpState`; package shape lives in `mcp.json`.
 - See [Settings](./settings.md) for the **Install plugin…** modal.
 - Imported MCP servers start disabled. Enable them after install.
 - The settings window is a popout. Query its window handle.

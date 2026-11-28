@@ -35,11 +35,12 @@ it("captures data.json and a session JSONL", async () => {
   settings.openrouterApiKey = FAKE_KEY;
   if ("mode" in settings) settings.mode = "plan";
   if ("workingDirs" in settings.approval) settings.approval.workingDirs = ["Projects", "Journal"];
-  // Non-default choices the upgrade test asserts survive the load (#284 class).
-  settings.temperature = 0.7;
-  settings.maxNetworkRetries = 4;
-  settings.requestTimeoutMs = 45_000;
-  settings.systemPrompt = "Fixture system prompt.";
+  // Non-default choices the release had. Newer releases retire some of these;
+  // only write the keys that release still has.
+  if ("temperature" in settings) settings.temperature = 0.7;
+  if ("maxNetworkRetries" in settings) settings.maxNetworkRetries = 4;
+  if ("requestTimeoutMs" in settings) settings.requestTimeoutMs = 45_000;
+  if ("systemPrompt" in settings) settings.systemPrompt = "Fixture system prompt.";
   const store = new secrets.MemorySecretStore();
   const persisted = secrets.settingsForStorage(settings as never, store);
   writeFileSync(path.join(OUT, "data.json"), `${JSON.stringify(persisted, null, 2)}\n`);

@@ -3,7 +3,7 @@ import type { App } from "obsidian";
 import { Agent, type AgentTool, type StreamFn } from "@earendil-works/pi-agent-core";
 import type { Usage } from "@earendil-works/pi-ai";
 import type { ToolArtifactStoreLike } from "../artifacts/tool-artifact-store";
-import { activeModelConfig, apiKeyForProvider } from "../settings-schema";
+import { activeModelConfig, apiKeyForProvider, DEFAULT_PARALLEL_SUBAGENTS } from "../settings-schema";
 import type { AgenticChatSettings } from "../settings-schema";
 import { buildModel, type ModelConfig } from "../llm/models";
 import { MUTATING_TOOLS } from "../tools/tool-contracts";
@@ -13,7 +13,7 @@ import { createWebTools } from "../tools/web-tools";
 import type { WebFetcher } from "../tools/web-fetch";
 import { createArtifactTool } from "../artifacts/tool-artifact-tools";
 import { ReadMemo } from "../vault/read-memo";
-import { resolveModePolicy } from "./modes";
+import { type AgentMode, DEFAULT_MODE, resolveModePolicy } from "./modes";
 import type { AgentRuntimeResources } from "./runtime-resources";
 import { CHILD_PROMPT_OPENING, type AgentRole } from "./subagents";
 import type { AfterToolCallContext, AgentToolCallController, BeforeToolCallContext } from "./tool-call-controller";
@@ -21,6 +21,8 @@ import type { AfterToolCallContext, AgentToolCallController, BeforeToolCallConte
 export interface SubagentRuntimeOptions {
   app: App;
   getSettings: () => AgenticChatSettings;
+  /** Shared runtime posture; defaults to Safe for headless runtimes. */
+  getMode?: () => AgentMode;
   getResources: () => AgentRuntimeResources;
   buildStreamFn: () => StreamFn;
   recordUsage: (usage: Usage, dispatchId: string) => void;
@@ -39,6 +41,7 @@ export interface SubagentRuntimeOptions {
 export class AgentSubagentRuntime {
   private readonly app: App;
   private readonly getSettings: () => AgenticChatSettings;
+  private readonly getMode: () => AgentMode;
   private readonly getResources: () => AgentRuntimeResources;
   private readonly buildStreamFn: () => StreamFn;
   private readonly recordUsage: (usage: Usage, dispatchId: string) => void;
@@ -53,6 +56,7 @@ export class AgentSubagentRuntime {
   constructor(options: SubagentRuntimeOptions) {
     this.app = options.app;
     this.getSettings = options.getSettings;
+    this.getMode = options.getMode ?? (() => DEFAULT_MODE);
     this.getResources = options.getResources;
     this.buildStreamFn = options.buildStreamFn;
     this.recordUsage = options.recordUsage;
@@ -67,7 +71,7 @@ export class AgentSubagentRuntime {
       getProfiles: () => this.getResources().profiles,
       createChildAgent: (profile) => this.createChildAgent(profile),
       recordUsage: this.recordUsage,
-      maxParallel: () => this.getSettings().maxParallelSubagents,
+      maxParallel: () => DEFAULT_PARALLEL_SUBAGENTS,
       registry: this.registry,
       artifactStore: this.artifactStore,
       background: this.background,
@@ -95,7 +99,7 @@ export class AgentSubagentRuntime {
       ...createWebTools(settings.web, this.webFetch, this.artifactStore),
       ...(artifactTool ? [artifactTool] : []),
     ].filter(
-      (tool) => resolveModePolicy(settings.mode, settings.approval, tool.name).policy !== "deny",
+      (tool) => resolveModePolicy(this.getMode(), settings.approval, tool.name).policy !== "deny",
     );
     const tools = filterChildTools(childTools, profile.toolAllowlist ?? []);
     const child = new Agent({

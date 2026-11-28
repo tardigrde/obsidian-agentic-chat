@@ -12,12 +12,15 @@ import {
 import { SubagentRegistry } from "../src/tools/subagent-tool";
 import type { AgentRole } from "../src/agent/subagents";
 import { DEFAULT_SETTINGS, type AgenticChatSettings } from "../src/settings-schema";
-import { createMcpServerSettings } from "../src/mcp/settings";
+import { createMcpServerState } from "../src/mcp/settings";
+import type { AgentMode } from "../src/agent/modes";
 import { FakeVault } from "./helpers/fake-vault";
+
+type TestSettings = Partial<AgenticChatSettings> & { mode?: AgentMode };
 
 function makeController(
   options: {
-    settings?: Partial<AgenticChatSettings>;
+    settings?: TestSettings;
     confirmToolCall?: (request: ToolApprovalRequest, signal?: AbortSignal) => Promise<UserApprovalChoice>;
     tools?: AgentTool[];
     profiles?: AgentRole[];
@@ -27,17 +30,19 @@ function makeController(
     recordFileCheckpoint?: (checkpoint: FileCheckpoint) => Promise<void> | void;
   } = {},
 ): { controller: AgentToolCallController; requests: ToolApprovalRequest[]; undoNotifications: { count: number } } {
+  const { mode = "safe", ...settingsOverrides } = options.settings ?? {};
   const settings: AgenticChatSettings = {
     ...DEFAULT_SETTINGS,
     openrouterApiKey: "test-key",
-    ...options.settings,
-    approval: { ...DEFAULT_SETTINGS.approval, ...(options.settings?.approval ?? {}) },
+    ...settingsOverrides,
+    approval: { ...DEFAULT_SETTINGS.approval, ...(settingsOverrides.approval ?? {}) },
   };
   const requests: ToolApprovalRequest[] = [];
   const undoNotifications = { count: 0 };
   const controller = new AgentToolCallController({
     app: options.app ?? fakeApp().app,
     getSettings: () => settings,
+    getMode: () => mode,
     confirmToolCall: async (request, signal) => {
       requests.push(request);
       return options.confirmToolCall ? options.confirmToolCall(request, signal) : { approved: true, remember: false };
@@ -281,16 +286,11 @@ describe("AgentToolCallController", () => {
     const tool = { name: "mcp__docs__resolve_library_id", label: "Docs MCP: Resolve library" } as AgentTool;
     const { controller, requests } = makeController({
       settings: {
-        mcp: {
-          enabled: true,
-          proxyUrl: "",
-          noProxy: "localhost,127.0.0.1,::1",
-          servers: [
-            {
-              ...createMcpServerSettings({ id: "docs", name: "Docs MCP", url: "https://mcp.example.com/mcp" }),
-              approval: "ask",
-            },
-          ],
+        plugins: {
+          ...DEFAULT_SETTINGS.plugins,
+          mcpState: {
+            docs: createMcpServerState("docs", { enabled: true, approval: "ask" }),
+          },
         },
       },
       tools: [tool],
@@ -310,18 +310,8 @@ describe("AgentToolCallController", () => {
 
   it("honors MCP deny policy and per-tool allow overrides", async () => {
     const toolName = "mcp__docs__resolve_library_id";
-    const baseMcp = {
-      enabled: true,
-      proxyUrl: "",
-      noProxy: "localhost,127.0.0.1,::1",
-      servers: [
-        {
-          ...createMcpServerSettings({ id: "docs", name: "Docs MCP", url: "https://mcp.example.com/mcp" }),
-          approval: "deny" as const,
-        },
-      ],
-    };
-    const denied = makeController({ settings: { mcp: baseMcp } });
+    const mcpState = { docs: createMcpServerState("docs", { enabled: true, approval: "deny" }) };
+    const denied = makeController({ settings: { plugins: { ...DEFAULT_SETTINGS.plugins, mcpState } } });
 
     await expect(
       denied.controller.beforeToolCall({ toolCall: { id: "call-1", name: toolName }, args: {} }),
@@ -332,8 +322,8 @@ describe("AgentToolCallController", () => {
 
     const allowed = makeController({
       settings: {
-        mcp: baseMcp,
         approval: { mutating: "ask", perTool: { [toolName]: "allow" } },
+        plugins: { ...DEFAULT_SETTINGS.plugins, mcpState },
       },
     });
     await expect(
@@ -443,16 +433,9 @@ describe("AgentToolCallController", () => {
       settings: {
         mode: "safe",
         approval: { mutating: "ask", perTool: {} },
-        mcp: {
-          ...DEFAULT_SETTINGS.mcp,
-          servers: [
-            createMcpServerSettings({
-              id: "docs",
-              name: "Docs",
-              url: "https://docs.example/mcp",
-              approval: "ask",
-            }),
-          ],
+        plugins: {
+          ...DEFAULT_SETTINGS.plugins,
+          mcpState: { docs: createMcpServerState("docs", { enabled: true, approval: "ask" }) },
         },
       },
       confirmToolCall: async () => ({ approved: true, remember: false }),

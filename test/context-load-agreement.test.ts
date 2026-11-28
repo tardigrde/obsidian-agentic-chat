@@ -17,8 +17,7 @@ const settings: AgenticChatSettings = {
   ...DEFAULT_SETTINGS,
   openrouterApiKey: "test-key",
   openrouterModel: "test/model",
-  maxTokens: 1_000,
-  compaction: { ...DEFAULT_SETTINGS.compaction, enabled: true, thresholdPercent: 80 },
+  compaction: { ...DEFAULT_SETTINGS.compaction, enabled: true },
 };
 
 const model = {
@@ -57,10 +56,11 @@ function tool(name: string, descriptionChars: number): AgentTool {
   } as unknown as AgentTool;
 }
 
-async function runtime(): Promise<AgentCompactionRuntime> {
+async function runtime(messages: AgentMessage[] = []): Promise<AgentCompactionRuntime> {
   const adapter = new MemoryAdapter();
   const manager = new ObsidianSessionManager(adapter.asDataAdapter(), "sessions", "vault:test", new SessionWriteRegistry());
   await manager.createSession({ provider: "openrouter", modelId: "test/model", thinkingLevel: "off" });
+  for (const message of messages) await manager.appendMessage(message);
   return new AgentCompactionRuntime({
     getSettings: () => settings,
     session: managerCompactionTarget(manager),
@@ -87,7 +87,7 @@ describe("context load agreement between the readout and compaction (#281)", () 
     const overheadTokens = agentContextOverheadTokens({ settings, systemPrompt: "You are helpful.", tools });
     expect(estimateContextUsage(messages) + overheadTokens).toBe(readout!.load.totalTokens);
 
-    const result = await (await runtime()).compactWithResult(messages, WINDOW, { overheadTokens });
+    const result = await (await runtime(messages)).compactWithResult(messages, WINDOW, { overheadTokens });
     expect(result.status).toBe("compacted");
   });
 
@@ -98,7 +98,7 @@ describe("context load agreement between the readout and compaction (#281)", () 
     const readout = agentContextReadout({ messages, model, settings, systemPrompt, tools });
     const overheadTokens = agentContextOverheadTokens({ settings, systemPrompt, tools });
 
-    const result = await (await runtime()).compactWithResult(messages, WINDOW, { overheadTokens });
+    const result = await (await runtime(messages)).compactWithResult(messages, WINDOW, { overheadTokens });
 
     expect(result).toMatchObject({ status: "skipped", reason: "no_plan" });
     expect(result.status === "skipped" && result.message).toContain(`(${readout!.load.totalTokens}/8000 estimated tokens)`);

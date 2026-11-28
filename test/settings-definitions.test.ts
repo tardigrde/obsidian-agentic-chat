@@ -3,7 +3,6 @@ import type { App, SettingDefinitionGroup, SettingDefinitionPage } from "obsidia
 import { AgenticChatSettingTab } from "../src/settings";
 import { secretInputDef } from "../src/settings-definition-kit";
 import { perToolApprovalRows } from "../src/settings-tab-agent";
-import { createMcpServerSettings } from "../src/mcp/settings";
 import { DEFAULT_SETTINGS } from "../src/settings-schema";
 import { SETTINGS_TABS } from "../src/settings-tabs";
 import { TOOL_CATALOG } from "../src/tools/tool-catalog";
@@ -27,7 +26,6 @@ function makeHarness(mutate?: (settings: typeof DEFAULT_SETTINGS) => void) {
     saveSettings: async () => {
       calls.saves += 1;
     },
-    requestModeChange: async () => true,
     pluginService: {
       hasCache: () => false,
       hasRetainedImportBackup: () => false,
@@ -144,7 +142,7 @@ describe("declarative settings definitions", () => {
       expect.arrayContaining(["Model provider", "HTTP proxy", "No proxy", "OpenRouter API key", "Model"]),
     );
     expect(names("agent")).toEqual(
-      expect.arrayContaining(["Permission mode", "Temperature", "System prompt", "Auto-compaction"]),
+      expect.arrayContaining(["Auto-compaction"]),
     );
     expect(names("approval")).toEqual(
       expect.arrayContaining(["Before mutating tools", "Per-tool overrides"]),
@@ -194,28 +192,21 @@ describe("declarative settings definitions", () => {
 
   it("reads and writes nested control keys through the plugin settings", async () => {
     const { tab, settings, calls } = makeHarness();
-    expect(tab.getControlValue("web.maxResults")).toBe(DEFAULT_SETTINGS.web.maxResults);
+    expect(tab.getControlValue("notifications.costCapUsd")).toBe(DEFAULT_SETTINGS.notifications.costCapUsd);
 
     await tab.setControlValue("network.proxyUrl", "  http://192.0.2.10:3128/  ");
     await tab.setControlValue("privacy.denyDataCollection", false);
-    await tab.setControlValue("web.maxResults", 9);
+    await tab.setControlValue("notifications.costCapUsd", 9);
 
     expect(settings.network.proxyUrl).toBe("http://192.0.2.10:3128/");
     expect(settings.privacy.denyDataCollection).toBe(false);
-    expect(settings.web.maxResults).toBe(9);
+    expect(settings.notifications.costCapUsd).toBe(9);
     expect(calls.saves).toBe(3);
   });
 
-  it("rebuilds the MCP section when MCP is enabled and servers change", () => {
+  it("rebuilds the MCP section when MCP is enabled", () => {
     const { tab } = makeHarness((next) => {
       next.mcp.enabled = true;
-      next.mcp.servers = [
-        createMcpServerSettings({
-          id: "docs",
-          name: "Docs MCP",
-          url: "https://docs.example.com/mcp",
-        }),
-      ];
     });
     const mcp = pages(tab)
       .flatMap((page) => groups(page))

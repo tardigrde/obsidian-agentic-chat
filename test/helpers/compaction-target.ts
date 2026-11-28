@@ -11,6 +11,7 @@ export function managerCompactionTarget(manager: ObsidianSessionManager): Compac
       expectedPath: manager.getActiveSessionPath(),
       expectedGeneration: manager.getActiveSessionGeneration(),
     }),
-    commitCompaction: (messages, binding) => manager.rewriteMessages(messages, binding),
+    commitCompaction: (messages, firstKeptIndex, binding) =>
+      manager.appendCompaction(messages[0], firstKeptIndex, binding),
   };
 }

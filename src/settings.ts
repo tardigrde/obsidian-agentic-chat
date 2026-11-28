@@ -15,12 +15,7 @@ import type { LoadedPlugin } from "./plugins/loader";
 import { indexControls, normalizeControlValue } from "./settings-controls";
 import { secretInputDef } from "./settings-definition-kit";
 import { McpSettingsSection } from "./settings-mcp-section";
-import {
-  agentDefinitions,
-  approvalDefinitions,
-  notificationDefinitions,
-  subagentDefinitions,
-} from "./settings-tab-agent";
+import { agentDefinitions, approvalDefinitions, notificationDefinitions } from "./settings-tab-agent";
 import type { SettingsTabHost } from "./settings-tab-host";
 import { modelsDefinitions } from "./settings-tab-models";
 import { pluginDefinitions } from "./settings-tab-plugins";
@@ -51,7 +46,6 @@ const SECTION_HEADINGS: Record<SettingsSectionId, string> = {
   observability: "Observability export",
   notifications: "Notifications",
   plugins: "Agent plugins",
-  subagents: "Subagents",
   "ignored-files": "Ignored files",
 };
 
@@ -228,9 +222,6 @@ export class AgenticChatSettingTab extends PluginSettingTab {
       case "plugins":
         items.push(...pluginDefinitions(settings, this.host));
         break;
-      case "subagents":
-        items.push(...subagentDefinitions(settings, this.host));
-        break;
       case "ignored-files":
         items.push(...ignoredFileDefinitions(settings, this.host));
         break;
@@ -339,7 +330,7 @@ export class AgenticChatSettingTab extends PluginSettingTab {
   private reconcileLoadedPlugins(plugins: LoadedPlugin[]): boolean {
     // S10: shape lives in mcp.json; ensure every derived plugin server has a
     // client-owned entry in settings.plugins.mcpState (enabled/approval/auth).
-    // No merge into settings.mcp.servers — the two cannot diverge.
+    // Server shape lives in plugin packages; only client state is settings-owned.
     const pluginServers = plugins.flatMap((plugin) => plugin.mcpServers);
     let mutated = false;
     for (const server of pluginServers) {

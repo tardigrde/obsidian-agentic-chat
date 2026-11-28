@@ -7,6 +7,7 @@ import { createReplayStreamController, type ReplayTurn } from "../../../src/agen
 import type AgenticChatPlugin from "../../../src/main";
 import { ObsidianSessionManager, SessionWriteRegistry } from "../../../src/session/session-manager";
 import { DEFAULT_SETTINGS, type AgenticChatSettings } from "../../../src/settings-schema";
+import type { AgentMode } from "../../../src/agent/modes";
 import { SettingsStore } from "../../../src/settings-store";
 import type { AskUserHandler } from "../../../src/tools/ask-user-tool";
 import { ChatView } from "../../../src/ui/chat-view";
@@ -81,7 +82,7 @@ export function fakeApp(): FakeApp {
 export interface MountOptions {
   /** Scripted model turns, in order, shared by every tab's service. */
   turns?: ReplayTurn[];
-  settings?: Partial<AgenticChatSettings>;
+  settings?: Partial<AgenticChatSettings> & { mode?: AgentMode };
   /** Answer each tool approval. Default: approve at once (no card is shown). */
   approve?: (request: ToolApprovalRequest) => Promise<UserApprovalChoice>;
   /** Resolve a `hold: true` turn. Default: release at once. */
@@ -125,10 +126,12 @@ export async function settle(rounds = 20): Promise<void> {
  */
 export async function mountChatView(options: MountOptions = {}): Promise<MountedChatView> {
   const fake = fakeApp();
+  const { mode = "safe", ...settingsOverrides } = options.settings ?? {};
+  const runtime = { mode };
   const settings: AgenticChatSettings = {
     ...structuredClone(DEFAULT_SETTINGS),
     openrouterApiKey: "test-key",
-    ...options.settings,
+    ...settingsOverrides,
   };
   const settingsStore = new SettingsStore(settings, async () => {});
   const registry = new SessionWriteRegistry();
@@ -142,6 +145,15 @@ export async function mountChatView(options: MountOptions = {}): Promise<Mounted
   const plugin = {
     settings,
     settingsStore,
+    get mode() {
+      return runtime.mode;
+    },
+    setMode: (next: AgentMode) => {
+      if (runtime.mode === next) return false;
+      runtime.mode = next;
+      return true;
+    },
+    onModeChange: () => () => {},
     manifest: { id: "agentic-chat", version: "test" },
     // The vault has no agent plugins in these tests (`/doctor` reloads them).
     pluginService: { reload: async () => [] },
@@ -153,6 +165,7 @@ export async function mountChatView(options: MountOptions = {}): Promise<Mounted
       new AgentService({
         app: fake.app,
         getSettings: () => settings,
+        getMode: () => runtime.mode,
         sessionManager: new ObsidianSessionManager(adapter, "sessions", "vault:ui-test", registry),
         confirmToolCall: options.approve ?? handlers.confirmToolCall ?? (async () => ({ approved: true, remember: false })),
         askUser: handlers.askUser,

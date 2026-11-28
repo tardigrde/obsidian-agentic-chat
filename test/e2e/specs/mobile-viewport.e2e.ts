@@ -67,7 +67,18 @@ async function seedMobileState(): Promise<void> {
   await browser.executeObsidian(async ({ app, obsidian }, writePath) => {
     const plugin = (app as unknown as {
       plugins?: {
-        plugins?: Record<string, { settings?: Record<string, unknown>; saveSettings?: () => Promise<void> }>;
+        plugins?: Record<
+          string,
+          {
+            settings?: Record<string, unknown>;
+            saveSettings?: () => Promise<void>;
+            pluginService?: {
+              invalidate?: () => void;
+              reload?: () => Promise<unknown>;
+              generateMcpServerPackage?: (input: { serverName: string; url: string }) => Promise<unknown>;
+            };
+          }
+        >;
       };
       secretStorage?: { setSecret?: (id: string, value: string) => void };
     }).plugins?.plugins?.["agentic-chat"];
@@ -80,56 +91,31 @@ async function seedMobileState(): Promise<void> {
       mode: string;
       approval: { mutating: string; perTool: Record<string, string> };
       web: { enabled: boolean };
-      mcp: { enabled: boolean; proxyUrl: string; noProxy: string; servers: unknown[] };
+      mcp: { enabled: boolean; proxyUrl: string; noProxy: string };
+      plugins: { mcpState: Record<string, unknown> };
       network: { proxyUrl: string; noProxy: string };
     };
     settings.provider = "openrouter";
     settings.openrouterApiKey = "e2e-mobile-scripted-key";
     settings.openrouterModel = "openai/gpt-4o-mini";
-    settings.mode = "safe";
     settings.approval = { mutating: "ask", perTool: {} };
     settings.web.enabled = false;
     settings.mcp = {
       enabled: true,
       proxyUrl: "",
       noProxy: "localhost,127.0.0.1,::1",
-      servers: [{
-        id: "mobile-demo",
-        name: "Mobile MCP Demo",
-        url: "https://mcp.example.com/mcp",
-        // Disabled so later scripted chat turns never contact the endpoint;
-        // the settings header still renders.
-        enabled: false,
-        authType: "none",
-        authHeaderName: "",
-        authHeaderValueSecretId: "",
-        authHeaderValue: "",
-        oauth: {
-          clientId: "",
-          clientSecretSecretId: "",
-          clientSecret: "",
-          dynamicClientRegistration: false,
-          registeredRedirectUri: "",
-          authorizationServer: "",
-          authorizationEndpoint: "",
-          tokenEndpoint: "",
-          registrationEndpoint: "",
-          resourceMetadataUrl: "",
-          accessTokenSecretId: "",
-          accessToken: "",
-          refreshTokenSecretId: "",
-          refreshToken: "",
-          expiresAt: 0,
-          scope: "",
-        },
-        approval: "ask",
-        knownTools: [],
-        headers: {},
-        source: "user",
-        enabledTools: [],
-        disabledTools: [],
-      }],
     };
+    // MCP endpoints live in plugin packages now. Generate one through the real
+    // path so the settings header has a server card to measure.
+    if (!plugin.pluginService?.generateMcpServerPackage) throw new Error("pluginService is unavailable");
+    await plugin.pluginService.generateMcpServerPackage({
+      serverName: "demo",
+      url: "https://mcp.example.com/mcp",
+    });
+    // Keep the scripted turns offline: the card still renders while disabled.
+    for (const state of Object.values(settings.plugins.mcpState)) {
+      (state as { enabled?: boolean }).enabled = false;
+    }
     settings.network = { proxyUrl: "", noProxy: "localhost,127.0.0.1,::1" };
     app.secretStorage?.setSecret?.("agentic-chat-openrouter-api-key", "e2e-mobile-scripted-key");
     await plugin.saveSettings?.();
@@ -440,8 +426,8 @@ describe("agentic-chat mobile viewport", function () {
     await waitForSetting("Model provider");
     await selectSettingsTab("Advanced");
     await waitForSetting("Enable MCP");
-    await waitForSetting("Mobile MCP Demo");
-    assertHeadingRowReadable(await measureHeadingRow("Mobile MCP Demo"), "MCP server header");
+    await waitForSetting("demo");
+    assertHeadingRowReadable(await measureHeadingRow("demo"), "MCP server header");
     // U7 #8 and #6: each server is a card; its Advanced fold starts closed.
     const card = await browser.execute(() => {
       const el = document.querySelector<HTMLElement>(".agentic-chat-mcp-card");

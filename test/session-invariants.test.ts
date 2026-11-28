@@ -9,6 +9,7 @@ import {
 } from "../src/session/jsonl";
 import { emptyUsage } from "../src/agent/usage";
 import { sumSessionUsage } from "../src/agent/session-usage";
+import { buildSummaryMessage } from "../src/agent/compaction";
 import { ObsidianSessionManager, SessionWriteRegistry, type SessionDefaults } from "../src/session/session-manager";
 import { replayTextTurn, replayToolCallTurn } from "../src/agent/replay-stream";
 import { FakeAdapter as MemoryAdapter } from "./support/fake-adapter";
@@ -67,6 +68,96 @@ describe("session/event-log invariants", () => {
     expect(reloaded.buildSessionContext().messages.map(messageText)).toEqual(["before corrupt line", "still valid"]);
     expect(reloaded.getActiveSessionInfo().messageCount).toBe(2);
     assertSessionFile(adapter.files.get(info.path) ?? "", ["before corrupt line", "still valid"]);
+  });
+
+  it("appends compaction records and rebuilds the same context across reload and several compactions", async () => {
+    const { manager, adapter } = makeManager();
+    const info = await manager.createSession(DEFAULTS);
+    for (const text of ["one", "two", "three", "four", "five", "six"]) {
+      await manager.appendMessage(userMessage(text));
+    }
+
+    await manager.appendCompaction(userMessage("summary one"), 3);
+    expect(manager.buildSessionContext().messages.map(messageText)).toEqual([
+      "summary one",
+      "four",
+      "five",
+      "six",
+    ]);
+    await manager.appendMessage(userMessage("seven"));
+    await manager.appendCompaction(userMessage("summary two"), 1);
+    expect(manager.buildSessionContext().messages.map(messageText)).toEqual([
+      "summary two",
+      "four",
+      "five",
+      "six",
+      "seven",
+    ]);
+
+    const reloaded = new ObsidianSessionManager(adapter.asDataAdapter(), "sessions", "vault:test", new SessionWriteRegistry());
+    await reloaded.loadSession(info.path);
+    expect(reloaded.buildSessionContext().messages.map(messageText)).toEqual([
+      "summary two",
+      "four",
+      "five",
+      "six",
+      "seven",
+    ]);
+    expect(reloaded.getActiveSessionInfo().messageCount).toBe(7);
+    // Every original message line is still on disk; no rewrite dropped them.
+    const entries = parseSessionEntries(adapter.files.get(info.path) ?? "");
+    const messageTexts = entries
+      .filter((entry): entry is MessageSessionEntry => entry.type === "message")
+      .map((entry) => messageText(entry.message));
+    expect(messageTexts).toEqual(["one", "two", "three", "four", "five", "six", "seven"]);
+    expect(entries.filter((entry) => entry.type === "compaction")).toHaveLength(2);
+  });
+
+  it("loads a compacted session in another tab and appends through the same view", async () => {
+    const { manager, adapter } = makeManager();
+    const info = await manager.createSession(DEFAULTS);
+    for (const text of ["one", "two", "three", "four"]) await manager.appendMessage(userMessage(text));
+    await manager.appendCompaction(userMessage("summary"), 2);
+
+    const otherTab = new ObsidianSessionManager(adapter.asDataAdapter(), "sessions", "vault:test", new SessionWriteRegistry());
+    await otherTab.loadSession(info.path);
+    expect(otherTab.buildSessionContext().messages.map(messageText)).toEqual(["summary", "three", "four"]);
+    await otherTab.appendMessage(userMessage("five"));
+
+    const firstTab = new ObsidianSessionManager(adapter.asDataAdapter(), "sessions", "vault:test", new SessionWriteRegistry());
+    await firstTab.loadSession(info.path);
+    expect(firstTab.buildSessionContext().messages.map(messageText)).toEqual(["summary", "three", "four", "five"]);
+  });
+
+  it("rewinds after a compaction without deleting the history before it", async () => {
+    const { manager, adapter } = makeManager();
+    const info = await manager.createSession(DEFAULTS);
+    for (const text of ["one", "two", "three", "four", "five", "six"]) {
+      await manager.appendMessage(userMessage(text));
+    }
+    const summary = buildSummaryMessage("summary one", 1);
+    await manager.appendCompaction(summary, 3);
+
+    await manager.rewriteMessages([summary, userMessage("four")]);
+
+    const rewritten = manager.buildSessionContext().messages.map(messageText);
+    expect(rewritten[0]).toContain("summary one");
+    expect(rewritten.slice(1)).toEqual(["four"]);
+    const entries = parseSessionEntries(adapter.files.get(info.path) ?? "");
+    const messageTexts = entries
+      .filter((entry): entry is MessageSessionEntry => entry.type === "message")
+      .map((entry) => messageText(entry.message));
+    // The pre-compaction history stays in the file, and the kept suffix is
+    // still there; the rewrite only appends the new compaction boundary.
+    expect(messageTexts).toEqual(["one", "two", "three", "four", "five", "six", "four"]);
+    const compactions = entries.filter((entry) => entry.type === "compaction");
+    expect(compactions).toHaveLength(2);
+
+    const reloaded = new ObsidianSessionManager(adapter.asDataAdapter(), "sessions", "vault:test", new SessionWriteRegistry());
+    await reloaded.loadSession(info.path);
+    const reloadedTexts = reloaded.buildSessionContext().messages.map(messageText);
+    expect(reloadedTexts[0]).toContain("summary one");
+    expect(reloadedTexts.slice(1)).toEqual(["four"]);
   });
 
   it("deletes the active session without damaging another session, then continues from the remaining session", async () => {

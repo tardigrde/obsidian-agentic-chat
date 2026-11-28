@@ -10,12 +10,16 @@ import {
 import { ObsidianSessionManager, SessionWriteRegistry } from "../../src/session/session-manager";
 import type { AskUserHandler } from "../../src/tools/ask-user-tool";
 import { DEFAULT_SETTINGS, type AgenticChatSettings } from "../../src/settings-schema";
+import type { AgentMode } from "../../src/agent/modes";
 import { FakeAdapter as MemoryAdapter } from "../support/fake-adapter";
+
+/** Tests may still name `mode` beside settings; the helper routes it to runtime. */
+type ReplaySettings = Partial<AgenticChatSettings> & { mode?: AgentMode };
 
 export interface AgentReplayOptions {
   turns: readonly ReplayTurn[];
   prompt?: string;
-  settings?: Partial<AgenticChatSettings>;
+  settings?: ReplaySettings;
   app?: App;
   confirmToolCall?: (request: ToolApprovalRequest) => Promise<UserApprovalChoice>;
   askUser?: AskUserHandler;
@@ -27,6 +31,7 @@ export interface AgentReplayResult {
   service: AgentService;
   adapter: MemoryAdapter;
   settings: AgenticChatSettings;
+  mode: AgentMode;
   calls: ReplayStreamCall[];
   events: AgentEvent[];
   messages: AgentMessage[];
@@ -34,12 +39,13 @@ export interface AgentReplayResult {
 }
 
 export async function runAgentReplay(options: AgentReplayOptions): Promise<AgentReplayResult> {
+  const { mode = "safe", ...settingsOverrides } = options.settings ?? {};
   const settings: AgenticChatSettings = {
     ...DEFAULT_SETTINGS,
     openrouterApiKey: "test-key",
-    ...options.settings,
-    approval: { ...DEFAULT_SETTINGS.approval, ...(options.settings?.approval ?? {}) },
-    web: { ...DEFAULT_SETTINGS.web, ...(options.settings?.web ?? {}) },
+    ...settingsOverrides,
+    approval: { ...DEFAULT_SETTINGS.approval, ...(settingsOverrides.approval ?? {}) },
+    web: { ...DEFAULT_SETTINGS.web, ...(settingsOverrides.web ?? {}) },
   };
   const adapter = new MemoryAdapter();
   const sessionManager = new ObsidianSessionManager(adapter.asDataAdapter(), "sessions", "vault:test", new SessionWriteRegistry());
@@ -47,6 +53,7 @@ export async function runAgentReplay(options: AgentReplayOptions): Promise<Agent
   const service = new AgentService({
     app: options.app ?? minimalApp(),
     getSettings: () => settings,
+    getMode: () => mode,
     sessionManager,
     confirmToolCall: options.confirmToolCall ?? (async () => ({ approved: true, remember: false })),
     ...(options.askUser ? { askUser: options.askUser } : {}),
@@ -72,6 +79,7 @@ export async function runAgentReplay(options: AgentReplayOptions): Promise<Agent
     service,
     adapter,
     settings,
+    mode,
     calls: replay.calls,
     events,
     messages: service.getMessages(),

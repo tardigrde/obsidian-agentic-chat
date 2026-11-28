@@ -526,16 +526,16 @@ describe("chat view state machine", () => {
     const toggle = ui.$(".agentic-chat-mode-toggle");
     toggle?.click();
     await settle();
-    expect(ui.settings.mode).toBe("yolo");
+    expect(ui.plugin.mode).toBe("yolo");
     expect(toggle?.getAttribute("aria-checked")).toBe("true");
     toggle?.click();
     await settle();
-    expect(ui.settings.mode).toBe("safe");
+    expect(ui.plugin.mode).toBe("safe");
 
     await ui.send("long");
     toggle?.click();
     await settle();
-    expect(ui.settings.mode).toBe("safe");
+    expect(ui.plugin.mode).toBe("safe");
     held.release();
     await ui.idle();
   });
@@ -549,7 +549,7 @@ describe("chat view state machine", () => {
     try {
       ui.$(".agentic-chat-mode-toggle")?.click();
       await settle();
-      expect(ui.settings.mode).toBe("yolo");
+      expect(ui.plugin.mode).toBe("yolo");
       expect(iconClass()).toContain("lucide-zap");
     } finally {
       document.body.classList.remove("is-mobile");

@@ -92,6 +92,29 @@ describe("ObsidianSessionManager.rewriteMessages", () => {
 
 });
 
+describe("session format version", () => {
+  it("lists a newer session but refuses to load it, leaving the file untouched", async () => {
+    const { sm, adapter } = manager();
+    const content = [
+      JSON.stringify({
+        type: "session",
+        version: 2,
+        id: "future",
+        timestamp: "2026-06-13T00:00:00.000Z",
+        cwd: "vault:test",
+      }),
+      JSON.stringify({ type: "message", id: "m1", parentId: null, timestamp: "t", message: userMessage("from the future") }),
+    ].join("\n") + "\n";
+    await adapter.mkdir("sessions");
+    await adapter.write("sessions/future.jsonl", content);
+
+    const listed = await sm.listSessions();
+    expect(listed.map((info) => info.path)).toContain("sessions/future.jsonl");
+    await expect(sm.loadSession("sessions/future.jsonl")).rejects.toThrow(/newer version/i);
+    expect(adapter.files.get("sessions/future.jsonl")).toBe(content);
+  });
+});
+
 describe("legacy session compatibility", () => {
   it("loads a session that still contains a plan_tracker entry", async () => {
     const { sm, adapter } = manager();

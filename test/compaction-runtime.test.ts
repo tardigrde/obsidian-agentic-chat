@@ -58,11 +58,13 @@ async function setup(
     settings?: AgenticChatSettings;
     summarize?: SummarizeFn | null;
     buildStreamFn?: () => StreamFn;
+    messages?: AgentMessage[];
   } = {},
 ): Promise<{ adapter: MemoryAdapter; manager: ObsidianSessionManager; runtime: AgentCompactionRuntime; path: string }> {
   const adapter = new MemoryAdapter();
   const manager = new ObsidianSessionManager(adapter.asDataAdapter(), "sessions", "vault:test", new SessionWriteRegistry());
   const info = await manager.createSession(DEFAULTS);
+  for (const message of options.messages ?? largeTranscript()) await manager.appendMessage(message);
   const runtime = new AgentCompactionRuntime({
     getSettings: () => options.settings ?? settings(),
     session: managerCompactionTarget(manager),
@@ -91,7 +93,7 @@ function largeTranscript(): AgentMessage[] {
 const LEGACY_TURN_CAP_NOTICE = "Turn cap: stopped after 25 assistant turns. Send another message to continue.";
 
 describe("AgentCompactionRuntime", () => {
-  it("summarizes, carries dropped usage, rewrites the session, and returns the compacted transcript", async () => {
+  it("summarizes, carries dropped usage, appends the compaction, and returns the compacted transcript", async () => {
     const { adapter, runtime, path } = await setup();
     const compacted = await runtime.compact(largeTranscript(), 1_000);
 
@@ -105,7 +107,16 @@ describe("AgentCompactionRuntime", () => {
     expect(compacted!.slice(1).map((message) => message.role)).toEqual(["user", "assistant"]);
 
     const entries = parseSessionEntries(adapter.files.get(path) ?? "");
-    expect(entries.filter((entry) => entry.type === "message")).toHaveLength(compacted!.length);
+    // The old transcript stays in the file; one compaction record carries the
+    // summary and names the first kept message entry.
+    expect(entries.filter((entry) => entry.type === "message")).toHaveLength(10);
+    const compaction = entries.find((entry) => entry.type === "compaction");
+    expect(compaction).toMatchObject({
+      type: "compaction",
+      summary: { role: "user" },
+      firstKeptEntryId: expect.any(String),
+    });
+    expect((compaction as { summary: AgentMessage }).summary).toEqual(compacted![0]);
   });
 
   it("manual compaction keeps the latest turn instead of filling the automatic keep budget", async () => {
@@ -192,7 +203,6 @@ describe("AgentCompactionRuntime", () => {
   });
 
   it("preserves artifact cache references on the summary message", async () => {
-    const { adapter, runtime, path } = await setup();
     const artifactResult = {
       role: "toolResult",
       toolName: "read",
@@ -224,6 +234,7 @@ describe("AgentCompactionRuntime", () => {
       user("kept turn"),
       assistant("kept answer", usage(40, 0.04)),
     ];
+    const { adapter, runtime, path } = await setup({ messages: transcript });
 
     const compacted = await runtime.compact(transcript, 1_000);
 
@@ -241,10 +252,12 @@ describe("AgentCompactionRuntime", () => {
     });
     expect(JSON.stringify(compacted![0])).toContain("Preserved Artifact References");
 
-    const persistedSummary = parseSessionEntries(adapter.files.get(path) ?? "").find((entry) => entry.type === "message");
+    const persistedSummary = parseSessionEntries(adapter.files.get(path) ?? "").find(
+      (entry) => entry.type === "compaction",
+    );
     expect(persistedSummary).toMatchObject({
-      type: "message",
-      message: {
+      type: "compaction",
+      summary: {
         compactionManifest: {
           artifacts: [{ id: "artifact-1" }],
         },
@@ -443,10 +456,10 @@ describe("AgentCompactionRuntime", () => {
       });
       return stream;
     }) as unknown as StreamFn;
-    const { runtime } = await setup({ summarize: null, buildStreamFn: () => streamFn });
     const transcript = largeTranscript();
     // A capped run saved before U4 removed the cap: the notice lands in the summarized part.
     transcript.splice(2, 0, buildStopNoticeMessage(LEGACY_TURN_CAP_NOTICE));
+    const { runtime } = await setup({ summarize: null, buildStreamFn: () => streamFn, messages: transcript });
 
     const result = await runtime.compactWithResult(transcript, 128_000, { force: true });
 
@@ -503,7 +516,7 @@ describe("AgentCompactionRuntime", () => {
     expect(adapter.files.get(second.path)).toBe(secondBefore);
   });
 
-  it("coalesces concurrent automatic compactions into one rewrite", async () => {
+  it("coalesces concurrent automatic compactions into one append", async () => {
     let summarizeCalls = 0;
     let release!: () => void;
     const gate = new Promise<void>((resolve) => {
@@ -516,17 +529,17 @@ describe("AgentCompactionRuntime", () => {
         return "Single summary.";
       },
     });
-    const rewrite = vi.spyOn(manager, "rewriteMessages");
+    const append = vi.spyOn(manager, "appendCompaction");
 
     const first = runtime.compactWithResult(largeTranscript(), 1_000);
     const second = runtime.compactWithResult(largeTranscript(), 1_000);
     release();
 
     const [firstResult, secondResult] = await Promise.all([first, second]);
-    // One pass can make several chunked summarize calls; one rewrite proves
+    // One pass can make several chunked summarize calls; one append proves
     // the second caller joined instead of starting a second pass.
     expect(summarizeCalls).toBeGreaterThan(0);
-    expect(rewrite).toHaveBeenCalledTimes(1);
+    expect(append).toHaveBeenCalledTimes(1);
     expect(firstResult.status).toBe("compacted");
     expect(secondResult).toEqual(firstResult);
   });

@@ -6,6 +6,54 @@ import type { FileCheckpoint } from "../agent/checkpoint-types";
 
 export const CURRENT_SESSION_VERSION = 1;
 
+/** A session written by a newer build cannot be read safely; never rewrite it. */
+export class SessionVersionError extends Error {
+  constructor(readonly version: number) {
+    super(
+      `This conversation uses session format ${version} from a newer version of Agentic Chat, but this build supports ${CURRENT_SESSION_VERSION}. ` +
+        "Update the plugin to open it. The file was left unchanged.",
+    );
+    this.name = "SessionVersionError";
+  }
+}
+
+/**
+ * Version of a parsed header. Files from before versioning are version 1: their
+ * shape is the current one, and the migration hook below starts from there.
+ */
+export function sessionHeaderVersion(header: SessionHeaderEntry | undefined): number {
+  if (!header || typeof header.version !== "number" || !Number.isFinite(header.version)) {
+    // Pre-versioning files are format 1, not whatever the current build uses:
+    // when the format advances, their migration must still run from step 1.
+    return 1;
+  }
+  return Math.trunc(header.version);
+}
+
+/** Throw before any read that could lead to a rewrite when the file is newer. */
+export function assertSessionVersion(header: SessionHeaderEntry | undefined): void {
+  const version = sessionHeaderVersion(header);
+  if (version > CURRENT_SESSION_VERSION) throw new SessionVersionError(version);
+}
+
+type SessionMigration = (entries: SessionEntry[]) => SessionEntry[];
+
+/**
+ * Older formats migrate here, one step per version. Empty today: version 1 is
+ * the first format, and the list is the hook for the next change.
+ */
+const SESSION_MIGRATIONS: Readonly<Record<number, SessionMigration>> = {};
+
+/** Apply every migration between `fromVersion` and the current format. */
+export function migrateSessionEntries(entries: SessionEntry[], fromVersion: number): SessionEntry[] {
+  let migrated = entries;
+  for (let version = fromVersion; version < CURRENT_SESSION_VERSION; version += 1) {
+    const migration = SESSION_MIGRATIONS[version];
+    if (migration) migrated = migration(migrated);
+  }
+  return migrated;
+}
+
 export interface SessionHeaderEntry {
   type: "session";
   version: typeof CURRENT_SESSION_VERSION;
@@ -78,6 +126,21 @@ export interface FileCheckpointSessionEntry {
 }
 
 /**
+ * Append-only compaction record. The summary replaces every message before
+ * `firstKeptEntryId` for the model; those messages stay in the file untouched.
+ * The latest compaction on the active branch wins, so a rewind can append a
+ * new record without deleting the history before the previous one.
+ */
+export interface CompactionSessionEntry {
+  type: "compaction";
+  id: string;
+  parentId: string | null;
+  timestamp: string;
+  summary: AgentMessage;
+  firstKeptEntryId: string;
+}
+
+/**
  * What `/doctor` saw (U4 #17): codes and counts only, redacted by
  * construction. The chaos miner reads it; the transcript ignores it.
  */
@@ -110,6 +173,7 @@ export type SessionEntry =
   | TabLabelSessionEntry
   | ActionAuditSessionEntry
   | FileCheckpointSessionEntry
+  | CompactionSessionEntry
   | DiagnosticsSessionEntry
   | LegacyPlanTrackerSessionEntry;
 
@@ -151,23 +215,86 @@ export function serializeSessionEntries(entries: SessionEntry[]): string {
   return `${entries.map((entry) => JSON.stringify(entry)).join("\n")}\n`;
 }
 
+/**
+ * One entry id per message the model sees. `null` is the synthetic summary
+ * message that lives on the latest compaction record rather than in a message
+ * entry. The latest compaction on the branch replaces everything before its
+ * `firstKeptEntryId`, while the older bytes stay in the file.
+ */
+export function getContextMessageEntryIds(
+  entries: SessionEntry[],
+  leafId?: string | null,
+): Array<string | null> {
+  const path = getEntryPath(entries, indexEntries(entries), leafId);
+  let latestCompaction = -1;
+  for (let index = 0; index < path.length; index += 1) {
+    if (path[index]?.type === "compaction") latestCompaction = index;
+  }
+  if (latestCompaction < 0) {
+    return path.flatMap((entry) => (entry.type === "message" ? [entry.id] : []));
+  }
+  const compaction = path[latestCompaction] as CompactionSessionEntry;
+  const keptIndex = path.findIndex(
+    (entry, index) => index < latestCompaction && entry.id === compaction.firstKeptEntryId,
+  );
+  const start = keptIndex >= 0 ? keptIndex : latestCompaction;
+  const ids: Array<string | null> = [null];
+  for (let index = start; index < path.length; index += 1) {
+    if (index === latestCompaction) continue;
+    const entry = path[index];
+    if (entry?.type === "message") ids.push(entry.id);
+  }
+  return ids;
+}
+
+/** The entries on the active branch, oldest first (header excluded). */
+export function getSessionPath(
+  entries: SessionEntry[],
+  leafId?: string | null,
+): Array<Exclude<SessionEntry, SessionHeaderEntry>> {
+  return getEntryPath(entries, indexEntries(entries), leafId);
+}
+
+/** The latest compaction record on the active branch, if any. */
+export function getLastCompactionEntry(
+  entries: SessionEntry[],
+  leafId?: string | null,
+): CompactionSessionEntry | undefined {
+  const path = getEntryPath(entries, indexEntries(entries), leafId);
+  for (let index = path.length - 1; index >= 0; index -= 1) {
+    const entry = path[index];
+    if (entry?.type === "compaction") return entry;
+  }
+  return undefined;
+}
+
 /** Rebuild the resumable transcript by walking the parent chain to `leafId`. */
 export function buildSessionContext(entries: SessionEntry[], leafId?: string | null): SessionContext {
   const byId = indexEntries(entries);
   const path = getEntryPath(entries, byId, leafId);
   let model: SessionContext["model"] = null;
   let thinkingLevel: ThinkingLevel = "off";
-  const messages: AgentMessage[] = [];
+  let summary: AgentMessage | undefined;
 
   for (const entry of path) {
-    if (entry.type === "message") {
-      messages.push(entry.message);
-      if (entry.message.role === "assistant") {
-        model = { provider: entry.message.provider, modelId: entry.message.model };
-      }
+    if (entry.type === "message" && entry.message.role === "assistant") {
+      model = { provider: entry.message.provider, modelId: entry.message.model };
     }
     if (entry.type === "model_change") model = { provider: entry.provider, modelId: entry.modelId };
     if (entry.type === "thinking_level_change") thinkingLevel = entry.thinkingLevel;
+  }
+  const messages: AgentMessage[] = [];
+  for (const id of getContextMessageEntryIds(entries, leafId)) {
+    if (id === null) {
+      if (!summary) {
+        const compaction = getLastCompactionEntry(entries, leafId);
+        summary = compaction?.summary;
+      }
+      if (summary) messages.push(summary);
+      continue;
+    }
+    const entry = byId.get(id);
+    if (entry?.type === "message") messages.push(entry.message);
   }
   return { messages, model, thinkingLevel };
 }

@@ -58,6 +58,8 @@ export interface AgentRuntimeDiagnostics {
 
 export interface BuildRuntimeDiagnosticsOptions {
   settings: AgenticChatSettings;
+  /** Shared runtime posture, not a persisted setting. */
+  mode: string;
   sessionInfo: SessionInfo | undefined;
   sessionPath: string | null;
   tools: readonly AgentTool[];
@@ -91,7 +93,7 @@ export function buildRuntimeDiagnostics(options: BuildRuntimeDiagnosticsOptions)
     /** Resolved context window for the active model (null when unknown). */
     contextWindow: options.contextWindow,
     thinkingLevel: options.thinkingLevel,
-    mode: settings.mode,
+    mode: options.mode,
     approval: {
       mutating: settings.approval.mutating,
       perToolOverrides: Object.keys(settings.approval.perTool).length,

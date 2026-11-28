@@ -10,15 +10,24 @@ import { normalizeFolderPath } from "../vault/path";
 import { ensureAdapterFolder, removeIfExists, renameOver } from "../vault/storage";
 import {
   type ActionAuditSessionEntry,
+  type CompactionSessionEntry,
   type DiagnosticsSessionEntry,
   type FileCheckpointSessionEntry,
+  assertSessionVersion,
   buildSessionContext,
+  CURRENT_SESSION_VERSION,
+  SessionVersionError,
   createEntryId,
   createSessionHeader,
   createSessionId,
+  getContextMessageEntryIds,
+  getLastCompactionEntry,
   getLastLeafId,
+  getSessionPath,
+  migrateSessionEntries,
   parseSessionEntries,
   serializeSessionEntries,
+  sessionHeaderVersion,
   type MessageSessionEntry,
   type ModelChangeSessionEntry,
   type SessionContext,
@@ -78,6 +87,8 @@ export interface SessionInfo {
    * see and delete it instead of losing it without a notice.
    */
   unreadable?: true;
+  /** The file uses a newer session format. History lists it; loading refuses. */
+  newerVersion?: number;
 }
 
 interface SessionFileInfo extends SessionInfo {
@@ -180,10 +191,16 @@ export class ObsidianSessionManager {
   }
 
   async continueRecentSession(defaults: SessionDefaults): Promise<SessionInfo> {
-    const recent = (await this.listSessions()).find((session) => !session.unreadable);
-    if (recent) {
-      await this.loadSession(recent.path);
-      return this.getActiveSessionInfo();
+    const recent = (await this.listSessions()).filter((session) => !session.unreadable);
+    for (const session of recent) {
+      try {
+        await this.loadSession(session.path);
+        return this.getActiveSessionInfo();
+      } catch (error) {
+        // A newer-format conversation stays listed for a future build; startup
+        // continues with the newest session this build can actually read.
+        if (!(error instanceof SessionVersionError)) throw error;
+      }
     }
     return this.createSession(defaults);
   }
@@ -196,6 +213,8 @@ export class ObsidianSessionManager {
     if (entries[0]?.type !== "session") {
       throw new Error("Session file is missing a session header.");
     }
+    assertSessionVersion(entries[0]);
+    const migrated = migrateSessionEntries(entries, sessionHeaderVersion(entries[0]));
     if (
       (options.expectedPath !== undefined && this.sessionFile !== options.expectedPath) ||
       (options.expectedGeneration !== undefined && this.sessionGeneration !== options.expectedGeneration)
@@ -206,8 +225,8 @@ export class ObsidianSessionManager {
     this.sessionFile = sessionPath;
     if (reload) this.sessionGeneration += 1;
     else this.beginConversation();
-    this.entries = entries;
-    this.leafId = getLastLeafId(entries);
+    this.entries = migrated;
+    this.leafId = getLastLeafId(migrated);
     this.fullCheckpointPaths = new Set();
     return this.getActiveSessionInfo();
   }
@@ -258,6 +277,8 @@ export class ObsidianSessionManager {
     for (const path of this.listSessionPaths(listing.files)) {
       try {
         const entries = parseSessionEntries(await this.readSessionContent(path));
+        const header = entries[0];
+        if (header?.type !== "session" || sessionHeaderVersion(header) > CURRENT_SESSION_VERSION) continue;
         const messages = entries
           .filter((entry): entry is MessageSessionEntry => entry.type === "message")
           .map((entry) => entry.message);
@@ -365,6 +386,7 @@ export class ObsidianSessionManager {
     const content = await this.adapter.read(sessionPath);
     const entries = parseSessionEntries(content);
     if (entries[0]?.type !== "session") throw new Error("Session file is missing a session header.");
+    assertSessionVersion(entries[0]);
     const entry: SessionInfoEntry = {
       type: "session_info",
       id: createEntryId(entries),
@@ -396,29 +418,69 @@ export class ObsidianSessionManager {
     }
     const header = this.entries[0];
     if (!header || header.type !== "session") throw new Error("Session file is missing a session header.");
+    assertSessionVersion(header);
     const sessionName = getSessionName(this.entries);
     const tabLabel = getTabLabel(this.entries);
     const context = this.buildSessionContext();
+    const lastCompaction = getLastCompactionEntry(this.entries, this.leafId);
     const rebuilt: SessionEntry[] = [header];
     let parentId: string | null = null;
     const push = (entry: Exclude<SessionEntry, SessionHeaderEntry>): void => {
       rebuilt.push(entry);
       parentId = entry.id;
     };
-    for (const message of messages) {
-      push({
-        type: "message",
+
+    if (lastCompaction) {
+      // Keep every byte before the last compaction, including the messages it
+      // already summarized. The new compaction record overrides it for the
+      // model, so a rewind cannot delete the user's history from disk.
+      for (const entry of getSessionPath(this.entries, this.leafId)) {
+        push(entry);
+        if (entry.id === lastCompaction.id) break;
+      }
+      const summary = isCompactionSummary(messages[0]) ? messages[0] : lastCompaction.summary;
+      const kept = isCompactionSummary(messages[0]) ? messages.slice(1) : messages;
+      const nextCompaction: CompactionSessionEntry = {
+        type: "compaction",
         id: createEntryId(rebuilt),
-        parentId,
+        parentId: lastCompaction.id,
         timestamp: new Date().toISOString(),
-        message,
-      });
+        summary,
+        firstKeptEntryId: lastCompaction.id,
+      };
+      push(nextCompaction);
+      let firstKeptEntryId = lastCompaction.id;
+      for (const message of kept) {
+        const entry: MessageSessionEntry = {
+          type: "message",
+          id: createEntryId(rebuilt),
+          parentId,
+          timestamp: new Date().toISOString(),
+          message,
+        };
+        if (firstKeptEntryId === lastCompaction.id) firstKeptEntryId = entry.id;
+        push(entry);
+      }
+      nextCompaction.firstKeptEntryId = firstKeptEntryId;
+    } else {
+      for (const message of messages) {
+        push({
+          type: "message",
+          id: createEntryId(rebuilt),
+          parentId,
+          timestamp: new Date().toISOString(),
+          message,
+        });
+      }
     }
+
     // Carry the audit trail across the rewrite. Audit entries are not
     // transcript, so a rewind or compaction must not delete them; they keep
-    // their original timestamps and land after the rewritten messages.
+    // their original timestamps and land after the rewritten messages. Entries
+    // inside the preserved prefix are already present.
+    const preservedAuditIds = new Set(rebuilt.filter((entry) => entry.type === "action_audit").map((entry) => entry.id));
     for (const entry of this.entries) {
-      if (entry.type !== "action_audit") continue;
+      if (entry.type !== "action_audit" || preservedAuditIds.has(entry.id)) continue;
       push({ ...entry, id: createEntryId(rebuilt), parentId });
     }
     // Re-append session metadata after the rewritten transcript. Assistant
@@ -470,6 +532,47 @@ export class ObsidianSessionManager {
     // A successful rewrite is a new transcript revision. A compaction that read
     // the old revision must not treat its stale snapshot as current.
     this.sessionGeneration += 1;
+  }
+
+  /**
+   * Append a compaction record: the summary replaces every message before the
+   * first kept entry for the model, and no existing line is rewritten.
+   */
+  async appendCompaction(
+    summary: AgentMessage,
+    firstKeptIndex: number,
+    options: RewriteMessagesOptions = {},
+  ): Promise<void> {
+    const sessionFile = this.sessionFile;
+    if (!sessionFile) throw new Error("No active session.");
+    const generation = this.sessionGeneration;
+    if (options.expectedPath !== undefined && options.expectedPath !== sessionFile) {
+      throw new Error("Session changed before the compaction could start.");
+    }
+    if (options.expectedGeneration !== undefined && options.expectedGeneration !== generation) {
+      throw new Error("Session changed before the compaction could start.");
+    }
+    const header = this.entries[0];
+    if (!header || header.type !== "session") throw new Error("Session file is missing a session header.");
+    assertSessionVersion(header);
+    const firstKeptEntryId = getContextMessageEntryIds(this.entries, this.leafId)[firstKeptIndex];
+    if (!firstKeptEntryId) {
+      throw new Error("Compaction did not name a message entry to keep.");
+    }
+    const entry: CompactionSessionEntry = {
+      type: "compaction",
+      id: createEntryId(this.entries),
+      parentId: this.leafId,
+      timestamp: new Date().toISOString(),
+      summary,
+      firstKeptEntryId,
+    };
+    await this.adapter.append(sessionFile, `${JSON.stringify(entry)}\n`);
+    // A swap can land while the append is in flight; never splice this record
+    // into the new session's in-memory chain.
+    if (generation !== this.sessionGeneration || this.sessionFile !== sessionFile) return;
+    this.entries.push(entry);
+    this.leafId = entry.id;
   }
 
   buildSessionContext(): SessionContext {
@@ -682,9 +785,15 @@ export class ObsidianSessionManager {
       const content = await this.readSessionContent(path);
       const stat = await this.adapter.stat(path);
       const entries = parseSessionEntries(content);
-      if (entries[0]?.type !== "session") return this.unreadableSessionInfo(path);
+      const header = entries[0];
+      if (header?.type !== "session") return this.unreadableSessionInfo(path);
       const modifiedTime = getSessionModifiedTime(entries, stat?.mtime ?? Date.now());
-      return { ...summarizeSession(path, entries, modifiedTime), modifiedTime };
+      const version = sessionHeaderVersion(header);
+      return {
+        ...summarizeSession(path, entries, modifiedTime),
+        modifiedTime,
+        ...(version > CURRENT_SESSION_VERSION ? { newerVersion: version } : {}),
+      };
     } catch {
       return this.unreadableSessionInfo(path);
     }
@@ -730,6 +839,20 @@ function isSessionBackupPath(path: string): boolean {
 
 function isSessionFilePath(path: string): boolean {
   return sessionFileName(path).endsWith(".jsonl") && !isSessionTempPath(path);
+}
+
+function isCompactionSummary(message: AgentMessage | undefined): boolean {
+  if (!message || message.role !== "user") return false;
+  const content = (message as { content?: unknown }).content;
+  if (!Array.isArray(content)) return false;
+  return content.some(
+    (block) =>
+      typeof block === "object" &&
+      block !== null &&
+      (block as { type?: unknown }).type === "text" &&
+      typeof (block as { text?: unknown }).text === "string" &&
+      (block as { text: string }).text.includes("<conversation-summary>"),
+  );
 }
 
 function hasSessionHeader(content: string): boolean {

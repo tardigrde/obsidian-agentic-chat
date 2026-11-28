@@ -26,18 +26,14 @@ describe("secret storage migration", () => {
   });
 
   it("moves plaintext credentials to the secret store and stores only references in data", () => {
-    const server = {
-      ...createMcpServerSettings({
-        id: "docs",
-        name: "Docs MCP",
-        url: "https://mcp.example.com/mcp",
-        authType: "bearer",
-      }),
+    const state = createMcpServerState("docs", {
+      enabled: true,
+      authType: "bearer",
       authHeaderValue: "docs-secret",
-    };
-    server.oauth.clientSecret = "oauth-client-VALUE";
-    server.oauth.accessToken = "oauth-access-VALUE";
-    server.oauth.refreshToken = "oauth-refresh-VALUE";
+    });
+    state.oauth.clientSecret = "oauth-client-VALUE";
+    state.oauth.accessToken = "oauth-access-VALUE";
+    state.oauth.refreshToken = "oauth-refresh-VALUE";
 
     const store = new MemorySecretStore();
     // Legacy plaintext is not read by mergeSettings: it moves through the
@@ -51,7 +47,7 @@ describe("secret storage migration", () => {
         langfuseSecretKey: "sk-lf-secret",
         authHeaderValue: "Bearer otel-token",
       },
-      mcp: { enabled: true, servers: [server] },
+      plugins: { mcpState: { docs: state } },
     };
     migrateLegacyPlaintextSecrets(raw, store);
     const settings = mergeSettings(raw as unknown as Partial<AgenticChatSettings>);
@@ -63,10 +59,12 @@ describe("secret storage migration", () => {
     expect((stored.observability as unknown as Record<string, unknown>).langfusePublicKey).toBeUndefined();
     expect((stored.observability as unknown as Record<string, unknown>).langfuseSecretKey).toBeUndefined();
     expect((stored.observability as unknown as Record<string, unknown>).authHeaderValue).toBeUndefined();
-    expect((stored.mcp.servers[0] as unknown as Record<string, unknown>).authHeaderValue).toBeUndefined();
-    expect((stored.mcp.servers[0].oauth as unknown as Record<string, unknown>).clientSecret).toBeUndefined();
-    expect((stored.mcp.servers[0].oauth as unknown as Record<string, unknown>).accessToken).toBeUndefined();
-    expect((stored.mcp.servers[0].oauth as unknown as Record<string, unknown>).refreshToken).toBeUndefined();
+    const storedState = stored.plugins.mcpState?.docs as unknown as Record<string, unknown>;
+    expect(storedState.authHeaderValue).toBeUndefined();
+    const storedOAuth = storedState.oauth as unknown as Record<string, unknown>;
+    expect(storedOAuth.clientSecret).toBeUndefined();
+    expect(storedOAuth.accessToken).toBeUndefined();
+    expect(storedOAuth.refreshToken).toBeUndefined();
     // Persisted JSON must omit plaintext keys entirely (not even "").
     expect("openrouterApiKey" in stored).toBe(false);
     expect("openaiCompatibleApiKey" in stored).toBe(false);
@@ -74,8 +72,7 @@ describe("secret storage migration", () => {
     expect("langfusePublicKey" in stored.observability).toBe(false);
     expect("langfuseSecretKey" in stored.observability).toBe(false);
     expect("authHeaderValue" in stored.observability).toBe(false);
-    expect("authHeaderValue" in (stored.mcp.servers[0] as unknown as Record<string, unknown>)).toBe(false);
-    const storedOAuth = stored.mcp.servers[0].oauth as unknown as Record<string, unknown>;
+    expect("authHeaderValue" in storedState).toBe(false);
     expect("clientSecret" in storedOAuth).toBe(false);
     expect("accessToken" in storedOAuth).toBe(false);
     expect("refreshToken" in storedOAuth).toBe(false);
@@ -86,10 +83,10 @@ describe("secret storage migration", () => {
     expect(store.getSecret(stored.observability.langfusePublicKeySecretId)).toBe("pk-lf-public");
     expect(store.getSecret(stored.observability.langfuseSecretKeySecretId)).toBe("sk-lf-secret");
     expect(store.getSecret(stored.observability.authHeaderValueSecretId)).toBe("Bearer otel-token");
-    expect(store.getSecret(stored.mcp.servers[0].authHeaderValueSecretId)).toBe("docs-secret");
-    expect(store.getSecret(stored.mcp.servers[0].oauth.clientSecretSecretId)).toBe("oauth-client-VALUE");
-    expect(store.getSecret(stored.mcp.servers[0].oauth.accessTokenSecretId)).toBe("oauth-access-VALUE");
-    expect(store.getSecret(stored.mcp.servers[0].oauth.refreshTokenSecretId)).toBe("oauth-refresh-VALUE");
+    expect(store.getSecret(storedState.authHeaderValueSecretId as string)).toBe("docs-secret");
+    expect(store.getSecret(storedOAuth.clientSecretSecretId as string)).toBe("oauth-client-VALUE");
+    expect(store.getSecret(storedOAuth.accessTokenSecretId as string)).toBe("oauth-access-VALUE");
+    expect(store.getSecret(storedOAuth.refreshTokenSecretId as string)).toBe("oauth-refresh-VALUE");
   });
 
   it("hydrates runtime settings from secret references", () => {
@@ -113,18 +110,6 @@ describe("secret storage migration", () => {
   });
 
   it("round-trips legacy plaintext through omission back to hydrated runtime", () => {
-    const server = {
-      ...createMcpServerSettings({
-        id: "docs",
-        name: "Docs MCP",
-        url: "https://mcp.example.com/mcp",
-        authType: "bearer",
-      }),
-      authHeaderValue: "docs-secret",
-    };
-    server.oauth.clientSecret = "oauth-client-VALUE";
-    server.oauth.accessToken = "oauth-access-VALUE";
-    server.oauth.refreshToken = "oauth-refresh-VALUE";
     const stateEntry = createMcpServerState("plugin_docs_docs", { enabled: true, authType: "header" });
     stateEntry.authHeaderValue = "state-secret";
     const raw = {
@@ -136,7 +121,6 @@ describe("secret storage migration", () => {
         langfuseSecretKey: "sk-roundtrip",
         authHeaderValue: "Bearer otel-roundtrip",
       },
-      mcp: { enabled: true, servers: [server] },
       plugins: { mcpState: { plugin_docs_docs: stateEntry } },
     };
     const store = new MemorySecretStore();
@@ -153,10 +137,6 @@ describe("secret storage migration", () => {
       "pk-roundtrip",
       "sk-roundtrip",
       "Bearer otel-roundtrip",
-      "docs-secret",
-      "oauth-client-VALUE",
-      "oauth-access-VALUE",
-      "oauth-refresh-VALUE",
       "state-secret",
     ]) {
       expect(json).not.toContain(secret);
@@ -180,10 +160,6 @@ describe("secret storage migration", () => {
     expect(reloaded.observability.langfusePublicKey).toBe("pk-roundtrip");
     expect(reloaded.observability.langfuseSecretKey).toBe("sk-roundtrip");
     expect(reloaded.observability.authHeaderValue).toBe("Bearer otel-roundtrip");
-    expect(reloaded.mcp.servers[0].authHeaderValue).toBe("docs-secret");
-    expect(reloaded.mcp.servers[0].oauth.clientSecret).toBe("oauth-client-VALUE");
-    expect(reloaded.mcp.servers[0].oauth.accessToken).toBe("oauth-access-VALUE");
-    expect(reloaded.mcp.servers[0].oauth.refreshToken).toBe("oauth-refresh-VALUE");
     expect(reloaded.plugins.mcpState["plugin_docs_docs"].authHeaderValue).toBe("state-secret");
 
     // Third save without re-entry must not wipe good secrets (skip-on-absent).
@@ -195,7 +171,6 @@ describe("secret storage migration", () => {
     expect(reloaded2.openrouterApiKey).toBe("or-roundtrip");
     expect(reloaded2.web.searchApiKey).toBe("search-roundtrip");
     expect(reloaded2.observability.langfuseSecretKey).toBe("sk-roundtrip");
-    expect(reloaded2.mcp.servers[0].authHeaderValue).toBe("docs-secret");
     expect(reloaded2.plugins.mcpState["plugin_docs_docs"].authHeaderValue).toBe("state-secret");
   });
 
@@ -211,19 +186,15 @@ describe("secret storage migration", () => {
         langfuseSecretKey: "plain-sk",
         authHeaderValue: "plain-header",
       },
-      mcp: {
-        ...DEFAULT_SETTINGS.mcp,
-        servers: [
-          {
-            ...createMcpServerSettings({
-              id: "docs",
-              name: "Docs",
-              url: "https://mcp.example.com/mcp",
-              authType: "bearer",
-            }),
+      plugins: {
+        ...DEFAULT_SETTINGS.plugins,
+        mcpState: {
+          docs: {
+            ...createMcpServerState("docs", { enabled: true }),
             authHeaderValue: "plain-mcp",
+            oauth: { ...createMcpServerState("docs").oauth, accessToken: "plain-access" },
           },
-        ],
+        },
       },
     } as Partial<AgenticChatSettings>);
     expect(merged.openrouterApiKey).toBe("");
@@ -232,8 +203,8 @@ describe("secret storage migration", () => {
     expect(merged.observability.langfusePublicKey).toBe("");
     expect(merged.observability.langfuseSecretKey).toBe("");
     expect(merged.observability.authHeaderValue).toBe("");
-    expect(merged.mcp.servers[0].authHeaderValue).toBe("");
-    expect(merged.mcp.servers[0].oauth.accessToken).toBe("");
+    expect(merged.plugins.mcpState.docs.authHeaderValue).toBe("");
+    expect(merged.plugins.mcpState.docs.oauth.accessToken).toBe("");
   });
 
   it("hydrates old empty-string format and coerces corrupt non-string plaintext", () => {
@@ -309,44 +280,11 @@ describe("legacy plaintext secret migration (#285)", () => {
     expect(JSON.stringify(settingsForStorage(settings, new MemorySecretStore()))).not.toContain("legacy-key");
   });
 
-  it("keeps distinct secrets for MCP servers that have no id", () => {
-    const store = new MemorySecretStore();
-    const raw: Record<string, unknown> = {
-      mcp: {
-        enabled: true,
-        servers: [
-          { name: "Alpha", url: "https://alpha.example.com/mcp", authType: "bearer", authHeaderValue: "alpha-secret" },
-          { name: "Beta", url: "https://beta.example.com/mcp", authType: "bearer", authHeaderValue: "beta-secret" },
-        ],
-      },
-    };
-
-    migrateLegacyPlaintextSecrets(raw, store);
-    const settings = mergeSettings(raw as unknown as Partial<AgenticChatSettings>);
-    hydrateSettingsSecrets(settings, store);
-
-    expect(settings.mcp.servers.map((server) => server.authHeaderValue)).toEqual(["alpha-secret", "beta-secret"]);
-  });
 });
 
 describe("secret slot parity pin", () => {
   it("persists the exact data.json shape and secret-store keys when every slot is set", () => {
     const settings = mergeSettings({
-      mcp: {
-        ...DEFAULT_SETTINGS.mcp,
-        enabled: true,
-        servers: [
-          {
-            ...createMcpServerSettings({
-              id: "docs",
-              name: "Docs",
-              url: "https://mcp.example.com/mcp",
-              authType: "bearer",
-            }),
-            authHeaderValue: "mcp-header",
-          },
-        ],
-      },
       plugins: {
         ...DEFAULT_SETTINGS.plugins,
         mcpState: {
@@ -360,11 +298,6 @@ describe("secret slot parity pin", () => {
     settings.observability.langfusePublicKey = "lf-public";
     settings.observability.langfuseSecretKey = "lf-secret";
     settings.observability.authHeaderValue = "Bearer otel";
-    const server = settings.mcp.servers[0];
-    server.authHeaderValue = "mcp-header";
-    server.oauth.clientSecret = "mcp-client-secret";
-    server.oauth.accessToken = "mcp-access-token";
-    server.oauth.refreshToken = "mcp-refresh-token";
     const state = settings.plugins.mcpState.plugin_docs_docs;
     state.authHeaderValue = "state-header";
     state.oauth.clientSecret = "state-client-secret";
@@ -382,11 +315,6 @@ describe("secret slot parity pin", () => {
     delete expectedObservability.langfusePublicKey;
     delete expectedObservability.langfuseSecretKey;
     delete expectedObservability.authHeaderValue;
-    const expectedServer = (expected.mcp as { servers: Array<Record<string, unknown>> }).servers[0];
-    delete expectedServer.authHeaderValue;
-    delete (expectedServer.oauth as Record<string, unknown>).clientSecret;
-    delete (expectedServer.oauth as Record<string, unknown>).accessToken;
-    delete (expectedServer.oauth as Record<string, unknown>).refreshToken;
     const expectedState = (expected.plugins as { mcpState: Record<string, Record<string, unknown>> }).mcpState
       .plugin_docs_docs;
     delete expectedState.authHeaderValue;
@@ -398,10 +326,6 @@ describe("secret slot parity pin", () => {
     expect(Object.fromEntries([...store.secrets.entries()].sort(([a], [b]) => a.localeCompare(b)))).toEqual({
       "agentic-chat-langfuse-public-key": "lf-public",
       "agentic-chat-langfuse-secret-key": "lf-secret",
-      "agentic-chat-mcp-docs-auth-header-value": "mcp-header",
-      "agentic-chat-mcp-docs-oauth-access-token": "mcp-access-token",
-      "agentic-chat-mcp-docs-oauth-client-secret": "mcp-client-secret",
-      "agentic-chat-mcp-docs-oauth-refresh-token": "mcp-refresh-token",
       "agentic-chat-mcp-plugin-docs-docs-auth-header-value": "state-header",
       "agentic-chat-mcp-plugin-docs-docs-oauth-access-token": "state-access-token",
       "agentic-chat-mcp-plugin-docs-docs-oauth-client-secret": "state-client-secret",

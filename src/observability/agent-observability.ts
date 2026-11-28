@@ -30,6 +30,8 @@ export type { ObservabilitySessionContext } from "./spans";
 
 export interface AgentObservabilityRuntimeOptions {
   getSettings: () => AgenticChatSettings;
+  /** Shared runtime posture; defaults to Safe. */
+  getMode?: () => string;
   fetcher: WebFetcher;
   getSessionContext: () => ObservabilitySessionContext;
   now?: () => number;
@@ -141,7 +143,7 @@ export class AgentObservabilityRuntime {
         "langfuse.trace.tags": ["agentic-chat", context.provider],
         "agentic.provider": context.provider,
         "agentic.model": activeModelId(context),
-        "agentic.mode": context.mode,
+        "agentic.mode": this.options.getMode?.() ?? "safe",
         "agentic.thinking_level": context.thinkingLevel,
         "agentic.observability.payload_mode": settings.payloadMode,
       },

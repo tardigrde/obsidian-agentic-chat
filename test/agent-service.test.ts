@@ -10,6 +10,7 @@ import type { AskUserHandler, AskUserRequest } from "../src/tools/ask-user-tool"
 import { isSummaryMessage } from "../src/agent/compaction";
 import { ObsidianSessionManager, SessionWriteRegistry } from "../src/session/session-manager";
 import { DEFAULT_SETTINGS, type AgenticChatSettings } from "../src/settings-schema";
+import type { AgentMode } from "../src/agent/modes";
 import type { WebFetcher, WebHttpRequest } from "../src/tools/web-fetch";
 import { parseSessionEntries, serializeSessionEntries } from "../src/session/jsonl";
 import { FakeAdapter as MemoryAdapter } from "./support/fake-adapter";
@@ -214,20 +215,23 @@ function makeService(
   adapter: MemoryAdapter;
   settings: AgenticChatSettings;
   sessionManager: ObsidianSessionManager;
+  setMode: (mode: AgentMode) => void;
 } {
   const settings: AgenticChatSettings = { ...DEFAULT_SETTINGS, openrouterApiKey: "test-key" };
+  let mode: AgentMode = "safe";
   const adapter = new MemoryAdapter();
   const sessionManager = new ObsidianSessionManager(adapter.asDataAdapter(), "sessions", "vault:test", new SessionWriteRegistry());
   const service = new AgentService({
     app,
     getSettings: () => settings,
+    getMode: () => mode,
     sessionManager,
     confirmToolCall,
     askUser,
     streamFn,
     observabilityFetch,
   });
-  return { service, adapter, settings, sessionManager };
+  return { service, adapter, settings, sessionManager, setMode: (next) => { mode = next; } };
 }
 
 function minimalApp(): App {
@@ -603,7 +607,7 @@ describe("AgentService", () => {
     await vault.create("Other/first.md", "first file body");
     await vault.create("Other/second.md", "second file body");
     let confirmCalls = 0;
-    const { service, settings } = makeService(
+    const { service, settings, setMode } = makeService(
       streamFn,
       async () => {
         confirmCalls += 1;
@@ -613,7 +617,7 @@ describe("AgentService", () => {
       app,
     );
     // An explicit per-tool ask gates both reads, so the prepared siblings run in parallel.
-    settings.mode = "safe";
+    setMode("safe");
     settings.approval = { mutating: "ask", perTool: { read: "ask" } };
 
     await service.sendPrompt("read two files");
@@ -677,8 +681,8 @@ describe("AgentService", () => {
     ]);
     // YOLO forces mutating→allow, but the per-tool deny on `write` must override it,
     // and never prompt the user even though confirmToolCall would say yes.
-    const { service, settings } = makeService(streamFn, async () => ({ approved: true, remember: false }));
-    settings.mode = "yolo";
+    const { service, settings, setMode } = makeService(streamFn, async () => ({ approved: true, remember: false }));
+    setMode("yolo");
     settings.approval = { mutating: "allow", perTool: { write: "deny" } };
     await service.sendPrompt("Create note.md");
 
@@ -698,11 +702,11 @@ describe("AgentService", () => {
       { content: [{ type: "text", text: "Ok, leaving it." }], stopReason: "stop" },
     ]);
     let confirmCalls = 0;
-    const { service, settings } = makeService(streamFn, async () => {
+    const { service, settings, setMode } = makeService(streamFn, async () => {
       confirmCalls += 1;
       return { approved: false, remember: false };
     });
-    settings.mode = "safe";
+    setMode("safe");
     settings.approval = { mutating: "ask", perTool: {} };
     await service.sendPrompt("write a note");
     expect(confirmCalls).toBe(1);
@@ -714,12 +718,11 @@ describe("AgentService", () => {
       { content: [{ type: "text", text: "Ok." }], stopReason: "stop" },
     ]);
     let confirmCalls = 0;
-    const { service, settings } = makeService(streamFn, async () => {
+    const { service, setMode } = makeService(streamFn, async () => {
       confirmCalls += 1;
       return { approved: false, remember: false };
     });
-    settings.mode = "safe";
-    settings.approval = { mutating: "ask", perTool: {} };
+    setMode("safe");
     await service.sendPrompt("read a note");
     expect(confirmCalls).toBe(0);
   });
@@ -958,7 +961,8 @@ describe("AgentService", () => {
     expect(service.getMessages().some((message) => JSON.stringify(message).includes("first"))).toBe(false);
     const path = service.getSessionInfo()?.path as string;
     const persisted = parseSessionEntries(await adapter.read(path));
-    expect(persisted.filter((entry) => entry.type === "message" && isSummaryMessage(entry.message))).toHaveLength(1);
+    expect(persisted.filter((entry) => entry.type === "compaction")).toHaveLength(1);
+    expect(persisted.filter((entry) => entry.type === "message" && isSummaryMessage(entry.message))).toHaveLength(0);
   });
 
   it("records skipped manual compaction attempts in the session audit log", async () => {

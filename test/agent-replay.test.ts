@@ -37,7 +37,7 @@ describe("AgentService replay harness", () => {
       turns: [replayTextTurn("Here is a plain chat outline.", { label: "normal reply" })],
     });
 
-    expect(result.settings.mode).toBe("safe");
+    expect(result.mode).toBe("safe");
     expect(result.sessionText).not.toMatch(/plan_tracker/);
     expect(result.sessionText).not.toMatch(/PLAN_COMPLETE/);
     expect(result.sessionText).not.toMatch(/"mode"\s*:\s*"plan"/);

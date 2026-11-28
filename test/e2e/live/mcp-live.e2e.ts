@@ -45,6 +45,8 @@ function readConfig(): McpE2EConfig | null {
   };
 }
 
+const SECURE_MCP_SERVER_ID = "plugin_secure_mcp_3c334e3b2268";
+
 function localMcpToolName(serverId: string, remoteTool: string): string {
   const part = remoteTool
     .trim()
@@ -71,28 +73,11 @@ async function configurePlugin(config: McpE2EConfig): Promise<boolean> {
         enabled: boolean;
         proxyUrl: string;
         noProxy: string;
-        servers: Array<{
-          id: string;
-          name: string;
-          url: string;
-          enabled: boolean;
-          authType: string;
-          authHeaderName: string;
-          authHeaderValueSecretId: string;
-          authHeaderValue: string;
-          headers: Record<string, string>;
-          source: "user" | "plugin";
-          enabledTools: string[];
-          disabledTools: string[];
-          oauth: Record<string, string | number | boolean>;
-          approval: string;
-          knownTools: Array<{ name: string; title: string; readOnlyHint: boolean }>;
-        }>;
       };
+      plugins: { mcpState: Record<string, Record<string, unknown>> };
     };
     settings.provider = "openrouter";
     settings.openrouterApiKey = "e2e-scripted-key";
-    settings.mode = "safe";
     settings.approval.mutating = "ask";
     settings.approval.perTool = {};
     settings.web.enabled = false;
@@ -100,44 +85,54 @@ async function configurePlugin(config: McpE2EConfig): Promise<boolean> {
       enabled: true,
       proxyUrl: "",
       noProxy: "localhost,127.0.0.1,::1",
-      servers: [
-        {
-          id: "secure_mcp",
-          name: "Secure MCP E2E",
-          url: cfg.url,
-          enabled: true,
-          authType: cfg.headerName ? "header" : "none",
-          authHeaderName: cfg.headerName,
-          authHeaderValueSecretId: "agentic-chat-mcp-secure-mcp-auth-header-value",
-          authHeaderValue: cfg.headerValue,
-          // The test assigns raw settings and bypasses healing; every field the
-          // client reads must be present. `headers` is read with Object.entries.
-          headers: {},
-          source: "user",
-          enabledTools: [],
-          disabledTools: [],
-          oauth: {
-            clientId: "",
-            clientSecretSecretId: "agentic-chat-mcp-secure-mcp-oauth-client-secret",
-            clientSecret: "",
-            dynamicClientRegistration: false,
-            registeredRedirectUri: "",
-            authorizationServer: "",
-            authorizationEndpoint: "",
-            tokenEndpoint: "",
-            registrationEndpoint: "",
-            resourceMetadataUrl: "",
-            accessTokenSecretId: "agentic-chat-mcp-secure-mcp-oauth-access-token",
-            accessToken: "",
-            refreshTokenSecretId: "agentic-chat-mcp-secure-mcp-oauth-refresh-token",
-            refreshToken: "",
-            expiresAt: 0,
-            scope: "",
-          },
-          approval: "ask",
-          knownTools: [],
-        },
-      ],
+    };
+    const root = ".agentic-plugins/secure";
+    if (!(await app.vault.adapter.exists(root))) {
+      await app.vault.adapter.mkdir(root);
+      await app.vault.adapter.write(
+        `${root}/plugin.json`,
+        JSON.stringify({
+          $schema: "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+          name: "secure",
+        }),
+      );
+    }
+    await app.vault.adapter.write(
+      `${root}/mcp.json`,
+      JSON.stringify({
+        $schema: "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+        mcpServers: { mcp: { type: "streamable-http", url: cfg.url } },
+      }),
+    );
+    settings.plugins.mcpState["plugin_secure_mcp_3c334e3b2268"] = {
+      enabled: true,
+      authType: cfg.headerName ? "header" : "none",
+      authHeaderName: cfg.headerName,
+      authHeaderValueSecretId: "agentic-chat-mcp-plugin_secure_mcp_3c334e3b2268-auth-header-value",
+      authHeaderValue: cfg.headerValue,
+      enabledTools: [],
+      disabledTools: [],
+      oauth: {
+        clientId: "",
+        clientSecretSecretId: "agentic-chat-mcp-plugin_secure_mcp_3c334e3b2268-oauth-client-secret",
+        clientSecret: "",
+        dynamicClientRegistration: false,
+        registeredRedirectUri: "",
+        authorizationServer: "",
+        authorizationEndpoint: "",
+        tokenEndpoint: "",
+        registrationEndpoint: "",
+        resourceMetadataUrl: "",
+        accessTokenSecretId: "agentic-chat-mcp-plugin_secure_mcp_3c334e3b2268-oauth-access-token",
+        accessToken: "",
+        refreshTokenSecretId: "agentic-chat-mcp-plugin_secure_mcp_3c334e3b2268-oauth-refresh-token",
+        refreshToken: "",
+        expiresAt: 0,
+        scope: "",
+      },
+      approval: "ask",
+      knownTools: [],
+      lastUrl: cfg.url,
     };
     await plugin.saveSettings?.();
     return true;
@@ -186,7 +181,7 @@ async function latestMcpToolResult(localToolName: string): Promise<{ isError?: b
 
 describe("agentic-chat live MCP over HTTPS", function () {
   const config = readConfig();
-  const localTool = config ? localMcpToolName("secure_mcp", config.remoteTool) : "";
+  const localTool = config ? localMcpToolName(SECURE_MCP_SERVER_ID, config.remoteTool) : "";
 
   before(async function () {
     if (!config) this.skip();
@@ -209,8 +204,8 @@ describe("agentic-chat live MCP over HTTPS", function () {
     expect(result).not.toBeNull();
     expect(result?.isError).toBe(false);
     expect(result?.details).toMatchObject({
-      serverId: "secure_mcp",
-      serverName: "Secure MCP E2E",
+      serverId: SECURE_MCP_SERVER_ID,
+      serverName: "secure: mcp",
       remoteToolName: config.remoteTool,
     });
   });

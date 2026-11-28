@@ -1,6 +1,7 @@
 import type { App } from "obsidian";
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import type { AgenticChatSettings } from "../settings-schema";
+import { type AgentMode, DEFAULT_MODE } from "./modes";
 import type { ApprovalAuditInput, CheckpointAuditInput } from "./action-audit-log";
 import {
   createFileCheckpointFromUndo,
@@ -92,6 +93,8 @@ export interface AfterToolCallContext {
 interface ToolCallControllerOptions {
   app: App;
   getSettings: () => AgenticChatSettings;
+  /** Shared runtime posture; defaults to Safe when no host supplies one. */
+  getMode?: () => AgentMode;
   confirmToolCall: (request: ToolApprovalRequest, signal?: AbortSignal) => Promise<UserApprovalChoice>;
   getTools: () => AgentTool[];
   getProfiles: () => AgentRole[];
@@ -114,6 +117,7 @@ interface ToolCallControllerOptions {
 export class AgentToolCallController {
   private readonly app: App;
   private readonly getSettings: () => AgenticChatSettings;
+  private readonly getMode: () => AgentMode;
   private readonly confirmToolCall: (request: ToolApprovalRequest, signal?: AbortSignal) => Promise<UserApprovalChoice>;
   private readonly getTools: () => AgentTool[];
   private readonly getProfiles: () => AgentRole[];
@@ -137,6 +141,7 @@ export class AgentToolCallController {
   constructor(options: ToolCallControllerOptions) {
     this.app = options.app;
     this.getSettings = options.getSettings;
+    this.getMode = options.getMode ?? (() => DEFAULT_MODE);
     this.confirmToolCall = options.confirmToolCall;
     this.getTools = options.getTools;
     this.getProfiles = options.getProfiles;
@@ -291,7 +296,7 @@ export class AgentToolCallController {
     if (toolName === SUBAGENT_TOOL_NAME) return this.gateSubagentDispatch(settings, toolCallId, args);
     if (isMcpToolName(toolName)) return this.gateMcpToolCall(settings, toolCallId, toolName, args, signal);
     const decision = resolveToolPolicy({
-      mode: settings.mode,
+      mode: this.getMode(),
       approval: settings.approval,
       family: "vault",
       toolName,
@@ -331,7 +336,7 @@ export class AgentToolCallController {
     signal?: AbortSignal,
   ): Promise<ToolGateDecision> {
     const decision = resolveToolPolicy({
-      mode: settings.mode,
+      mode: this.getMode(),
       approval: settings.approval,
       family: "mcp",
       toolName,
@@ -364,10 +369,7 @@ export class AgentToolCallController {
   private resolveMcpServerApproval(settings: AgenticChatSettings, toolName: string): ApprovalPolicy | undefined {
     const serverId = mcpServerIdFromToolName(toolName);
     if (!serverId) return undefined;
-    const state = settings.plugins.mcpState[serverId];
-    if (state && state.approval) return state.approval;
-    const server = settings.mcp.servers.find((candidate) => candidate.id === serverId);
-    return server?.approval;
+    return settings.plugins.mcpState[serverId]?.approval;
   }
 
   /**
@@ -390,7 +392,7 @@ export class AgentToolCallController {
       ? `subagent: unknown agent "${unknown.agent.trim()}". Available: ${available}.`
       : undefined;
     const decision = resolveToolPolicy({
-      mode: settings.mode,
+      mode: this.getMode(),
       approval: settings.approval,
       family: "subagent",
       unknownAgentReason,

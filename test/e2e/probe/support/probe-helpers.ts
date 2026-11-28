@@ -15,9 +15,6 @@ export type ProbeSettings = {
   openaiCompatibleApiKey?: string;
   openaiCompatibleBaseUrl?: string;
   openaiCompatibleModel?: string;
-  requestTimeoutMs?: number;
-  maxNetworkRetries?: number;
-  mode?: string;
   approval?: { mutating?: string; perTool?: Record<string, string> };
   web?: { enabled?: boolean };
 };

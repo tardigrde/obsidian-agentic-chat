@@ -10,7 +10,6 @@ function settings(overrides: Partial<AgenticChatSettings> = {}): AgenticChatSett
   return {
     ...DEFAULT_SETTINGS,
     plugins: { ...DEFAULT_SETTINGS.plugins, enabled: {}, sources: {}, mcpState: {} },
-    mcp: { ...DEFAULT_SETTINGS.mcp, servers: [] },
     approval: { ...DEFAULT_SETTINGS.approval, perTool: {} },
     ...overrides,
   };
@@ -130,7 +129,7 @@ describe("PluginService.removeFolder dot-folder guard (issue #133)", () => {
 });
 
 describe("PluginService.reload orphan pruning", () => {
-  it("prunes orphan enabled/sources/mcpState/perTool and legacy mcp.servers on reload", async () => {
+  it("prunes orphan enabled/sources/mcpState/perTool on reload", async () => {
     const { app, current, service } = await seed();
     await service.scaffoldSkill({ name: "keep", description: "d", body: "# k" });
     await service.reload();
@@ -141,7 +140,6 @@ describe("PluginService.reload orphan pruning", () => {
     current.plugins.sources["orphan"] = "github:example/orphan";
     current.approval.perTool[`mcp__${orphanId}__tool_x`] = "allow";
     current.approval.perTool["write"] = "allow";
-    current.mcp.servers.push({ id: orphanId, name: "orphan: files", url: "https://orphan.example.com/mcp", enabled: true, approval: "ask", authType: "none", authHeaderName: "", authHeaderValue: "", authHeaderValueSecretId: "", oauth: { clientId: "", clientSecret: "", clientSecretSecretId: "", authorizationEndpoint: "", tokenEndpoint: "", redirectUri: "", scope: "", accessToken: "", accessTokenSecretId: "", refreshToken: "", refreshTokenSecretId: "", expiresAt: 0, dynamicClientRegistration: false, registeredRedirectUri: "" }, knownTools: [], enabledTools: [], disabledTools: [], headers: {}, source: "plugin", pluginRoot: ".agentic-plugins/orphan" } as unknown as typeof current.mcp.servers[number]);
     let saveCalls = 0;
     const savingService = svcFor(app, current, () => { saveCalls += 1; });
     await savingService.reload();
@@ -150,18 +148,7 @@ describe("PluginService.reload orphan pruning", () => {
     expect(current.plugins.sources["orphan"]).toBeUndefined();
     expect(current.approval.perTool[`mcp__${orphanId}__tool_x`]).toBeUndefined();
     expect(current.approval.perTool["write"]).toBe("allow");
-    expect(current.mcp.servers.find((s) => s.pluginRoot === ".agentic-plugins/orphan")).toBeUndefined();
     expect(saveCalls).toBe(1);
-  });
-
-  it("does not prune mcpState for ids that are legacy user servers (isLegacyUser guard)", async () => {
-    const { current, service } = await seed();
-    await service.scaffoldSkill({ name: "keep2", description: "d", body: "# k" });
-    const legacyId = "legacy-user-id";
-    current.plugins.mcpState[legacyId] = { id: legacyId, enabled: true, approval: "ask", authType: "none", authHeaderName: "", authHeaderValue: "", authHeaderValueSecretId: "", oauth: { clientId: "", clientSecret: "", clientSecretSecretId: "", authorizationEndpoint: "", tokenEndpoint: "", redirectUri: "", scope: "", accessToken: "", accessTokenSecretId: "", refreshToken: "", refreshTokenSecretId: "", expiresAt: 0, dynamicClientRegistration: false, registeredRedirectUri: "" }, knownTools: [], enabledTools: [], disabledTools: [], lastUrl: "https://legacy.example.com" } as unknown as typeof current.plugins.mcpState[string];
-    current.mcp.servers.push({ id: legacyId, name: "legacy", url: "https://legacy.example.com/mcp", enabled: true, approval: "ask", authType: "none", authHeaderName: "", authHeaderValue: "", authHeaderValueSecretId: "", oauth: { clientId: "", clientSecret: "", clientSecretSecretId: "", authorizationEndpoint: "", tokenEndpoint: "", redirectUri: "", scope: "", accessToken: "", accessTokenSecretId: "", refreshToken: "", refreshTokenSecretId: "", expiresAt: 0, dynamicClientRegistration: false, registeredRedirectUri: "" }, knownTools: [], enabledTools: [], disabledTools: [], headers: {}, source: "user" } as unknown as typeof current.mcp.servers[number]);
-    await service.reload();
-    expect(current.plugins.mcpState[legacyId]).toBeDefined();
   });
 
   it("listExternallyDeletedPlugins returns plugins whose adapter.exists is false", async () => {

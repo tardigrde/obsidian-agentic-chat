@@ -15,7 +15,6 @@ function settings(): AgenticChatSettings {
   return {
     ...DEFAULT_SETTINGS,
     plugins: { ...DEFAULT_SETTINGS.plugins, enabled: {}, sources: {}, mcpState: {} },
-    mcp: { ...DEFAULT_SETTINGS.mcp, servers: [] },
     approval: { ...DEFAULT_SETTINGS.approval, perTool: {} },
   };
 }

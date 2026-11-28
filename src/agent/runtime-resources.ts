@@ -29,7 +29,7 @@ import {
   formatAgentRolesForSystemPrompt,
   loadAgentRoles,
 } from "./subagents";
-import { buildSystemPrompt } from "./system-prompt";
+import { DEFAULT_SYSTEM_PROMPT, buildSystemPrompt } from "./system-prompt";
 import {
   LoadedToolSet,
   createSearchToolsTool,
@@ -96,7 +96,7 @@ export async function loadAgentRuntimeResources(
     : { proxyUrl: settings.network.proxyUrl, noProxy: settings.network.noProxy };
   // Plugin mcp.json is the source of truth for server shape; client-owned
   // state (enabled/approval/auth/knownTools/oauth) lives in settings.plugins.mcpState
-  // keyed by stable id. No merge with settings.mcp.servers — the two cannot diverge.
+  // keyed by stable id. There is no second server list in settings.
   const pluginServers = plugins.filter((plugin) => plugin.enabled).flatMap((plugin) => plugin.mcpServers);
   const mcpServers = resolveMcpServers(settings, pluginServers);
   // Plugin servers are runtime copies: their shape comes from mcp.json and their
@@ -148,7 +148,7 @@ export function composeAgentSystemPrompt(
     formatDeferredToolsOverlay(deferredTools, resources.mcpDiagnostics),
     webToolsOffNotice(settings),
   ];
-  return buildSystemPrompt(settings.systemPrompt, resources.skills, overlays);
+  return buildSystemPrompt(DEFAULT_SYSTEM_PROMPT, resources.skills, overlays);
 }
 
 /**

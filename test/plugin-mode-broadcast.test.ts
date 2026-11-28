@@ -10,10 +10,21 @@ vi.mock("../src/llm/pricing-cache", () => ({
 }));
 
 /** A loaded plugin with one open chat view whose mode refresh is counted. */
-async function loadedPlugin(): Promise<{ plugin: AgenticChatPlugin; refresh: ReturnType<typeof vi.fn> }> {
+async function loadedPlugin(
+  stored: Record<string, unknown> | null = null,
+): Promise<{
+  plugin: AgenticChatPlugin;
+  refresh: ReturnType<typeof vi.fn>;
+  saved: Record<string, unknown>[];
+  streaming: { value: boolean };
+}> {
   const app = new FakeApp();
   const refresh = vi.fn();
-  const view = Object.assign(Object.create(ChatView.prototype), { refreshModeFromSettings: refresh });
+  const streaming = { value: false };
+  const view = Object.assign(Object.create(ChatView.prototype), {
+    refreshModeFromSettings: refresh,
+    isStreaming: () => streaming.value,
+  });
   const workspace = app.workspace as unknown as Record<string, unknown>;
   workspace.on = () => undefined;
   workspace.getLeavesOfType = () => [{ view }];
@@ -27,8 +38,11 @@ async function loadedPlugin(): Promise<{ plugin: AgenticChatPlugin; refresh: Ret
   const target = plugin as unknown as Record<string, unknown>;
   target.app = app;
   target.manifest = { id: "agentic-chat", dir: ".obsidian/plugins/agentic-chat" };
-  target.loadData = async () => null;
-  target.saveData = async () => undefined;
+  target.loadData = async () => stored;
+  const saved: Record<string, unknown>[] = [];
+  target.saveData = async (data: Record<string, unknown>) => {
+    saved.push(structuredClone(data));
+  };
   for (const method of ["registerView", "registerObsidianProtocolHandler", "addRibbonIcon", "addCommand", "addSettingTab", "registerEvent"]) {
     target[method] = () => undefined;
   }
@@ -37,93 +51,60 @@ async function loadedPlugin(): Promise<{ plugin: AgenticChatPlugin; refresh: Ret
   target.pluginService = service;
   await plugin.onload();
   refresh.mockClear();
-  return { plugin, refresh };
+  return { plugin, refresh, saved, streaming };
 }
 
-describe("mode broadcast to chat views", () => {
-  it("refreshes open chat views once after a save that changed the mode", async () => {
-    const { plugin, refresh } = await loadedPlugin();
-    const next = plugin.settings.mode === "safe" ? "yolo" : "safe";
+describe("newer settings format", () => {
+  it("keeps a newer data.json untouched and refuses to save defaults over it", async () => {
+    const { plugin, saved } = await loadedPlugin({ settingsVersion: 2, openrouterModel: "future/model" });
 
-    await plugin.settingsStore.update((settings) => {
-      settings.mode = next;
-    });
-
-    expect(refresh).toHaveBeenCalledTimes(1);
-  });
-
-  it("does not refresh chat views on a save that left the mode unchanged", async () => {
-    const { plugin, refresh } = await loadedPlugin();
-
-    await plugin.saveSettings();
-    await plugin.settingsStore.update((settings) => {
-      settings.systemPrompt = `${settings.systemPrompt ?? ""} more`;
-    });
-
-    expect(refresh).not.toHaveBeenCalled();
-  });
-
-  it("does not refresh chat views when the save fails", async () => {
-    const { plugin, refresh } = await loadedPlugin();
-    (plugin as unknown as { saveData: () => Promise<void> }).saveData = async () => {
-      throw new Error("disk full");
-    };
-    const next = plugin.settings.mode === "safe" ? "yolo" : "safe";
-
-    await expect(
-      plugin.settingsStore.update((settings) => {
-        settings.mode = next;
-      }),
-    ).rejects.toThrow("disk full");
-
-    expect(refresh).not.toHaveBeenCalled();
+    expect(plugin.settings.openrouterModel).toBe("deepseek/deepseek-v4.1-flash");
+    expect(saved).toEqual([]);
+    await expect(plugin.saveSettings()).rejects.toThrow(/newer version/i);
   });
 });
 
-describe("mode change listeners", () => {
-  it("notifies a listener once with the new mode after a changed save", async () => {
-    const { plugin } = await loadedPlugin();
+describe("runtime mode", () => {
+  it("starts in Safe even when an old data.json stored a mode", async () => {
+    const { plugin, saved } = await loadedPlugin({ mode: "yolo" });
+
+    expect(plugin.mode).toBe("safe");
+    expect(saved.length).toBeGreaterThan(0);
+    expect("mode" in saved[0]).toBe(false);
+  });
+
+  it("refreshes every open chat view and notifies listeners once on a mode change", async () => {
+    const { plugin, refresh } = await loadedPlugin();
     const listener = vi.fn();
     plugin.onModeChange(listener);
-    const next = plugin.settings.mode === "safe" ? "yolo" : "safe";
 
-    await plugin.settingsStore.update((settings) => {
-      settings.mode = next;
-    });
+    expect(plugin.setMode("yolo")).toBe(true);
 
+    expect(plugin.mode).toBe("yolo");
+    expect(refresh).toHaveBeenCalledTimes(1);
     expect(listener).toHaveBeenCalledTimes(1);
-    expect(listener).toHaveBeenCalledWith(next);
+    expect(listener).toHaveBeenCalledWith("yolo");
   });
 
-  it("does not notify a listener on an unchanged save", async () => {
-    const { plugin } = await loadedPlugin();
+  it("does not refresh or notify when the mode already matches", async () => {
+    const { plugin, refresh } = await loadedPlugin();
     const listener = vi.fn();
     plugin.onModeChange(listener);
 
-    await plugin.saveSettings();
-    await plugin.settingsStore.update((settings) => {
-      settings.systemPrompt = `${settings.systemPrompt ?? ""} more`;
-    });
+    expect(plugin.setMode("safe")).toBe(false);
 
+    expect(refresh).not.toHaveBeenCalled();
     expect(listener).not.toHaveBeenCalled();
   });
 
-  it("does not notify a listener when the save fails", async () => {
-    const { plugin } = await loadedPlugin();
-    const listener = vi.fn();
-    plugin.onModeChange(listener);
-    (plugin as unknown as { saveData: () => Promise<void> }).saveData = async () => {
-      throw new Error("disk full");
-    };
-    const next = plugin.settings.mode === "safe" ? "yolo" : "safe";
+  it("refuses a mode change while any view is streaming", async () => {
+    const { plugin, refresh, streaming } = await loadedPlugin();
+    streaming.value = true;
 
-    await expect(
-      plugin.settingsStore.update((settings) => {
-        settings.mode = next;
-      }),
-    ).rejects.toThrow("disk full");
+    expect(plugin.setMode("yolo")).toBe(false);
 
-    expect(listener).not.toHaveBeenCalled();
+    expect(plugin.mode).toBe("safe");
+    expect(refresh).not.toHaveBeenCalled();
   });
 
   it("stops notifying a listener after it unsubscribes", async () => {
@@ -131,11 +112,8 @@ describe("mode change listeners", () => {
     const listener = vi.fn();
     const unsubscribe = plugin.onModeChange(listener);
     unsubscribe();
-    const next = plugin.settings.mode === "safe" ? "yolo" : "safe";
 
-    await plugin.settingsStore.update((settings) => {
-      settings.mode = next;
-    });
+    plugin.setMode("yolo");
 
     expect(listener).not.toHaveBeenCalled();
   });

@@ -7,12 +7,13 @@ import {
   mcpServerIdFromToolName,
   probeMcpServer,
 } from "../src/mcp/tools";
-import { createMcpServerSettings, type McpSettings } from "../src/mcp/settings";
+import { createMcpServerSettings } from "../src/mcp/settings";
+import type { McpToolsSettings } from "../src/mcp/tools";
 import type { ToolArtifactMetadata, ToolArtifactStoreLike, ToolArtifactWriteInput } from "../src/artifacts/tool-artifact-store";
 import type { WebFetcher, WebHttpRequest, WebHttpResponse } from "../src/tools/web-fetch";
 import { TOOL_OUTPUT_BEGIN_PREFIX } from "../src/tools/tool-output-wrapper";
 
-function mcpSettings(overrides: Partial<McpSettings> = {}): McpSettings {
+function mcpSettings(overrides: Partial<McpToolsSettings> = {}): McpToolsSettings {
   return {
     enabled: true,
     proxyUrl: "",

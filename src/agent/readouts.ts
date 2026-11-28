@@ -1,7 +1,6 @@
 import type { AgentMessage, AgentTool } from "@earendil-works/pi-agent-core";
 import type { Api, Model } from "@earendil-works/pi-ai";
 import { estimateTextTokens } from "@earendil-works/pi-ai/utils/estimate";
-import type { AgenticChatSettings } from "../settings-schema";
 import { isPricingUnknown } from "../llm/pricing-cache";
 import { estimateContextUsage, isSummaryMessage } from "./compaction";
 import {
@@ -69,8 +68,8 @@ export interface ContextReadout {
   load: ContextLoadEstimate;
 }
 
-export function expectedOutputTokens(settings: Pick<AgenticChatSettings, "maxTokens">): number {
-  return settings.maxTokens > 0 ? settings.maxTokens : DEFAULT_EXPECTED_OUTPUT_TOKENS;
+export function expectedOutputTokens(): number {
+  return DEFAULT_EXPECTED_OUTPUT_TOKENS;
 }
 
 /** Measures the non-transcript sections of a request: system prompt and tool schemas. */
@@ -225,17 +224,16 @@ export function compactionCount(messages: AgentMessage[]): number {
 export function estimateNextCostReadout(params: {
   messages: AgentMessage[];
   model: Model<Api> | undefined;
-  settings: Pick<AgenticChatSettings, "maxTokens">;
   systemPrompt: string;
   tools?: readonly AgentTool[];
 }): RequestCostEstimate | undefined {
-  const { messages, model, settings, systemPrompt, tools } = params;
+  const { messages, model, systemPrompt, tools } = params;
   if (!model) return undefined;
   const load = estimateContextLoad({
     messages,
     systemPrompt,
     tools,
-    reserveTokens: expectedOutputTokens(settings),
+    reserveTokens: expectedOutputTokens(),
   });
   const estimate = estimateRequestCost({
     inputTokens: load.inputTokens,

@@ -1213,7 +1213,7 @@
       "checks": [
         {
           "type": "tool_called",
-          "name": "mcp__eval_fixture__get_ticket"
+          "name": "mcp__plugin_eval_fixture_40fbcc244690__get_ticket"
         },
         {
           "type": "answer_contains",
@@ -1229,7 +1229,7 @@
         },
         {
           "type": "tool_not_called",
-          "name": "mcp__eval_fixture__update_ticket_status"
+          "name": "mcp__plugin_eval_fixture_40fbcc244690__update_ticket_status"
         },
         {
           "type": "unchanged",

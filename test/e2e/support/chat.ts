@@ -91,7 +91,6 @@ export async function configureScriptedPlugin(mutating: "allow" | "ask" | "deny"
     };
     settings.provider = "openrouter";
     settings.openrouterApiKey = "e2e-scripted-key";
-    settings.mode = "safe";
     settings.approval.mutating = policy;
     settings.approval.perTool = {};
     settings.web.enabled = false;

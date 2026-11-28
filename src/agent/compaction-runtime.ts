@@ -2,7 +2,12 @@ import { sumSubagentResultUsage } from "./session-usage";
 import type { AgentMessage, StreamFn } from "@earendil-works/pi-agent-core";
 import { contentText, normalizeContext, type Model, type Usage } from "@earendil-works/pi-ai";
 import type { AgenticChatSettings } from "../settings-schema";
-import { activeModelConfig, apiKeyForProvider } from "../settings-schema";
+import {
+  activeModelConfig,
+  apiKeyForProvider,
+  DEFAULT_COMPACTION_THRESHOLD_PERCENT,
+  DEFAULT_REQUEST_TIMEOUT_MS,
+} from "../settings-schema";
 import { buildModel } from "../llm/models";
 import { sharedAgentModels } from "../llm/providers";
 import type { SessionBinding } from "./session-actions";
@@ -138,8 +143,12 @@ export interface AgentCompactionRuntimeOptionsForRun {
 export interface CompactionTarget {
   /** The session and generation the caller's messages were read from. */
   getBinding(): SessionBinding;
-  /** Persist the compacted transcript and put it on the live agent, as one step. */
-  commitCompaction(messages: AgentMessage[], binding: SessionBinding): Promise<void>;
+  /**
+   * Append the summary record and put `[summary, ...keep]` on the live agent.
+   * `firstKeptIndex` is the index in the supplied transcript of the first
+   * message entry retained verbatim; nothing before it is rewritten.
+   */
+  commitCompaction(messages: AgentMessage[], firstKeptIndex: number, binding: SessionBinding): Promise<void>;
 }
 
 export type AgentCompactionSkipReason =
@@ -291,8 +300,9 @@ export class AgentCompactionRuntime {
       };
     }
     // The captured binding stops a swap, rewind, or rewrite during
-    // summarization from landing this transcript on a different one.
-    await this.session.commitCompaction(newMessages, binding);
+    // summarization from landing this transcript on a different one. The session
+    // appends a compaction record and never rewrites the old messages.
+    await this.session.commitCompaction(newMessages, messages.length - plan.keep.length, binding);
     return { status: "compacted", messages: newMessages };
   }
 
@@ -328,7 +338,7 @@ export class AgentCompactionRuntime {
   ): Promise<SummaryResult> {
     // Bound the summary call so a hung request can't stall the user's prompt.
     const controller = new AbortController();
-    const timer = window.setTimeout(() => controller.abort(), compactionTimeoutMs(this.getSettings()));
+    const timer = window.setTimeout(() => controller.abort(), compactionTimeoutMs());
     try {
       return {
         ok: true,
@@ -352,7 +362,7 @@ export class AgentCompactionRuntime {
   ): Promise<SummaryResult> {
     const settings = this.getSettings();
     const controller = new AbortController();
-    const timer = window.setTimeout(() => controller.abort(), compactionTimeoutMs(settings));
+    const timer = window.setTimeout(() => controller.abort(), compactionTimeoutMs());
     try {
       const apiKey = apiKeyForProvider(settings, settings.provider);
       if (!apiKey) {
@@ -602,8 +612,8 @@ function summaryInputBudget(contextWindow: number): number {
   return Math.max(4_000, contextWindow - COMPACTION_RESERVE_TOKENS - 8_000);
 }
 
-function compactionTimeoutMs(settings: AgenticChatSettings): number {
-  return Math.max(MIN_COMPACTION_TIMEOUT_MS, settings.requestTimeoutMs || 0);
+function compactionTimeoutMs(): number {
+  return Math.max(MIN_COMPACTION_TIMEOUT_MS, DEFAULT_REQUEST_TIMEOUT_MS);
 }
 
 function chunkMessagesForSummary(messages: AgentMessage[], maxTokens: number): AgentMessage[][] {
@@ -629,8 +639,7 @@ function chunkMessagesForSummary(messages: AgentMessage[], maxTokens: number): A
 
 /** Map the persisted (percent-based) compaction settings to a {@link CompactionConfig}. */
 function compactionConfig(settings: AgenticChatSettings): CompactionConfig {
-  const percent = settings.compaction?.thresholdPercent ?? DEFAULT_COMPACTION_CONFIG.thresholdFraction * 100;
-  const thresholdFraction = Math.min(0.95, Math.max(0.5, percent / 100));
+  const thresholdFraction = Math.min(0.95, Math.max(0.5, DEFAULT_COMPACTION_THRESHOLD_PERCENT / 100));
   return {
     enabled: settings.compaction?.enabled ?? DEFAULT_COMPACTION_CONFIG.enabled,
     thresholdFraction,

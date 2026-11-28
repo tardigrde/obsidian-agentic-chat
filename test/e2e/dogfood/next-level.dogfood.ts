@@ -233,16 +233,15 @@ async function configurePlugin(manifest: DogfoodManifest): Promise<boolean> {
       ignoredGlobs: string;
       approval: { mutating: string; perTool: Record<string, string> };
       web: { enabled: boolean };
-      mcp: { enabled: boolean; servers: unknown[]; proxyUrl: string; noProxy: string };
+      mcp: { enabled: boolean; proxyUrl: string; noProxy: string };
     };
     settings.provider = "openrouter";
     settings.openrouterApiKey = "e2e-next-level-scripted-key";
-    settings.mode = "safe";
     settings.ignoredGlobs = payload.ignoredGlobs.join("\n");
     settings.approval.mutating = "allow";
     settings.approval.perTool = {};
     settings.web.enabled = false;
-    settings.mcp = { enabled: false, proxyUrl: "", noProxy: "localhost,127.0.0.1,::1", servers: [] };
+    settings.mcp = { enabled: false, proxyUrl: "", noProxy: "localhost,127.0.0.1,::1" };
     await plugin.saveSettings?.();
     return true;
   }, { pluginId: PLUGIN_ID, ignoredGlobs: manifest.ignoredGlobs });

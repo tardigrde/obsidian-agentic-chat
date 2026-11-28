@@ -56,9 +56,22 @@ describe("upgrade fixtures", () => {
       const { failures, notices, settings } = loadLikeHead(structuredClone(stored), freshStore());
 
       expect(failures).toEqual([]);
-      // Non-default values the release saved survive the load unchanged.
-      for (const key of ["temperature", "maxNetworkRetries", "requestTimeoutMs", "systemPrompt"] as const) {
-        if (key in stored) expect(settings[key]).toEqual(stored[key]);
+      // Settings retired after this release are dropped, never carried forward.
+      for (const key of [
+        "temperature",
+        "maxTokens",
+        "maxNetworkRetries",
+        "requestTimeoutMs",
+        "systemPrompt",
+        "maxParallelSubagents",
+      ] as const) {
+        expect(key in settings).toBe(false);
+      }
+      expect("thresholdPercent" in settings.compaction).toBe(false);
+      expect("maxResults" in settings.web).toBe(false);
+      expect("fetchCharLimit" in settings.web).toBe(false);
+      if (typeof stored.systemPrompt === "string" && stored.systemPrompt !== "") {
+        expect(notices.some((n) => n.includes("System prompt setting was removed"))).toBe(true);
       }
       // Every secret the release stored still reaches runtime settings.
       expect(settings.openrouterApiKey).toBe("fixture-not-a-real-key");
@@ -68,8 +81,9 @@ describe("upgrade fixtures", () => {
       }
       if (["plan", "ask", "agent"].includes(String(stored.mode))) {
         expect(notices.some((n) => n.includes("mode was removed"))).toBe(true);
-        expect(settings.mode).toBe("safe");
       }
+      // Mode is runtime-only now; a stored mode never round-trips.
+      expect("mode" in settings).toBe(false);
     });
 
     it("is stable after the first save: a second load has no notices and the same settings", () => {

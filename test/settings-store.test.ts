@@ -2,8 +2,8 @@ import { describe, expect, it, vi } from "vitest";
 import type { AgenticChatSettings } from "../src/settings-schema";
 import { SettingsStore } from "../src/settings-store";
 
-function settings(mode = "agent"): AgenticChatSettings {
-  return { mode } as unknown as AgenticChatSettings;
+function settings(model = "test/first"): AgenticChatSettings {
+  return { openrouterModel: model } as unknown as AgenticChatSettings;
 }
 
 function deferred(): { promise: Promise<void>; resolve: () => void; reject: (error: Error) => void } {
@@ -22,12 +22,12 @@ describe("SettingsStore", () => {
     const store = new SettingsStore(settings(), persist);
 
     const saved = await store.update((s) => {
-      (s as { mode: string }).mode = "plan";
+      s.openrouterModel = "test/second";
     });
 
     expect(saved).toBe(true);
     expect(persist).toHaveBeenCalledTimes(1);
-    expect((persist.mock.calls[0] as unknown[])[0]).toMatchObject({ mode: "plan" });
+    expect((persist.mock.calls[0] as unknown[])[0]).toMatchObject({ openrouterModel: "test/second" });
   });
 
   it("skips the save and the listeners when the mutator returns false", async () => {

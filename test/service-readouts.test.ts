@@ -143,18 +143,18 @@ describe("agent service readouts", () => {
     expect(agentCompactionCount({ messages: [buildSummaryMessage("summary", 1), assistant(2)] })).toBe(1);
   });
 
-  it("estimates next cost with the configured output token budget and system prompt", () => {
+  it("estimates next cost with the fixed output reserve and system prompt", () => {
     const estimate = agentNextCostEstimate({
       messages: [{ role: "user", content: "x".repeat(400), timestamp: 1 }],
       model: model(),
-      settings: { ...DEFAULT_SETTINGS, maxTokens: 123 },
+      settings: DEFAULT_SETTINGS,
       systemPrompt: "system",
       tools: [],
     });
 
     // 115 transcript tokens + 2 system-prompt tokens; the output budget is separate.
     expect(estimate?.inputTokens).toBe(117);
-    expect(estimate?.outputTokens).toBe(123);
+    expect(estimate?.outputTokens).toBe(1_000);
     expect(estimate?.usd).toBeGreaterThan(0);
   });
 

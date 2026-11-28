@@ -55,7 +55,6 @@ export async function configureLivePlugin(options: {
       settings.openaiCompatibleBaseUrl = liveConfig.baseUrl;
       settings.openaiCompatibleModel = liveConfig.model;
     }
-    settings.mode = "safe";
     settings.approval.mutating = "allow";
     await plugin.saveSettings?.();
     return true;

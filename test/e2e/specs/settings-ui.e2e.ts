@@ -38,7 +38,7 @@ interface SettingsSnapshot {
   openaiCompatibleApiKey: string;
   openaiCompatibleModel: string;
   approval: { mutating: string; perTool: Record<string, string> };
-  web: { enabled: boolean; searchProvider: string; searchApiKey: string; searxngUrl: string; maxResults: number; fetchCharLimit: number };
+  web: { enabled: boolean; searchProvider: string; searchApiKey: string; searxngUrl: string };
   observability: {
     enabled: boolean;
     backend: string;
@@ -52,17 +52,6 @@ interface SettingsSnapshot {
   };
   mcp: {
     enabled: boolean;
-    servers: Array<{
-      id: string;
-      name: string;
-      url: string;
-      enabled: boolean;
-      authType: string;
-      authHeaderName: string;
-      authHeaderValue: string;
-      approval: string;
-      source: string;
-    }>;
   };
   plugins: { folder: string; enabled?: Record<string, boolean>; sources?: Record<string, string>; mcpState?: Record<string, McpServerStateSnapshot> };
   ignoredGlobs: string;
@@ -108,7 +97,7 @@ async function resetSettingsForUiSpec(): Promise<void> {
       openaiCompatibleApiKey: string;
       openaiCompatibleModel: string;
       approval: { mutating: string; perTool: Record<string, string> };
-      web: { enabled: boolean; searchProvider: string; searchApiKeySecretId: string; searchApiKey: string; searxngUrl: string; maxResults: number; fetchCharLimit: number; allowedHosts: string };
+      web: { enabled: boolean; searchProvider: string; searchApiKeySecretId: string; searchApiKey: string; searxngUrl: string; allowedHosts: string };
       observability: {
         enabled: boolean;
         backend: string;
@@ -125,7 +114,7 @@ async function resetSettingsForUiSpec(): Promise<void> {
         authHeaderValueSecretId?: string;
         authHeaderValue?: string;
       };
-      mcp: { enabled: boolean; proxyUrl: string; noProxy: string; servers: unknown[] };
+      mcp: { enabled: boolean; proxyUrl: string; noProxy: string };
       plugins: {
         folder: string;
         enabled: Record<string, boolean>;
@@ -133,7 +122,6 @@ async function resetSettingsForUiSpec(): Promise<void> {
         mcpState: Record<string, unknown>;
       };
       ignoredGlobs: string;
-      maxParallelSubagents: number;
     };
     settings.provider = "openrouter";
     settings.openrouterApiKey = "";
@@ -147,15 +135,12 @@ async function resetSettingsForUiSpec(): Promise<void> {
       searchApiKeySecretId: "agentic-chat-web-search-api-key",
       searchApiKey: "",
       searxngUrl: "",
-      maxResults: 5,
-      fetchCharLimit: 10_000,
       allowedHosts: "",
     };
     settings.mcp = {
       enabled: false,
       proxyUrl: "",
       noProxy: "localhost,127.0.0.1,::1",
-      servers: [],
     };
     settings.observability = {
       enabled: false,
@@ -175,7 +160,6 @@ async function resetSettingsForUiSpec(): Promise<void> {
     };
     settings.plugins = { folder: ".agentic-plugins", enabled: {}, sources: {}, mcpState: {} };
     settings.ignoredGlobs = "";
-    settings.maxParallelSubagents = 10;
     app.secretStorage?.setSecret?.(secretId, "");
     app.secretStorage?.setSecret?.("agentic-chat-langfuse-public-key", "");
     app.secretStorage?.setSecret?.("agentic-chat-langfuse-secret-key", "");
@@ -206,7 +190,6 @@ describe("agentic-chat settings UI", function () {
       "observability",
       "notifications",
       "plugins",
-      "subagents",
       "ignored-files",
     ]);
     for (const heading of [
@@ -215,7 +198,6 @@ describe("agentic-chat settings UI", function () {
       "Observability export",
       "Notifications",
       "Agent plugins",
-      "Subagents",
       "Ignored files",
     ]) {
       await waitForSetting(heading);
@@ -383,12 +365,12 @@ describe("agentic-chat settings UI", function () {
     }, "Approval settings were not persisted from the settings UI");
   });
 
-  it("removes the tool budget rows and keeps the context window section", async function () {
+  it("keeps the context window section and drops the retired tool and threshold rows", async function () {
     await selectSettingsTab("Agent");
     await waitForSetting("Auto-compaction");
 
     const body = await readSettingsBodyText();
-    expect(body).toContain("Compact at (% of context window)");
+    expect(body).not.toContain("Compact at (% of context window)");
     expect(body).not.toContain("Tool budget");
     expect(body).not.toContain("Drop optional tools when schemas are large");
     expect(body).not.toContain("Drop tools when schemas exceed");
@@ -397,66 +379,39 @@ describe("agentic-chat settings UI", function () {
     expect("toolBudget" in stored).toBe(false);
   });
 
-  it("has no turn cap or subagent timeout; persists and clamps Parallel subagents (U4)", async function () {
+  it("removes the turn, subagent, sampling, and prompt rows", async function () {
     await selectSettingsTab("Agent");
-    expect(await readSettingsBodyText()).not.toContain("Max turns per prompt");
+    const agentBody = await readSettingsBodyText();
+    for (const label of [
+      "Max turns per prompt",
+      "Max response tokens",
+      "Temperature",
+      "Request timeout (seconds)",
+      "Network retries",
+      "System prompt",
+      "Standing instructions",
+      "Compact at (% of context window)",
+    ]) {
+      expect(agentBody).not.toContain(label);
+    }
     await selectSettingsTab("Advanced");
-    expect(await readSettingsBodyText()).not.toContain("Subagent timeout");
-    await setSettingText("Parallel subagents", "4");
-    await waitForAgenticChatSetting(
-      (settings) => (settings as unknown as { maxParallelSubagents: number }).maxParallelSubagents === 4,
-      "Parallel subagents was not persisted from the settings UI",
-    );
-    // Out of range: clamped to the ceiling, and the field shows what was saved.
-    await setSettingText("Parallel subagents", "99");
-    await waitForAgenticChatSetting(
-      (settings) => (settings as unknown as { maxParallelSubagents: number }).maxParallelSubagents === 20,
-      "Parallel subagents was not clamped to 20",
-    );
-    expect(await readSettingText("Parallel subagents")).toBe("20");
-  });
+    const advancedBody = await readSettingsBodyText();
+    expect(advancedBody).not.toContain("Subagent timeout");
+    expect(advancedBody).not.toContain("Parallel subagents");
+    expect(advancedBody).not.toContain("Search results");
+    expect(advancedBody).not.toContain("Fetched page character limit");
 
-  it("clamps max response tokens in the field and says why (U2, chaos #3)", async function () {
-    await selectSettingsTab("Agent");
-    await setSettingText("Max response tokens", "4096");
-    await waitForAgenticChatSetting(
-      (settings) => (settings as unknown as { maxTokens: number }).maxTokens === 4096,
-      "Max response tokens was not persisted from the settings UI",
-    );
-    expect(await readSettingsBodyText()).not.toContain("is outside");
-
-    // A negative value: stored as 0, the field shows 0, and a note says why.
-    await setSettingText("Max response tokens", "-500");
-    await waitForAgenticChatSetting(
-      (settings) => (settings as unknown as { maxTokens: number }).maxTokens === 0,
-      "A negative max response tokens value was not clamped to 0",
-    );
-    expect(await readSettingText("Max response tokens")).toBe("0");
-    expect(await readSettingsBodyText()).toContain("-500 is outside 0 to 1,000,000. Saved 0.");
-
-    // An absurd value: clamped to the ceiling, shown in the field.
-    await setSettingText("Max response tokens", "999999999");
-    await waitForAgenticChatSetting(
-      (settings) => (settings as unknown as { maxTokens: number }).maxTokens === 1_000_000,
-      "An absurd max response tokens value was not clamped to the ceiling",
-    );
-    expect(await readSettingText("Max response tokens")).toBe("1000000");
-
-    // A fraction is rounded, and the note does not call it out of range.
-    await setSettingText("Max response tokens", "4.5");
-    await waitForAgenticChatSetting(
-      (settings) => (settings as unknown as { maxTokens: number }).maxTokens === 5,
-      "A fractional max response tokens value was not rounded",
-    );
-    expect(await readSettingsBodyText()).toContain("Whole numbers only. Saved 5.");
-
-    // Back in range: the note goes away.
-    await setSettingText("Max response tokens", "0");
-    await waitForAgenticChatSetting(
-      (settings) => (settings as unknown as { maxTokens: number }).maxTokens === 0,
-      "Max response tokens did not return to 0",
-    );
-    expect(await readSettingsBodyText()).not.toContain("is outside");
+    const stored = await readAgenticChatSettings<Record<string, unknown>>();
+    for (const key of [
+      "maxTokens",
+      "temperature",
+      "requestTimeoutMs",
+      "maxNetworkRetries",
+      "systemPrompt",
+      "maxParallelSubagents",
+    ]) {
+      expect(key in stored).toBe(false);
+    }
   });
 
   it("persists web access settings through the Advanced tab", async function () {
@@ -480,17 +435,13 @@ describe("agentic-chat settings UI", function () {
     await setSettingSelect("Search provider", "searxng");
     await waitForSetting("SearXNG instance URL");
     await setSettingText("SearXNG instance URL", "https://search.example.com");
-    await setSettingRange("Search results", 7);
-    await setSettingText("Fetched page character limit", "20000");
 
     await waitForAgenticChatSetting((settings) => {
       const snapshot = settings as unknown as SettingsSnapshot;
       return (
         snapshot.web.enabled &&
         snapshot.web.searchProvider === "searxng" &&
-        snapshot.web.searxngUrl === "https://search.example.com" &&
-        snapshot.web.maxResults === 7 &&
-        snapshot.web.fetchCharLimit === 20_000
+        snapshot.web.searxngUrl === "https://search.example.com"
       );
     }, "Web settings were not persisted from the settings UI");
   });
@@ -736,20 +687,6 @@ async function seedWelcomeNote(): Promise<void> {
   });
 }
 
-/** Persist a mode through the plugin's real save path before the UI renders. */
-async function setStoredMode(mode: string): Promise<void> {
-  await browser.executeObsidian(async ({ app }, nextMode) => {
-    const plugin = (app as unknown as {
-      plugins?: {
-        plugins?: Record<string, { settings?: { mode?: string }; saveSettings?: () => Promise<void> }>;
-      };
-    }).plugins?.plugins?.["agentic-chat"];
-    if (!plugin?.settings) throw new Error("agentic-chat plugin not found");
-    plugin.settings.mode = nextMode;
-    await plugin.saveSettings?.();
-  }, mode);
-}
-
 async function readToggleState(): Promise<{ checked: string | null; label: string | null }> {
   return await browser.execute(() => {
     const toggle = document.querySelector<HTMLElement>('[data-ac="mode-toggle"]');
@@ -773,48 +710,41 @@ async function waitForToggleState(expected: { checked: string; label: string }):
   );
 }
 
-describe("agentic-chat settings mode sync", function () {
+describe("agentic-chat runtime mode", function () {
   before(async function () {
     // The settings UI suite above leaves its window open.
     await closeAgenticChatSettings();
-    await setStoredMode("safe");
     await seedWelcomeNote();
     await browser.executeObsidianCommand("agentic-chat:open-chat");
     await $('[data-ac="view"]').waitForExist();
     await waitForComposerReady();
-    await openAgenticChatSettings();
-    await selectSettingsTab("Agent");
-    await waitForSetting("Permission mode");
   });
 
   after(async function () {
     await closeAgenticChatSettings();
   });
 
-  it("follows the composer YOLO toggle in the settings dropdown", async function () {
-    expect(await readSettingSelect("Permission mode")).toBe("safe");
+  it("has no Permission mode setting row and starts in Safe", async function () {
+    await openAgenticChatSettings();
+    await selectSettingsTab("Agent");
+    expect(await readSettingsBodyText()).not.toContain("Permission mode");
+    await closeAgenticChatSettings();
 
-    await focusMainWindow();
-    await $('[data-ac="mode-toggle"]').click();
-
-    await waitForAgenticChatSetting(
-      (settings) => settings.mode === "yolo",
-      "the composer toggle did not persist YOLO",
-    );
-    const stored = (await readAgenticChatSettings<{ mode: string }>()).mode;
-    const dropdown = await readSettingSelect("Permission mode");
-    expect(stored).toBe("yolo");
-    expect(dropdown).toBe(stored);
+    expect(await readToggleState()).toMatchObject({
+      checked: "false",
+      label: "Permission mode: Safe",
+    });
   });
 
-  it("reflects a settings dropdown change back in the composer toggle", async function () {
-    await setSettingSelect("Permission mode", "safe");
-    await waitForAgenticChatSetting(
-      (settings) => settings.mode === "safe",
-      "the settings dropdown did not persist Safe",
-    );
-
+  it("keeps the composer toggle runtime-only", async function () {
     await focusMainWindow();
-    await waitForToggleState({ checked: "false", label: "Permission mode: Safe" });
+    await $('[data-ac="mode-toggle"]').click();
+    await waitForToggleState({ checked: "true", label: "Permission mode: YOLO" });
+
+    const stored = await browser.executeObsidian(async ({ app }) => {
+      const raw = await app.vault.adapter.read(`${app.vault.configDir}/plugins/agentic-chat/data.json`);
+      return JSON.parse(raw) as Record<string, unknown>;
+    });
+    expect("mode" in stored).toBe(false);
   });
 });

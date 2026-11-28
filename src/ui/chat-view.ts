@@ -790,7 +790,7 @@ export class ChatView extends ItemView {
 
   /** The one gate for the Safe <-> YOLO toggle; `setMode` refuses while streaming. */
   private toggleMode(): void {
-    const target = this.plugin.settings.mode === "yolo" ? "safe" : "yolo";
+    const target = this.plugin.mode === "yolo" ? "safe" : "yolo";
     void this.setMode(target);
   }
 
@@ -815,7 +815,7 @@ export class ChatView extends ItemView {
   // atomically in sync (Codex ThreadSettingsOverrides pattern).
 
   private async setMode(mode: AgentMode): Promise<boolean> {
-    const current = this.plugin.settings.mode;
+    const current = this.plugin.mode;
     const blocked = validateModeTransition(this.plugin.isAnyViewStreaming() || this.isAnyTabStreaming());
     if (blocked) {
       if (current !== mode) this.renderErrorMessage(blocked);
@@ -824,18 +824,11 @@ export class ChatView extends ItemView {
     if (current === mode) return false;
     const transition = resolveModeTransition(current, mode);
     if (!transition) return false;
-    await this.plugin.settingsStore.update((settings) => {
-      settings.mode = transition.nextMode;
-    });
+    if (!this.plugin.setMode(transition.nextMode)) return false;
     // Repaint the whole chrome so the Safe↔YOLO segment + aria-checked flip
-    // instantly after the mode lands on disk (syncChrome calls syncControls).
+    // instantly on every view (syncChrome calls syncControls).
     this.syncChrome();
     return true;
-  }
-
-  /** S4: external callers (settings tab) route through the active view. */
-  async requestModeChange(mode: AgentMode): Promise<boolean> {
-    return this.setMode(mode);
   }
 
   isStreaming(): boolean {
@@ -859,15 +852,15 @@ export class ChatView extends ItemView {
    */
   private syncControls(): void {
     if (!this.modeToggleEl) return;
-    const { settings } = this.plugin;
+    const mode = this.plugin.mode;
     const streaming = this.plugin.isAnyViewStreaming() || this.isAnyTabStreaming();
-    this.modeToggleEl.toggleClass("is-active", settings.mode === "yolo");
+    this.modeToggleEl.toggleClass("is-active", mode === "yolo");
     this.modeToggleEl.toggleClass("is-disabled", streaming);
-    this.modeToggleEl.setAttr("aria-checked", String(settings.mode === "yolo"));
-    const modeName = settings.mode === "yolo" ? "YOLO" : "Safe";
+    this.modeToggleEl.setAttr("aria-checked", String(mode === "yolo"));
+    const modeName = mode === "yolo" ? "YOLO" : "Safe";
     this.modeToggleEl.setAttr("aria-label", `Permission mode: ${modeName}`);
     // Phones hide the label, so the icon itself must carry Safe vs YOLO.
-    if (this.modeIconEl) setIcon(this.modeIconEl, MODES[settings.mode].icon);
+    if (this.modeIconEl) setIcon(this.modeIconEl, MODES[mode].icon);
     this.modeLabelEl?.setText(modeName);
     // Effort can't change mid-turn (it would disagree with the in-flight request).
     this.effortKnobEl?.toggleClass("is-disabled", streaming);

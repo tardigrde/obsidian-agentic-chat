@@ -6,7 +6,7 @@ function harness(mode: "safe" | "yolo") {
   const view = Object.assign(Object.create(ChatView.prototype), {
     modeToggleEl,
     plugin: {
-      settings: { mode },
+      mode,
       isAnyViewStreaming: () => false,
     },
     isAnyTabStreaming: () => false,

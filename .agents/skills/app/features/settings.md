@@ -6,10 +6,11 @@
   home; no settings were deleted in the cut.
 - Models: provider, global network proxy, OpenRouter privacy toggles, Ollama
   fields, OpenAI-compatible gateway fields, API keys.
-- Agent: permission mode, sampling, timeout, retries, system prompt, compaction,
-  approval gates, per-tool overrides. The tool budget rows were removed.
+- Agent: compaction and approval gates, per-tool overrides. Sampling, timeout,
+  retries, system prompt, and the permission-mode row were removed; those are
+  fixed defaults or runtime state now.
 - Advanced: web access, MCP, observability, notifications, agent plugins,
-  subagents, ignored files.
+  ignored files. The subagents section was removed with its fixed limit.
 - The plugin stores secrets in Obsidian secret storage, not in `data.json`.
 
 ## How to get to it (user view)
@@ -20,7 +21,7 @@
   command opens the settings window. Then select the Agentic Chat tab.
 - On Obsidian 1.13 and later, the tab opens in a popout window.
 - Advanced renders its sections on one page in this order: web access, MCP,
-  observability, notifications, agent plugins, subagents, ignored files.
+  observability, notifications, agent plugins, ignored files.
 
 ## Driving it with the probe harness
 
@@ -46,7 +47,7 @@ await closeAgenticChatSettings();
 |---|---|---|---|
 | Settings tab opens | `src/main.ts#onload` | `test/e2e/specs/settings-ui.e2e.ts#agentic-chat settings UI` (opened by the helper via `app.setting`, not the nav) | `partial` |
 | Three tabs render and switch | `src/settings.ts#sectionDefinition` | `test/e2e/specs/settings-ui.e2e.ts#shows exactly three tabs and groups the advanced sections` | `covered` |
-| Advanced groups web, MCP, observability, notifications, plugins, subagents, retrieval, ignore list | `src/settings.ts#sectionDefinition` | `test/e2e/specs/settings-ui.e2e.ts#agentic-chat settings UI` | `covered` |
+| Advanced groups web, MCP, observability, notifications, plugins, ignore list | `src/settings.ts#sectionDefinition` | `test/e2e/specs/settings-ui.e2e.ts#agentic-chat settings UI` | `covered` |
 | A moved Advanced setting saves and survives close/reopen | `src/settings-tab-agent.ts#notificationDefinitions` | `test/e2e/specs/settings-ui.e2e.ts#keeps a moved Advanced setting after close and reopen` | `covered` |
 | Models: provider, API key, base URL, model | `src/settings-tab-models.ts#modelsDefinitions` | `test/e2e/specs/settings-ui.e2e.ts#persists provider, API key, base URL, and model through the Models tab` | `covered` |
 | Secrets stay out of `data.json` | `src/settings-definition-kit.ts#secretInputDef` | `test/e2e/specs/settings-ui.e2e.ts#persists provider, API key, base URL, and model through the Models tab` | `covered` |
@@ -55,14 +56,13 @@ await closeAgenticChatSettings();
 | OpenRouter privacy toggles | `src/settings-tab-models.ts#openRouterDefinitions` | no committed check | `NONE` |
 | Ollama server URL and model | `src/settings-tab-models.ts#ollamaDefinitions` | no committed check | `NONE` |
 | Global network proxy | `src/settings-tab-models.ts#headingRow("Network proxy")` | no committed check | `NONE` |
-| Agent: Permission mode | `src/settings-tab-agent.ts#row("Permission mode"` | no committed check | `NONE` |
-| Agent: sampling, timeout, retries, prompt, compaction | `src/settings-tab-agent.ts#agentDefinitions` | no committed check | `NONE` |
-| Agent: Max response tokens clamps in the field and says why | `src/settings-definition-kit.ts#boundedNumberRow` | `test/e2e/specs/settings-ui.e2e.ts#clamps max response tokens in the field and says why (U2, chaos #3)` | `covered` |
-| Agent: tool budget rows removed | `src/settings-tab-agent.ts#agentDefinitions` | `test/e2e/specs/settings-ui.e2e.ts#removes the tool budget rows and keeps the context window section` | `covered` |
+| Mode is runtime-only and starts Safe; no settings row | `src/main.ts#setMode` | `test/plugin-mode-broadcast.test.ts#starts in Safe even when an old data.json stored a mode`; `test/e2e/specs/settings-ui.e2e.ts#has no Permission mode setting row and starts in Safe` | `covered` |
+| Agent: compaction toggle; retired sampling, timeout, retries, prompt rows | `src/settings-tab-agent.ts#agentDefinitions` | `test/e2e/specs/settings-ui.e2e.ts#removes the turn, subagent, sampling, and prompt rows` | `covered` |
+| Agent: tool budget rows removed | `src/settings-tab-agent.ts#agentDefinitions` | `test/e2e/specs/settings-ui.e2e.ts#keeps the context window section and drops the retired tool and threshold rows` | `covered` |
 | Approval gates: Per-tool overrides | `src/settings-tab-agent.ts#approvalDefinitions` | `test/e2e/specs/settings-ui.e2e.ts#removes the working-directory section and still saves approval controls` | `covered` |
 | Approval: one row per catalog tool, with the real default label | `src/settings-tab-agent.ts#perToolApprovalRows`; `src/tools/tool-catalog.ts#TOOL_CATALOG` | `test/e2e/specs/settings-ui.e2e.ts#shows one approval row per tool with the real default label`; `test/settings-definitions.test.ts#keys every per-tool approval row by a real catalog tool and shows its real default` | `covered` |
 | Approval: working directories section removed | `src/settings-tab-agent.ts#approvalDefinitions` | `test/e2e/specs/settings-ui.e2e.ts#removes the working-directory section and still saves approval controls` | `covered` |
-| Web: enable, provider, key, results, fetch limit | `src/settings-tab-web.ts#webDefinitions` | `test/e2e/specs/settings-ui.e2e.ts#persists web access settings through the Advanced tab` | `covered` |
+| Web: enable, provider, key, allowlist; results and fetch limits are fixed | `src/settings-tab-web.ts#webDefinitions` | `test/e2e/specs/settings-ui.e2e.ts#persists web access settings through the Advanced tab` | `covered` |
 | Web: download_file saves a file; asks in Safe mode (U7 #10) | `src/tools/web-download.ts#createWebDownloadTool` | `test/web-download.test.ts#saves the bytes into the vault, creating the folder, and points at import_document` (unit only) | `partial` |
 | Web: allowed hosts | `src/settings-tab-web.ts#row("Allowed hosts"` | no committed check | `NONE` |
 | MCP tools: enable and add a server | `src/settings-mcp-section.ts#definitions` | `test/e2e/specs/settings-ui.e2e.ts#generates a plugin package and persists its MCP server through the Advanced tab` | `covered` |
@@ -79,12 +79,10 @@ await closeAgenticChatSettings();
 | Semantic retrieval section removed | `src/settings-tabs.ts#SETTINGS_SECTION_IDS` | `test/feature-cut-2026-11.test.ts#has no semantic retrieval settings section` (unit only) | `partial` |
 | Settings at phone width | `src/settings.ts#sectionDefinition` | `test/e2e/specs/mobile-viewport.e2e.ts#keeps the settings tab UI usable at phone width` | `covered` |
 | `getSettingDefinitions()` | `src/settings.ts#getSettingDefinitions` | `test/e2e/specs/settings-ui.e2e.ts#agentic-chat settings UI` (three named pages render) | `covered` |
-| Settings: Request timeout (seconds) | `src/settings-tab-agent.ts#row("Request timeout (seconds)"` | `test/e2e/chaos/chaos-monkey.e2e.ts#applyPersistedSettings` (chaos run only) | `partial` |
-| Settings: System prompt | `src/settings-tab-agent.ts#row("System prompt"` | `test/settings-definitions.test.ts#puts the expected surrounding rows in each section group` (definition only) | `partial` |
 | Models: Gateway preset | `src/settings-tab-models.ts#row("Gateway preset"` | no committed check | `NONE` |
 | Models: Context window (tokens) | `src/settings-tab-models.ts#row("Context window (tokens)"` | no committed check | `NONE` |
 | Ignored files: Ignored paths | `src/settings-tab-ignored-files.ts#row("Ignored paths"` | `test/e2e/specs/settings-ui.e2e.ts#persists plugin folder and ignored globs through the Advanced tab` | `covered` |
-| Web: Fetched page character limit | `src/settings-tab-web.ts#row("Fetched page character limit"` | `test/e2e/specs/settings-ui.e2e.ts#persists web access settings through the Advanced tab` | `covered` |
+| Retired settings keys drop on load (sampling, timeout, retries, prompt, thresholds, web limits, mode) | `src/settings-schema.ts#RETIRED_SETTING_KEYS` | `test/upgrade-fixtures.test.ts#loads data.json without losing a secret or a retired-setting notice` (unit only) | `partial` |
 
 ## Gotchas
 

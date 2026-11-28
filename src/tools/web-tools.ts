@@ -1,6 +1,6 @@
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import type { ToolArtifactStoreLike } from "../artifacts/tool-artifact-store";
-import type { WebSettings } from "../settings-schema";
+import { DEFAULT_WEB_FETCH_CHAR_LIMIT, DEFAULT_WEB_MAX_RESULTS, type WebSettings } from "../settings-schema";
 import type { App } from "obsidian";
 import type { IgnoreMatcher } from "../vault/ignore";
 import { createWebFetchTool, type WebBinaryFetcher, type WebFetcher } from "./web-fetch";
@@ -36,10 +36,10 @@ export function createWebTools(
       provider: settings.searchProvider,
       apiKey: settings.searchApiKey,
       searxngUrl: settings.searxngUrl,
-      maxResults: settings.maxResults,
+      maxResults: DEFAULT_WEB_MAX_RESULTS,
       fetcher,
     }),
-    createWebFetchTool({ fetcher, charLimit: settings.fetchCharLimit, artifactStore, allowedHosts: settings.allowedHosts, downloadHint: Boolean(download) }),
+    createWebFetchTool({ fetcher, charLimit: DEFAULT_WEB_FETCH_CHAR_LIMIT, artifactStore, allowedHosts: settings.allowedHosts, downloadHint: Boolean(download) }),
     ...(download ? [createWebDownloadTool({ ...download, allowedHosts: settings.allowedHosts })] : []),
   ];
 }

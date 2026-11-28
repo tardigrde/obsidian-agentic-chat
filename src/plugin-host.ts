@@ -25,6 +25,9 @@ export interface AgenticChatHost extends Plugin {
   }): AgentService;
   createMcpOAuthCallbackReceiver(): McpOAuthCallbackReceiver;
   isAnyViewStreaming(): boolean;
-  requestModeChange(target: AgentMode): Promise<boolean>;
+  /** The shared runtime mode. Safe at every start; never persisted. */
+  readonly mode: AgentMode;
+  /** Apply a validated Safe ↔ YOLO change; returns false when it did not change. */
+  setMode(target: AgentMode): boolean;
   onModeChange(listener: (mode: AgentMode) => void): () => void;
 }

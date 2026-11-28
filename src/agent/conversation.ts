@@ -208,6 +208,14 @@ export class AgentConversation {
     return this.snapshot(this.options.sessionManager.getActiveSessionInfo());
   }
 
+  async appendCompaction(
+    summary: AgentMessage,
+    firstKeptIndex: number,
+    options: { expectedPath?: string | null; expectedGeneration?: number } = {},
+  ): Promise<void> {
+    await this.options.sessionManager.appendCompaction(summary, firstKeptIndex, options);
+  }
+
   async ensureConfiguration(): Promise<SessionInfo> {
     await this.options.sessionManager.ensureConfiguration(this.options.getDefaults());
     return this.refreshInfo();

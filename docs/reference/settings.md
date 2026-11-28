@@ -14,11 +14,11 @@ Provider, API key, model id, and request behavior.
 | Ollama model | `llama3.1` | The tag must support tools. |
 | OpenAI-compatible base URL | `http://localhost:3000/api` | Must serve `/chat/completions`. A bare gateway root resolves to `/api`. |
 | Context window override | `0` (auto-detect) | Looks up the same model slug in the OpenRouter catalog, exact or unambiguous suffix. An unknown window keeps all tools and disables auto-compaction. |
-| Temperature | `0.3` | Sampling randomness from 0 to 2. |
-| Max response tokens | `0` | `0` lets the provider decide. |
-| Request timeout | `90s` | How long to wait for the provider to start responding. |
-| Network retries | `2` | Retries on rate limits and transient errors. |
 | HTTP proxy (desktop) | empty | `http://host:port` with no trailing slash. Only the http scheme is accepted. On mobile, leave this empty and use the device or VPN proxy. |
+
+Sampling is fixed: temperature `0.3`, no output-token cap (the provider decides),
+a `90s` request timeout, and two retries on rate limits and transient errors.
+These are not settings.
 
 Keys live in Obsidian secret storage. `data.json` stores secret ids, not values.
 
@@ -26,11 +26,13 @@ Keys live in Obsidian secret storage. `data.json` stores secret ids, not values.
 
 | Setting | Default | Notes |
 | --- | --- | --- |
-| Permission mode | Safe | Safe follows the approval gates. YOLO auto-approves most mutating tools until you switch back; recursive folder deletes still ask. |
 | Thinking level | `off` | `off`, `minimal`, `low`, `medium`, `high`, or `xhigh`. Only models that support reasoning effort are affected. `off` sends no reasoning parameter, so the provider decides; the eval suite pins `low` for a reproducible measurement. |
-| System prompt | built-in | Sent at the start of every conversation. |
-| Standing instructions | vault root | `AGENTS.md`, with `CLAUDE.md` and `GEMINI.md` as fallbacks. Loaded every turn and truncated after 16,000 characters with a notice. |
-| Auto-compaction | on at 80% | Triggers at 50% to 95% context fill (configurable). |
+| Auto-compaction | on | Triggers at 80% context fill. The threshold is fixed; the composer Safe/YOLO toggle is runtime-only and starts Safe at every launch. |
+
+The system prompt is built in. Standing instructions come from `AGENTS.md` at
+the vault root, with `CLAUDE.md` and `GEMINI.md` as fallbacks; the file is
+loaded every turn and truncated after 16,000 characters with a notice. To
+customize the prompt, edit that file.
 
 ### Approval
 
@@ -48,13 +50,15 @@ Off by default. The plugin does not register the web tools until you enable them
 | Setting | Default |
 | --- | --- |
 | Search provider | Tavily. Brave needs an API key. SearXNG needs an instance URL. |
-| Max results | `5` (1 to 10) |
-| Fetch character limit | `10,000` characters per page |
 | Fetch allowlist | empty (all public hosts). Comma-separated suffixes. Deny wins on every redirect hop. |
+
+Search returns at most five results and fetch returns at most 10,000 characters
+per page by default; the tool call can ask for fewer or more within its own
+bounds.
 
 ### MCP
 
-Off by default. Servers live in agent plugin packages (`.agentic-plugins/`). **Add MCP server** writes a package with `plugin.json` and `mcp.json`. Auth modes: none, bearer, custom header, or OAuth. Each server has its own enable toggle and allow, ask, or deny policy. See [Agent plugins](../features/agent-plugins.md).
+Off by default. Servers live in agent plugin packages (`.agentic-plugins/`). **Add MCP server** writes a package with `plugin.json` and `mcp.json`. Auth modes: none, bearer, custom header, or OAuth. Each server has its own enable toggle and allow, ask, or deny policy. There is no separate settings-owned server list; an older user server is not migrated, and upgrade shows its name and URL so it can be added again. See [Agent plugins](../features/agent-plugins.md).
 
 ### Observability
 
@@ -70,7 +74,8 @@ Plugin management and diagnostics. Buttons: **Install plugin…** and **New skil
 
 ### Subagents
 
-- **Parallel subagents**: `10`. How many subagents run at once in one turn (1-20); the rest queue.
+Ten subagents run at once in one turn; the rest queue. The limit is fixed, not
+a setting.
 
 There is no turn cap and no subagent timeout (removed in U4). Stop, the loop
 guard, and the spend cap (`Spend cap`) end a run; the spend cap also counts

@@ -49,13 +49,6 @@ export function migrateLegacyPlaintextSecrets(stored: unknown, store: SecretStor
     takeSecret(parent, lastSegment(slot.valuePath), lastSegment(slot.secretIdPath), slot.defaultSecretId);
   }
 
-  // Id-less servers get a distinct index-based fallback so their secrets do
-  // not overwrite each other; takeSecret records the id it used on the server.
-  asArray(asRecord(root.mcp)?.servers).forEach((rawServer, index) => {
-    const server = asRecord(rawServer);
-    if (server) migrateMcpRecord(server, stringValue(server.id) || `server-${index}`, takeSecret);
-  });
-
   const mcpState = asRecord(asRecord(root.plugins)?.mcpState);
   for (const [id, rawState] of Object.entries(mcpState ?? {})) {
     const state = asRecord(rawState);
@@ -157,9 +150,6 @@ function asRecord(value: unknown): Record<string, unknown> | undefined {
   return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : undefined;
 }
 
-function asArray(value: unknown): unknown[] {
-  return Array.isArray(value) ? value : [];
-}
 
 function stringValue(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";

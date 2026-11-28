@@ -7,19 +7,15 @@ import type { McpServerSettings } from "../mcp/settings";
 
 /**
  * The one writer for the plugin-owned parts of settings: `plugins.enabled`,
- * `plugins.sources`, `plugins.mcpState`, and plugin-sourced `mcp.servers`
- * entries. Each function mutates `settings` in place and reports whether it
- * changed anything; the caller decides when to save.
+ * `plugins.sources`, and `plugins.mcpState`. Each function mutates `settings`
+ * in place and reports whether it changed anything; the caller decides when to
+ * save.
  */
 
 /** Drop settings whose package is gone from `plugins` (the fresh scan). */
 export function pruneOrphanPluginSettings(settings: AgenticChatSettings, plugins: LoadedPlugin[]): boolean {
   const aliveIds = new Set(plugins.flatMap((p) => p.mcpServers.map((s) => s.id)));
-  // Keep mcpState for ids still owned by a legacy user server — one prune
-  // rule with the settings-tab guard (prevents collision over-delete).
-  const isLegacyUserId = (id: string): boolean =>
-    settings.mcp.servers.some((server) => server.id === id && server.source !== "plugin");
-  let mutated = pruneMcpState(settings, aliveIds, isLegacyUserId);
+  let mutated = pruneMcpState(settings, aliveIds);
   const aliveNames = new Set(plugins.map((p) => p.name));
   for (const name of Object.keys(settings.plugins.enabled)) {
     if (!aliveNames.has(name)) {
@@ -33,13 +29,6 @@ export function pruneOrphanPluginSettings(settings: AgenticChatSettings, plugins
       mutated = true;
     }
   }
-  // Legacy plugin servers in mcp.servers (source=plugin) that no longer have a package
-  const beforeLegacy = settings.mcp.servers.length;
-  settings.mcp.servers = settings.mcp.servers.filter((server) => {
-    if (server.source !== "plugin" || !server.pluginRoot) return true;
-    return plugins.some((p) => p.rootPath === server.pluginRoot);
-  });
-  if (settings.mcp.servers.length !== beforeLegacy) mutated = true;
   return mutated;
 }
 
@@ -103,7 +92,6 @@ export function forgetPluginPackage(
   rootPath: string,
   serverIds: readonly string[],
 ): void {
-  settings.mcp.servers = settings.mcp.servers.filter((server) => server.source !== "plugin" || server.pluginRoot !== rootPath);
   for (const id of serverIds) {
     delete settings.plugins.mcpState[id];
     clearMcpPerToolApprovals(settings.approval, id);

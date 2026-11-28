@@ -85,16 +85,16 @@ export function validateModeTransition(isStreaming: boolean): string | null {
 }
 
 /**
- * Atomic mode update descriptor. Callers mutate `settings.mode` only after
- * validation passes, then persist once.
+ * Atomic mode update descriptor. The plugin applies `nextMode` only after
+ * validation passes.
  */
 export interface ModeTransition {
   nextMode: AgentMode;
 }
 
 /**
- * Compute the atomic `settings.mode` update for a validated transition. Pure,
- * so every UI (settings tab, composer toggle) produces the same state.
+ * Compute the runtime mode update for a validated transition. Pure, so every
+ * UI that can change the posture produces the same state.
  */
 export function resolveModeTransition(
   current: AgentMode,

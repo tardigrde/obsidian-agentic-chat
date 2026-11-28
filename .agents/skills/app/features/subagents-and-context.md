@@ -5,7 +5,7 @@
 - The `subagent` tool starts one child agent per call, keeps its context
   isolated, and returns a summary.
 - The built-in Explorer role does read-only vault inspection.
-- The subagent pool runs `maxParallelSubagents` (default 10) in flight. The rest queue.
+- The subagent pool runs 10 children in flight. The rest queue; the limit is fixed.
 - `action: "continue"` sends a follow-up to a kept child (the last 10 per tab).
 - Live child status tree, per-child Stop, and a settled summary with time, tokens,
   and cost.
@@ -20,7 +20,7 @@
 
 - Type `/agent` to see the role picker, or `/agent explorer <task>`.
 - Let the model call the `subagent` tool.
-- Open Settings, select **Advanced**, then find **Parallel subagents** under **Subagents**.
+- There is no parallel-subagent settings row; ten run at once by default.
 - For active-note, `@` mention, context-menu, drag-and-drop, folder, and image
   attachments, see [Open and compose](./open-and-compose.md).
 
@@ -53,7 +53,7 @@ await $(".agentic-chat-action-list").waitForExist();
 | Built-in Explorer role: read-only recon, no `ask_user`, no write tools, no skill reader | `src/agent/subagents.ts#BUILTIN_AGENT_ROLES` | `test/subagent-runtime.test.ts#gives the built-in explorer the vault_inspect tool, so it can list and search the vault` (unit only) | `partial` |
 | A child never prompts: an `ask` becomes a denial the child can read; dispatch honors a per-tool `subagent` deny | `src/agent/tool-call-controller.ts#gateToolCall`; `src/agent/approval-policy.ts#resolveSubagentPolicy` | `test/tool-call-controller.test.ts#denies a child call that would ask, without an approval card`; `test/approval-matrix.test.ts#subagent per-tool deny blocks` (unit only) | `partial` |
 | Child prompt: a child base, the role prompt, the vault's standing instructions (U5 #6) | `src/agent/subagent-runtime.ts#childSystemPrompt` | `test/subagent-runtime.test.ts#gives a child the trust boundary and the vault's standing instructions, not only its role prompt` (unit only) | `partial` |
-| Hard per-chat limit (setting, default ten): a start over the limit fails and names it (U5) | `src/tools/subagent-tool.ts#DEFAULT_CONCURRENCY` | `test/subagents.test.ts#enforces a hard per-chat limit: a start over maxParallelSubagents fails and names the limit` (unit only) | `partial` |
+| Hard per-chat limit (fixed ten): a start over the limit fails and names it (U5) | `src/tools/subagent-tool.ts#DEFAULT_PARALLEL_SUBAGENTS` | `test/subagents.test.ts#enforces a hard per-chat limit: a start over maxParallelSubagents fails and names the limit` (unit only) | `partial` |
 | One row per child in the activity block, no separate section; the row's spinner, clock, and Stop follow the child (U5 #2, #3) | `src/ui/subagent-tree.ts#SubagentChildView` | `test/e2e/specs/timeline-u4.e2e.ts#U5 #1-#3: a subagent runs in the background; the turn ends, the row keeps running, the report starts a turn` | `covered` |
 | Per-child Stop button | `src/ui/subagent-tree.ts#renderStop` | `test/ui/chat-render.test.ts#has no separate Subagents section; the row keeps its spinner and Stop after the parent turn ends` (happy-dom) | `partial` |
 | A report renders as an event, not the user's bubble | `src/ui/transcript-view.ts#renderSubagentReport` | `test/ui/chat-render.test.ts#renders a report message as an event, not as the user's bubble` (happy-dom) | `partial` |
@@ -62,7 +62,7 @@ await $(".agentic-chat-action-list").waitForExist();
 | The spend cap stops a running subagent | `src/agent/agent-service.ts#enforceSpendCap` | `test/ui/no-turn-cap.test.ts#the spend cap stops a running subagent mid-run, not only after the dispatch returns (U4 #9)` | `partial` |
 | Continue a kept child (`action: "continue"`) | `src/tools/subagent-tool.ts#SubagentRegistry` | `test/subagents.test.ts#continues a finished child by id with its context intact ({action: "continue"})` (unit only) | `partial` |
 | A long subagent report is kept in full as an artifact; the row has Open full report (U5 #13) | `src/tools/subagent-tool.ts#keepFullReport` | `test/subagents.test.ts#U3 #11: keeps the full oversized report as an artifact; the model gets a pointer, the row an Open link id` (unit only) | `partial` |
-| Parallel subagents setting | `src/settings-tab-agent.ts#subagentDefinitions` | `test/e2e/specs/settings-ui.e2e.ts#has no turn cap or subagent timeout; persists and clamps Parallel subagents (U4)` | `covered` |
+| Parallel-subagent settings rows removed; the limit is fixed | `src/settings-tabs.ts#SETTINGS_SECTION_IDS` | `test/e2e/specs/settings-ui.e2e.ts#removes the turn, subagent, sampling, and prompt rows` | `covered` |
 | Attachment budget: inline or path reference | `src/ui/attachments.ts#buildAttachmentSection` | `test/attachments.test.ts#switches to a path-only reference when over the budget (no body inlined)` (unit only) | `partial` |
 | Ignore-list withholding | `src/ui/attachments.ts#buildAttachmentSection` | `test/attachments.test.ts#never inlines content for a restricted (ignore-listed) path` (unit only) | `partial` |
 | Text context (note attachments, selected text, folder listings) sent once per session; the active note is a pointer only, resent when it changes; images are not deduped | `src/ui/context-builder.ts#dedupeSection` | `test/ui/chat-sessions.test.ts#U7 #4: never sends the active note body; the pointer follows the active note and is not repeated while unchanged` (happy-dom) | `partial` |

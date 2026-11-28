@@ -309,22 +309,18 @@ async function configurePlugin(): Promise<Record<string, unknown>> {
       provider: string;
       openrouterApiKey: string;
       openrouterModel: string;
-      temperature: number;
-      mode: string;
       ignoredGlobs: string;
       approval: { mutating: string; perTool: Record<string, string> };
       privacy: { allowFallbacks: boolean; denyDataCollection: boolean; requireZDR: boolean };
       web: { enabled: boolean };
-      mcp: { enabled: boolean; proxyUrl: string; noProxy: string; servers: McpServerSettings[] };
-      maxTokens: number;
+      mcp: { enabled: boolean; proxyUrl: string; noProxy: string };
+      plugins: { mcpState: Record<string, Record<string, unknown>> };
     };
     settings.provider = "openrouter";
     settings.openrouterApiKey = config.apiKey;
     settings.openrouterModel = config.model;
-    // Hold the sampling fixed. The reasoning level comes from the plan, per
-    // run (see applyCaseSettings), so a comparison names the level it used.
-    settings.temperature = 0;
-    settings.mode = "safe";
+    // Sampling is fixed in the plugin now. The reasoning level comes from the
+    // plan, per run (see applyCaseSettings), so a comparison names the level it used.
     settings.approval.mutating = "allow";
     // The eval vault is synthetic. Recursive deletes still ask even under a
     // blanket allow, and the approval card would block the stop button and
@@ -340,17 +336,37 @@ async function configurePlugin(): Promise<Record<string, unknown>> {
     settings.web.enabled = false;
     settings.mcp.enabled = false;
     if (config.mcpServers.length > 0) {
-      // The plan named this run's fake MCP server, so the plugin gets exactly
-      // one MCP server. The base leaves mcp.enabled false; a case that sets
-      // "mcp.enabled": true turns MCP on for its own runs only.
+      // The plan named this run's fake MCP server. Endpoints live in a plugin
+      // package; its client state lives in plugins.mcpState. The base leaves
+      // mcp.enabled false; a case that sets "mcp.enabled": true turns MCP on
+      // for its own runs only.
+      const server = config.mcpServers[0];
+      const root = ".agentic-plugins/eval-fixture";
+      if (!(await app.vault.adapter.exists(root))) {
+        await app.vault.adapter.mkdir(root);
+        await app.vault.adapter.write(
+          `${root}/plugin.json`,
+          JSON.stringify({
+            $schema: "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+            name: "eval-fixture",
+          }),
+        );
+        await app.vault.adapter.write(
+          `${root}/mcp.json`,
+          JSON.stringify({
+            $schema: "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+            mcpServers: { fixture: { type: "streamable-http", url: server.url } },
+          }),
+        );
+      }
       settings.mcp.proxyUrl = "";
       settings.mcp.noProxy = "localhost,127.0.0.1,::1";
-      settings.mcp.servers = config.mcpServers;
+      settings.plugins.mcpState["plugin_eval_fixture_40fbcc244690"] = {
+        ...server,
+        enabled: true,
+        lastUrl: server.url,
+      };
     }
-    // A provider reserves the request's max output tokens against the key's
-    // credit. A run never needs more than a few thousand output tokens, so
-    // cap it and leave the key budget for the whole suite.
-    settings.maxTokens = 8192;
     // The plugin has no turn cap since U4; the case timeout bounds a run.
     settings.ignoredGlobs = "";
     await plugin.saveSettings?.();

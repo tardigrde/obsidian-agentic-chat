@@ -34,7 +34,7 @@ describe("retiredSettingsNotices", () => {
     expect(notices).toHaveLength(1);
     expect(notices[0]).toMatch(/Plan mode was removed/);
     expect(notices[0]).toContain("Safe mode");
-    expect(load({ mode: "plan" }).mode).toBe("safe");
+    expect("mode" in load({ mode: "plan" })).toBe(false);
   });
 
   it("says a chosen output style was removed, but not the default style", () => {
