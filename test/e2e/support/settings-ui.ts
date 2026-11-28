@@ -257,6 +257,22 @@ export async function setPluginToggle(name: string, checked: boolean): Promise<v
   );
 }
 
+/** Read the placeholder of a named setting's text input. */
+export async function readSettingPlaceholder(name: string): Promise<string> {
+  await focusSettingsWindow();
+  await waitForSetting(name);
+  return await browser.execute((settingName) => {
+    const root = document.querySelector(".agentic-chat-settings-tabbody") ?? document.querySelector(".setting-page-content") ?? document;
+    const items = Array.from(root.querySelectorAll<HTMLElement>(".setting-item:not(.agentic-chat-settings-block)"));
+    const setting = items.find(
+      (item) => item.querySelector<HTMLElement>(".setting-item-name")?.innerText.trim() === settingName,
+    );
+    const input = setting?.querySelector<HTMLInputElement>("input");
+    if (!input) throw new Error(`Text input for setting "${settingName}" not found`);
+    return input.placeholder;
+  }, name);
+}
+
 /** Read the selected value of a named dropdown setting. */
 export async function readSettingSelect(name: string): Promise<string> {
   await focusSettingsWindow();

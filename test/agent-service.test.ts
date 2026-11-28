@@ -1005,8 +1005,8 @@ describe("AgentService", () => {
       summarize: async () => "Manual summary.",
     });
 
-    await service.sendPrompt("first request");
-    await service.sendPrompt("second request");
+    await service.sendPrompt("first request ".repeat(100));
+    await service.sendPrompt("second request ".repeat(100));
     const result = await service.compactNow();
 
     expect(result.compacted).toBe(true);
@@ -1055,8 +1055,8 @@ describe("AgentService", () => {
       },
     });
 
-    await service.sendPrompt("first request");
-    await service.sendPrompt("second request");
+    await service.sendPrompt("first request ".repeat(100));
+    await service.sendPrompt("second request ".repeat(100));
 
     // Hold the runtime pass directly so compactNow reaches the busy guard with
     // a deterministic in-flight run. Track the second runtime entry: the manual
@@ -1252,8 +1252,8 @@ describe("AgentService", () => {
       },
     });
 
-    await service.sendPrompt("first request");
-    await service.sendPrompt("second request");
+    await service.sendPrompt("first request ".repeat(100));
+    await service.sendPrompt("second request ".repeat(100));
     const firstPath = service.getSessionInfo()?.path as string;
     await service.newSession();
     const secondPath = service.getSessionInfo()?.path as string;
@@ -1293,8 +1293,8 @@ describe("AgentService", () => {
       summarize: async () => "Late manual summary.",
     });
 
-    await service.sendPrompt("first request");
-    await service.sendPrompt("second request");
+    await service.sendPrompt("first request ".repeat(100));
+    await service.sendPrompt("second request ".repeat(100));
     const firstPath = service.getSessionInfo()?.path as string;
     await service.newSession();
     const secondPath = service.getSessionInfo()?.path as string;
@@ -1355,8 +1355,8 @@ describe("AgentService", () => {
       },
     });
 
-    await service.sendPrompt("first request");
-    await service.sendPrompt("second request");
+    await service.sendPrompt("first request ".repeat(100));
+    await service.sendPrompt("second request ".repeat(100));
     const sessionPath = service.getSessionInfo()?.path as string;
 
     const compaction = service.compactNow();

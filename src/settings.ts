@@ -58,6 +58,8 @@ const CONTROL_KEYS_THAT_REDRAW = new Set([
   "observability.enabled",
   "observability.backend",
   "plugins.folder",
+  // The per-tool "Default (…)" labels follow the global policy.
+  "approval.mutating",
 ]);
 
 export class AgenticChatSettingTab extends PluginSettingTab {

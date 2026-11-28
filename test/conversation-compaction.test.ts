@@ -122,10 +122,20 @@ describe("AgentConversationCompaction", () => {
 
   describe("runManual", () => {
     it("binds the pass to the session it read and records one audit pair", async () => {
-      const { compaction, events } = harness();
+      const { compaction, events } = harness({
+        agent: agentWith([userMessage("one ".repeat(200)), userMessage("two ".repeat(200))]),
+      });
 
-      await expect(compaction.runManual("keep decisions")).resolves.toMatchObject({ compacted: true });
+      const result = await compaction.runManual("keep decisions");
 
+      expect(result).toMatchObject({
+        compacted: true,
+        overheadTokens: 40,
+        contextWindow: 1_000,
+      });
+      if (result.compacted) {
+        expect(result.conversationBeforeTokens).toBeGreaterThan(result.conversationAfterTokens);
+      }
       expect(events).toEqual(["audit:compaction:start", "manual:2:7:true", "audit:compaction:end"]);
     });
 

@@ -3,6 +3,7 @@ import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import {
   buildSummaryMessage,
   type CompactionConfig,
+  formatCompactionSummary,
   isSummaryMessage,
   planCompaction,
 } from "../src/agent/compaction";
@@ -83,6 +84,36 @@ describe("planCompaction", () => {
     const plan = planCompaction(messages, 1000, CONFIG);
     expect(plan).not.toBeNull();
     expect(plan!.keep[0].role).toBe("user");
+  });
+});
+
+describe("formatCompactionSummary", () => {
+  it("reports conversation tokens before and after, the context load, and the fixed overhead", () => {
+    expect(
+      formatCompactionSummary({
+        conversationBeforeTokens: 12_345,
+        conversationAfterTokens: 1_234,
+        overheadTokens: 5_000,
+        contextWindow: 100_000,
+      }),
+    ).toBe(
+      "Compacted. Conversation 12,345 → 1,234 estimated tokens (context load 17% → 6%). " +
+        "The system prompt, tool schemas, and reply reserve stay at 5,000 tokens.",
+    );
+  });
+
+  it("omits the percentage when the model has no known context window", () => {
+    expect(
+      formatCompactionSummary({
+        conversationBeforeTokens: 1_000,
+        conversationAfterTokens: 200,
+        overheadTokens: 0,
+        contextWindow: 0,
+      }),
+    ).toBe(
+      "Compacted. Conversation 1,000 → 200 estimated tokens. " +
+        "The system prompt, tool schemas, and reply reserve stay at 0 tokens.",
+    );
   });
 });
 

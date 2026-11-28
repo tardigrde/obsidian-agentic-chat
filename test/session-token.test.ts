@@ -100,8 +100,8 @@ async function persistedMessages(adapter: MemoryAdapter, service: AgentService):
 describe("session token guards", () => {
   it("delivers a send prepared before a manual compaction landed", async () => {
     const { service } = makeService();
-    await service.sendPrompt("first request");
-    await service.sendPrompt("second request");
+    await service.sendPrompt("first request ".repeat(100));
+    await service.sendPrompt("second request ".repeat(100));
     const token = service.getSessionToken();
 
     await expect(service.compactNow()).resolves.toMatchObject({ compacted: true });
