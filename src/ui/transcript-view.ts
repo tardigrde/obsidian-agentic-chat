@@ -9,7 +9,7 @@ import { FOLDER_PREFIX } from "./autocomplete";
 import { stripContextPreamble } from "./composer-input";
 import { contextAttachmentLabel, type ContextAttachment } from "./context-attachments";
 import { collectUserImageThumbs } from "./image-attachments";
-import { renderSummaryPanel } from "./info-panel-renderer";
+import { addCompactionResult, renderCompactionPanel } from "./info-panel-renderer";
 import {
   assistantUsage,
   collectToolResults,
@@ -278,9 +278,20 @@ export class TranscriptView {
   }
 
   /** Render an auto-compaction summary as a collapsed, non-editable transcript block. */
-  private renderSummaryMessage(text: string): void {
-    renderSummaryPanel(this.messagesEl, text);
-    this.scrollToBottom();
+  /** The Compact card of the last redraw, for the `/compact` result line. */
+  private compactionCard: HTMLElement | null = null;
+
+  /**
+   * Move the Compact card below the `/compact` bubble and add the result to
+   * it. False when the redraw showed no summary.
+   */
+  showCompactionResult(result: string): boolean {
+    const card = this.compactionCard;
+    if (!card?.isConnected) return false;
+    addCompactionResult(card, result);
+    this.messagesEl.appendChild(card);
+    this.scrollToBottom({ force: true });
+    return true;
   }
 
   /** Every bubble whose DOM is in `messagesEl`; destroyed when that DOM is cleared. */
@@ -312,11 +323,26 @@ export class TranscriptView {
     const toolResults = collectToolResults(messages);
     const lastAssistant = lastIndex(messages, (message) => message.role === "assistant");
     let rendered = 0;
+    this.compactionCard = null;
+    // The model reads the summary first, but the reader sees it where the
+    // compaction ran: before the first turn that is newer than the summary.
+    let summary: AgentMessage | null = null;
+    const placeSummary = (): void => {
+      if (!summary) return;
+      this.compactionCard = renderCompactionPanel(this.messagesEl, messageText(summary));
+      summary = null;
+    };
     messages.forEach((message, index) => {
+      if (summary && message.role === "user" && (message.timestamp ?? 0) > (summary.timestamp ?? 0)) {
+        // The turns above the card are over; close the last one above it.
+        this.finishTurn();
+        placeSummary();
+      }
       if (message.role === "user" && isSummaryMessage(message)) {
-        // A compaction summary isn't a user turn: show it as a distinct,
-        // non-editable block instead of an editable user bubble.
-        this.renderSummaryMessage(messageText(message));
+        // A compaction summary isn't a user turn: it is a non-editable card.
+        this.finishTurn();
+        placeSummary();
+        summary = message;
         rendered += 1;
       } else if (message.role === "user" && parseSubagentReport(messageText(message))) {
         // Close the turn before: the report's sources belong to the turn it starts.
@@ -343,6 +369,7 @@ export class TranscriptView {
     // A turn still in flight (a tab switch mid-run) keeps its activity open,
     // so the live steps that follow land in it.
     if (!(this.host.isStreaming?.() ?? false)) this.finishTurn();
+    placeSummary();
     if (rendered === 0) this.host.renderEmptyState();
     this.scrollToBottom();
   }

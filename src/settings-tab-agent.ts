@@ -13,8 +13,12 @@ export interface PerToolApprovalRow {
   defaultLabel: string;
 }
 
-/** Read-only tools run unless overridden; mutating tools follow the global policy. */
-export function defaultApprovalOptionLabel(approval: ApprovalSettings, mutating: boolean): string {
+/**
+ * Read-only tools run unless overridden; mutating tools follow the global
+ * policy. A recursive delete still asks when that policy is allow.
+ */
+export function defaultApprovalOptionLabel(approval: ApprovalSettings, toolName: string, mutating: boolean): string {
+  if (toolName === "delete" && approval.mutating === "allow") return "Default (allow, folders ask)";
   return `Default (${mutating ? approval.mutating : "allow"})`;
 }
 
@@ -24,7 +28,7 @@ export function perToolApprovalRows(settings: AgenticChatSettings): PerToolAppro
     toolName: tool.name,
     label: tool.label,
     mutating: tool.mutating,
-    defaultLabel: defaultApprovalOptionLabel(settings.approval, tool.mutating),
+    defaultLabel: defaultApprovalOptionLabel(settings.approval, tool.name, tool.mutating),
   }));
 }
 
@@ -76,7 +80,7 @@ export function approvalDefinitions(settings: AgenticChatSettings, host: Setting
                 : "read-only";
         setting.setDesc(`${tool.toolName} · ${detail}`).addDropdown((dropdown) => {
           dropdown
-            .addOption("default", defaultApprovalOptionLabel(settings.approval, tool.mutating))
+            .addOption("default", tool.defaultLabel)
             .addOption("allow", "Allow");
           // Dispatch has no approval gate (the child never prompts), so an Ask
           // option would silently behave like Allow. Only an explicit deny applies.

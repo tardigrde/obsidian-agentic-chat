@@ -31,6 +31,8 @@ export interface SlashContext {
     pendingMessageEnd?: boolean,
   ): void;
   renderTranscript(messages: AgentMessage[]): void;
+  /** Add the `/compact` result to the Compact card; false when there is none. */
+  showCompactionResult(result: string): boolean;
   syncChrome(): void;
   setComposerValue(text: string): void;
   inputEl: HTMLTextAreaElement;

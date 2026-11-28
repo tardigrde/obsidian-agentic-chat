@@ -178,6 +178,16 @@ describe("declarative settings definitions", () => {
     expect(rows.find((row) => row.toolName === "subagent")?.defaultLabel).toBe("Default (allow)");
   });
 
+  it("says that a folder delete still asks when the Delete default is allow", () => {
+    const label = (mutating: "allow" | "ask") =>
+      perToolApprovalRows({ ...DEFAULT_SETTINGS, approval: { mutating, perTool: {} } }).find(
+        (row) => row.toolName === "delete",
+      )?.defaultLabel;
+
+    expect(label("allow")).toBe("Default (allow, folders ask)");
+    expect(label("ask")).toBe("Default (ask)");
+  });
+
   it("rebuilds the rows when the global mutating policy changes, so the Default labels follow it", async () => {
     const { tab } = makeHarness();
     let updates = 0;

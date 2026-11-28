@@ -184,6 +184,32 @@ describe("agentic-chat smoke", function () {
     expect(await scriptedCallLabels()).toEqual(["init answer"]);
   });
 
+  it("shows the compaction summary inside the Compact card below the kept turn", async function () {
+    await submitComposer("/new");
+    await installScriptedTurns([
+      textTurn("compact first", "First answer."),
+      textTurn("compact second", "Second answer."),
+      textTurn("compact summary", "The earlier turn in short."),
+    ]);
+    for (const prompt of ["alpha question ", "bravo question "]) {
+      await submitComposer(prompt.repeat(60).trim());
+      await waitForIdle();
+    }
+    await submitComposer("/compact");
+    await waitForTranscript("Summarized earlier conversation", 10_000);
+    await waitForTranscript("Compacted.");
+
+    const order = await browser.execute(() =>
+      Array.from(document.querySelectorAll<HTMLElement>(".agentic-chat-user, .agentic-chat-compaction")).map((el) =>
+        el.classList.contains("agentic-chat-compaction") ? "card" : (el.innerText.trim().split(/\s/)[0] ?? ""),
+      ),
+    );
+    expect(order).toEqual(["bravo", "/compact", "card"]);
+    if (process.env.AGENTIC_CHAT_SCREENSHOT_DIR) {
+      await browser.saveScreenshot(`${process.env.AGENTIC_CHAT_SCREENSHOT_DIR}/compaction-card.png`);
+    }
+  });
+
   it("shows no active-note chip for any note (the model gets a pointer, not a chip) (U7 #4)", async function () {
     try {
       // Before U7 #4 this opened as a dashed "ACTIVE" chip that ate a composer row on a phone.

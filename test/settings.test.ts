@@ -29,6 +29,7 @@ import {
   mcpCredentialResourceChanged,
   mcpTestButtonState,
 } from "../src/settings-mcp-state";
+import pastDefaultPrompts from "./fixtures/past-default-prompts.json";
 
 describe("default OpenRouter model", () => {
   it("is DeepSeek v4.1 Flash for a new install", () => {
@@ -38,6 +39,23 @@ describe("default OpenRouter model", () => {
 
   it("keeps a model an existing user already saved", () => {
     expect(mergeSettings({ openrouterModel: "moonshotai/kimi-k2.6" }).openrouterModel).toBe("moonshotai/kimi-k2.6");
+  });
+});
+
+describe("retired system prompt notice", () => {
+  const notices = (systemPrompt: string) =>
+    retiredSettingsNotices({ systemPrompt }).filter((notice) => notice.includes("System prompt"));
+
+  it.each(pastDefaultPrompts.map((prompt, index) => [index, prompt] as const))(
+    "stays quiet for shipped default %i",
+    (_index, prompt) => {
+      expect(notices(prompt)).toEqual([]);
+    },
+  );
+
+  it("still names a prompt the user wrote or extended", () => {
+    expect(notices("Answer in Hungarian.")).toHaveLength(1);
+    expect(notices(`${pastDefaultPrompts[1]}\nAnswer in Hungarian.`)).toHaveLength(1);
   });
 });
 
