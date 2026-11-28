@@ -69,3 +69,31 @@ describe("/compact", () => {
     expect(ui.root.textContent).toContain("delivered outside the composer");
   });
 });
+
+describe("compaction card during a running turn", () => {
+  it("does not close the turn in flight when no newer user message exists", async () => {
+    ui = await mountChatView({ turns: [] });
+    const view = ui.view as unknown as {
+      service: { isStreaming(): boolean };
+      renderTranscript(messages: unknown[]): void;
+    };
+    view.service.isStreaming = () => true;
+
+    // A retry after a compaction: the running turn's user message is older than the summary.
+    view.renderTranscript([
+      { role: "user", content: [{ type: "text", text: "<conversation-summary>\nearlier\n</conversation-summary>" }], timestamp: 100 },
+      { role: "user", content: [{ type: "text", text: "kept question" }], timestamp: 1 },
+      {
+        role: "assistant",
+        content: [{ type: "toolCall", id: "call-1", name: "read", arguments: { path: "a.md" } }],
+        timestamp: 200,
+        stopReason: "toolUse",
+      },
+    ]);
+    await settle();
+
+    const transcript = (ui.view as unknown as { transcript: { currentActivity: unknown } }).transcript;
+    expect(transcript.currentActivity).not.toBeNull();
+    expect(ui.$(".agentic-chat-compaction")).not.toBeNull();
+  });
+});

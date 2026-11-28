@@ -329,14 +329,18 @@ export class TranscriptView {
     let summary: AgentMessage | null = null;
     const placeSummary = (): void => {
       if (!summary) return;
-      this.finishTurn();
       this.compactionCard = renderCompactionPanel(this.messagesEl, messageText(summary));
       summary = null;
     };
     messages.forEach((message, index) => {
-      if (summary && message.role === "user" && (message.timestamp ?? 0) > (summary.timestamp ?? 0)) placeSummary();
+      if (summary && message.role === "user" && (message.timestamp ?? 0) > (summary.timestamp ?? 0)) {
+        // The turns above the card are over; close the last one above it.
+        this.finishTurn();
+        placeSummary();
+      }
       if (message.role === "user" && isSummaryMessage(message)) {
         // A compaction summary isn't a user turn: it is a non-editable card.
+        this.finishTurn();
         placeSummary();
         summary = message;
         rendered += 1;
