@@ -32,17 +32,9 @@ describe("approval memory", () => {
     expect(deny.approval.perTool.write).toBe("deny");
   });
 
-  it("never remembers allow for persistent skill tools and web downloads (injection gate)", () => {
-    for (const tool of ["create_skill", "download_file"]) {
-      const current = settings();
-      expect(applyRememberedApprovalChoice(current, tool, { approved: true, remember: true })).toBe(false);
-      expect(current.approval.perTool[tool]).toBeUndefined();
-    }
-  });
-
-  it("still remembers deny for persistent skill tools", () => {
+  it("remembers allow for a web download now that it has a settings row", () => {
     const current = settings();
-    expect(applyRememberedApprovalChoice(current, "create_skill", { approved: false, remember: true })).toBe(true);
-    expect(current.approval.perTool.create_skill).toBe("deny");
+    expect(applyRememberedApprovalChoice(current, "download_file", { approved: true, remember: true })).toBe(true);
+    expect(current.approval.perTool.download_file).toBe("allow");
   });
 });

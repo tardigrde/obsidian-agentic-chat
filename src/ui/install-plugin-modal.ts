@@ -206,5 +206,5 @@ export function noticeInstallResult(result: InstallResult): void {
     `${result.mcpServers} MCP server${result.mcpServers === 1 ? "" : "s"}`,
     `${result.files} files`,
   ];
-  new Notice(`${parts.join(" · ")}${result.warnings.length > 0 ? " · see Resources tab for reports" : ""}`, 6000);
+  new Notice(`${parts.join(" · ")}${result.warnings.length > 0 ? " · see Settings > Advanced > Agent plugins for reports" : ""}`, 6000);
 }

@@ -247,13 +247,15 @@ describe("loadPlugins", () => {
     expect(plugin.mcpServers.map((server) => server.id)).toEqual([pluginMcpServerId("disk-only", "api")]);
   });
 
-  it("honors the per-plugin enable map", async () => {
+  it("enables a plugin only when the enable map says true; a missing key is disabled", async () => {
     const app = await seed();
     await addPlugin(app, "on", { "plugin.json": manifest("on") });
     await addPlugin(app, "off", { "plugin.json": manifest("off") });
-    const plugins = await loadPlugins(app, { enabledPlugins: { off: false } });
+    await addPlugin(app, "absent", { "plugin.json": manifest("absent") });
+    const plugins = await loadPlugins(app, { enabledPlugins: { on: true, off: false } });
     expect(byName(plugins, "on").enabled).toBe(true);
     expect(byName(plugins, "off").enabled).toBe(false);
+    expect(byName(plugins, "absent").enabled).toBe(false);
   });
 
   it("marks a plugin partial when mcp.json is a folder", async () => {

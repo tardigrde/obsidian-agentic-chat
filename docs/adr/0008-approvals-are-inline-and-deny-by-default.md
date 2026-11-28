@@ -3,6 +3,7 @@
 - Status: Accepted
 - Date: 2026-11-22
 - Supersedes: the modal approval flow removed in #409
+- Amended 2026-11-27: `create_skill` was removed (#447), so its special ask/never-remember ladder is gone. A subagent dispatch now honors an explicit per-tool `deny` and never prompts from a child.
 
 ## Decision
 

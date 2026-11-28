@@ -12,7 +12,8 @@
 - In-chat mode toggle.
 - Background-tab approval: the card waits in its tab, the tab gets the orange
   needs-you dot and "needs approval" in its aria-label, and a notice fires.
-- The card has no "Always" for the persistent skill writer (`create_skill`).
+- A subagent child never prompts: an `ask` decision becomes a denial the child
+  can read, and dispatch is not gated on its role's allowlist.
 
 ## How to get to it (user view)
 
@@ -55,7 +56,9 @@ await allowApproval(); // test/e2e/support/chat.ts
 | Diff preview before an edit | `src/ui/approval-card.ts#renderPreview` | `test/e2e/specs/approval-deterministic.e2e.ts#asks before a scripted edit and undo restores the prior text` | `covered` |
 | Always allow remembers allow for this tool | `src/ui/approval-card.ts#render` | `test/e2e/specs/approval-deterministic.e2e.ts#Always allow remembers allow for the tool, so the next write does not ask` | `covered` |
 | Approval audit records Allow once vs Always allow | `src/agent/action-audit-log.ts#buildApprovalAuditEvent` | `test/tool-call-controller.test.ts#records remember on the user's approval decision, so a log can tell the two apart` (unit only) | `partial` |
-| Skill tools cannot be remembered | `src/ui/approval-card.ts#isCreateSkill` | `test/approval-memory.test.ts#never remembers allow for persistent skill tools and web downloads (injection gate)` (policy only) | `partial` |
+| A web download's Always allow is remembered now that it has a settings row | `src/agent/approval-memory.ts#applyRememberedApprovalChoice` | `test/approval-memory.test.ts#remembers allow for a web download now that it has a settings row` (unit only) | `partial` |
+| A subagent child never prompts; an ask becomes a denial | `src/agent/tool-call-controller.ts#gateToolCall` | `test/tool-call-controller.test.ts#denies a child call that would ask, without an approval card` (unit only) | `partial` |
+| Every built-in tool has a per-tool row with its real default label | `src/settings-tab-agent.ts#perToolApprovalRows` | `test/settings-definitions.test.ts#keys every per-tool approval row by a real catalog tool and shows its real default`; `test/e2e/specs/settings-ui.e2e.ts#shows one approval row per tool with the real default label` | `covered` |
 | Global mutating gate persists | `src/settings-tab-agent.ts#approvalDefinitions` | `test/e2e/specs/settings-ui.e2e.ts#removes the working-directory section and still saves approval controls` (persistence; behavior also exercised by `approval-deterministic.e2e.ts`) | `covered` |
 | Per-tool override through settings | `src/settings-tab-agent.ts#approvalDefinitions` | `test/e2e/specs/settings-ui.e2e.ts#removes the working-directory section and still saves approval controls` | `covered` |
 | Per-tool deny flips to allow | `src/settings-tab-agent.ts#approvalDefinitions` | `test/approval.test.ts#honors explicit per-tool overrides for either direction` (policy only; the recorded probe was deleted in #393 T23) | `partial` |
@@ -67,7 +70,7 @@ await allowApproval(); // test/e2e/support/chat.ts
 | Invalid mode transition is blocked | `src/ui/chat-view.ts#setMode` | `test/ui/chat-view-states.test.ts#the mode toggle flips Safe <-> YOLO when idle and refuses while streaming` (happy-dom) | `partial` |
 | Background-tab approval waits in its tab (orange dot) | `src/ui/chat-view.ts#confirmToolCallForTab` | `test/e2e/specs/multi-tab-approval.e2e.ts#keeps a background tab's approval in that tab with an orange dot (no auto-switch)` | `covered` |
 | Closing a tab settles its pending approval | `src/ui/chat-tabs.ts#closeTab` | `test/e2e/specs/multi-tab-approval.e2e.ts#settles the pending card and drops the dot when the background tab is closed` | `covered` |
-| Tall approval card keeps Allow and Deny on screen; create_skill body is folded (U7 #3) | `src/ui/approval-card.ts#renderCreateSkillPreview` | `test/e2e/specs/mobile-viewport.e2e.ts#keeps Allow and Deny on screen for a tall approval card (U7 #3)` (tall write card in a browser; the create_skill fold is `test/ui/approval-card.test.ts` only) | `partial` |
+| Tall approval card keeps Allow and Deny on screen (U7 #3) | `src/ui/approval-card.ts#ApprovalCard` | `test/e2e/specs/mobile-viewport.e2e.ts#keeps Allow and Deny on screen for a tall approval card (U7 #3)` (tall write card in a browser) | `partial` |
 | Approval card at phone width | `src/ui/approval-card.ts#ApprovalCard` | `test/e2e/specs/mobile-viewport.e2e.ts#keeps the approval card visible and touchable at phone width` | `covered` |
 | Approved delete really leaves the vault (system trash that does nothing falls back to `.trash`) | `src/tools/vault/adapter-trash.ts#trashVaultEntry` | `test/e2e/specs/trash-fallback.e2e.ts#the note is gone from the vault when the tool says it moved it to trash` | `covered` |
 
@@ -77,8 +80,9 @@ await allowApproval(); // test/e2e/support/chat.ts
   confirms.
 - `deny` overrides `allow` at every layer. A per-tool deny overrides the global
   policy, and a remembered choice writes into the same `perTool` map.
-- "Always allow" is hidden for `create_skill`. A remembered deny is no longer
-  offered from the card; set it in settings.
+- "Always allow" is offered for every tool that has a per-tool row, including
+  `download_file`. A remembered deny is no longer offered from the card; set it
+  in settings.
 - The plugin refuses mode changes while any tab streams.
 - A background approval does not take focus or switch tabs. The card waits in
   its tab and shows when the user switches there.

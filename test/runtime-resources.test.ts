@@ -70,6 +70,13 @@ function settings(overrides: SettingsOverrides = {}): AgenticChatSettings {
     ...overrides,
     web: { ...DEFAULT_SETTINGS.web, ...(overrides.web ?? {}) },
     mcp: { ...DEFAULT_SETTINGS.mcp, ...(overrides.mcp ?? {}) },
+    // Fixture packages are explicitly enabled: the loader treats a missing key
+    // as disabled now, and these tests exercise loading, not the default.
+    plugins: {
+      ...DEFAULT_SETTINGS.plugins,
+      ...(overrides.plugins ?? {}),
+      enabled: { tools: true, "mcp-server": true, ...(overrides.plugins?.enabled ?? {}) },
+    },
   };
 }
 
@@ -207,12 +214,6 @@ describe("agent runtime resources", () => {
       artifactStore: noopArtifactStore,
       askUser: async () => "answer",
       subagentTool,
-      skillScaffolder: {
-        packageExists: async () => false,
-        async scaffoldSkill() {
-          return { rootPath: ".agentic-plugins/x", name: "x", updated: false, skills: 1 };
-        },
-      },
     });
 
     // The core set the model always gets; nothing else.
@@ -234,7 +235,7 @@ describe("agent runtime resources", () => {
       "current_time",
       "search_tools",
     ]);
-    expect(deferred.map((tool) => tool.name)).toEqual(["create_skill", "import_document"]);
+    expect(deferred.map((tool) => tool.name)).toEqual(["import_document"]);
   });
 
   it("includes discovered MCP tools from plugins in the parent tool snapshot", async () => {

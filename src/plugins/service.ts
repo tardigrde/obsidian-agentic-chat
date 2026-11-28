@@ -1,4 +1,4 @@
-import type { App } from "obsidian";
+import { Notice, type App } from "obsidian";
 import { type AgenticChatSettings } from "../settings-schema";
 import { normalizeMcpServerId } from "../mcp/settings";
 import type { FileTree } from "./import/archive";
@@ -12,7 +12,7 @@ import {
   type ImportBytesFetcher,
 } from "./import/url-source";
 import { loadPlugins, mcpServerFromPluginEntry, type LoadedPlugin } from "./loader";
-import { validatePluginManifest } from "./manifest";
+import { USER_SKILLS_PACKAGE, validatePluginManifest } from "./manifest";
 import { sweepImportStages } from "./import-sweep";
 import {
   materializeLegacySkills,
@@ -27,10 +27,30 @@ import {
   forgetPluginPackage,
   pruneOrphanPluginSettings,
   recordImportedMcpState,
+  recordPluginEnabledByDefault,
   recordPluginSource,
 } from "./plugin-settings-records";
 
 export { FIRST_PARTY_PACKAGE_NAMES, USER_SKILLS_PACKAGE } from "./manifest";
+
+/** Packages with no enable record at all: they start disabled after the upgrade. */
+export function pluginsWithoutEnabledRecord(
+  plugins: readonly LoadedPlugin[],
+  enabled: Readonly<Record<string, boolean>>,
+): string[] {
+  return plugins
+    .filter((plugin) => !Object.prototype.hasOwnProperty.call(enabled, plugin.name))
+    .map((plugin) => plugin.name);
+}
+
+/** One notice naming the packages that need an explicit enable. */
+export function defaultOffPluginsNotice(names: readonly string[]): string {
+  if (names.length === 0) return "";
+  return (
+    `Agent plugin packages found in the vault start off: ${names.join(", ")}. ` +
+    "Turn them on in Settings > Advanced > Agent plugins."
+  );
+}
 
 /**
  * The one plugin catalog players share: the runtime builds skills and MCP tools
@@ -70,6 +90,8 @@ export class PluginService {
   private maintenance: Promise<void> = Promise.resolve();
   private retainedImportBackup = false;
   private readonly invalidationListeners = new Set<() => void>();
+  /** Packages already named in the default-off notice; reloads must not repeat it. */
+  private readonly notifiedDefaultOff = new Set<string>();
   private readonly vault: PluginVault;
 
   constructor(
@@ -110,7 +132,20 @@ export class PluginService {
     // would drop plugin/OAuth state before the backup can be restored.
     const mutated = this.retainedImportBackup ? false : pruneOrphanPluginSettings(settings, plugins);
     if (mutated) await this.saveSettings?.();
+    this.notifyDefaultOff(plugins, settings.plugins.enabled);
     return plugins;
+  }
+
+  /**
+   * Existing users had packages with no enable record, which now default off.
+   * Name them once per service instance; an explicit `false` is the user's own
+   * choice and stays quiet.
+   */
+  private notifyDefaultOff(plugins: readonly LoadedPlugin[], enabled: Readonly<Record<string, boolean>>): void {
+    const unseen = pluginsWithoutEnabledRecord(plugins, enabled).filter((name) => !this.notifiedDefaultOff.has(name));
+    for (const name of unseen) this.notifiedDefaultOff.add(name);
+    const message = defaultOffPluginsNotice(unseen);
+    if (message) new Notice(message);
   }
 
   /** True when the last sweep kept an import backup for manual recovery. */
@@ -218,6 +253,7 @@ export class PluginService {
       problems: [],
     });
     enableGeneratedMcpServer(this.getSettings(), derived);
+    recordPluginEnabledByDefault(this.getSettings(), written.pluginName);
     await this.saveSettings?.();
     this.invalidate();
     return written;
@@ -272,6 +308,7 @@ export class PluginService {
     recordPluginSource(settings, result.name, label);
     // The source label is always new, so the install always saves once.
     recordImportedMcpState(settings, result.name, converted.mcpEntries);
+    recordPluginEnabledByDefault(settings, result.name);
     await this.saveSettings?.();
     this.invalidate();
     return result;
@@ -302,7 +339,9 @@ export class PluginService {
     const result = await this.runExclusive(() =>
       installPackage(this.vault.writer(), { converted, pluginsFolder: this.vault.folder() }),
     );
-    recordPluginSource(this.getSettings(), result.name, options.source ?? "New skill wizard");
+    const settings = this.getSettings();
+    recordPluginSource(settings, result.name, options.source ?? "New skill wizard");
+    recordPluginEnabledByDefault(settings, result.name);
     await this.saveSettings?.();
     this.invalidate();
     return result;
@@ -336,14 +375,22 @@ export class PluginService {
   /** Materialize the user's `my-skills` package; only creates missing files. */
   async ensureMySkillsMaterialized(): Promise<boolean> {
     const created = await materializeMySkills(this.vault);
-    if (created) this.invalidate();
+    if (created) {
+      recordPluginEnabledByDefault(this.getSettings(), USER_SKILLS_PACKAGE);
+      await this.saveSettings?.();
+      this.invalidate();
+    }
     return created;
   }
 
   /** One-time migration of legacy skills/templates folders into a `legacy-skills` package. */
   async materializeLegacySkills(folders: string[]): Promise<boolean> {
     const created = await materializeLegacySkills(this.vault, folders);
-    if (created) this.invalidate();
+    if (created) {
+      recordPluginEnabledByDefault(this.getSettings(), "legacy-skills");
+      await this.saveSettings?.();
+      this.invalidate();
+    }
     return created;
   }
 }

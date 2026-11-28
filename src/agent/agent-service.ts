@@ -14,7 +14,6 @@ import type { ToolArtifactStoreLike } from "../artifacts/tool-artifact-store";
 import { effectiveProxy } from "../network/proxy";
 import { createObsidianFetcher, type WebFetcher } from "../tools/web-fetch";
 import type { AskUserHandler } from "../tools/ask-user-tool";
-import type { SkillScaffolder } from "../tools/skill-tools";
 import { createDynamicProxiedFetcher } from "../mcp/fetcher";
 import { AgentObservabilityRuntime } from "../observability/agent-observability";
 import { errorMessage } from "../utils/errors";
@@ -106,8 +105,6 @@ export interface AgentServiceOptions {
   saveSettings?: () => void | Promise<void>;
   /** Store large tool outputs so the transcript can reference them by id. */
   artifactStore?: ToolArtifactStoreLike;
-  /** Backs the agent `create_skill` tool with the New skill wizard writer. Omitted in tests without a vault. */
-  skillScaffolder?: SkillScaffolder;
   /** Shared plugin catalog: one cache for settings, the runtime, and MCP tools. */
   pluginService?: PluginCatalog;
 }
@@ -212,7 +209,6 @@ export class AgentService {
         }),
       saveSettings: options.saveSettings,
       artifactStore: options.artifactStore,
-      skillScaffolder: options.skillScaffolder,
       plugins: options.pluginService,
     });
     // An install or a vault edit under the plugins folder invalidates the

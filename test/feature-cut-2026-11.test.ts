@@ -16,7 +16,7 @@ import { resolveCommand, retiredCommandHint, SLASH_COMMANDS } from "../src/ui/co
  */
 const commandNames = (): string[] => SLASH_COMMANDS.map((command) => command.name);
 
-/** The full parent tool list (active and deferred): web on, ask_user, subagent, and create_skill present. */
+/** The full parent tool list (active and deferred): web on, ask_user, and subagent present. */
 function parentToolNames(): string[] {
   const subagentTool = createSubagentTool({
     getProfiles: () => [],
@@ -36,12 +36,6 @@ function parentToolNames(): string[] {
     artifactStore: noopArtifactStore,
     askUser: async () => "answer",
     subagentTool,
-    skillScaffolder: {
-      packageExists: async () => false,
-      async scaffoldSkill() {
-        return { rootPath: ".agentic-plugins/x", name: "x", updated: false, skills: 1 };
-      },
-    },
   });
   return all.map((tool) => tool.name);
 }

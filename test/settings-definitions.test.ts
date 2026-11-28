@@ -2,9 +2,11 @@ import { describe, expect, it } from "vitest";
 import type { App, SettingDefinitionGroup, SettingDefinitionPage } from "obsidian";
 import { AgenticChatSettingTab } from "../src/settings";
 import { secretInputDef } from "../src/settings-definition-kit";
+import { perToolApprovalRows } from "../src/settings-tab-agent";
 import { createMcpServerSettings } from "../src/mcp/settings";
 import { DEFAULT_SETTINGS } from "../src/settings-schema";
 import { SETTINGS_TABS } from "../src/settings-tabs";
+import { TOOL_CATALOG } from "../src/tools/tool-catalog";
 
 function makeHarness(mutate?: (settings: typeof DEFAULT_SETTINGS) => void) {
   const settings = structuredClone(DEFAULT_SETTINGS);
@@ -147,6 +149,11 @@ describe("declarative settings definitions", () => {
     expect(names("approval")).toEqual(
       expect.arrayContaining(["Before mutating tools", "Per-tool overrides"]),
     );
+    // One row for every tool in the one catalog, so no built-in tool is missing
+    // an approval override.
+    expect(names("approval")).toEqual(
+      expect.arrayContaining(TOOL_CATALOG.map((entry) => entry.label)),
+    );
     expect(names("mcp")).toEqual(
       expect.arrayContaining(["Enable MCP", "HTTP proxy", "No proxy", "Add MCP server"]),
     );
@@ -157,6 +164,32 @@ describe("declarative settings definitions", () => {
 
   it("does not override the deprecated imperative display()", () => {
     expect(Object.prototype.hasOwnProperty.call(AgenticChatSettingTab.prototype, "display")).toBe(false);
+  });
+
+  it("keys every per-tool approval row by a real catalog tool and shows its real default", () => {
+    const catalogNames = new Set(TOOL_CATALOG.map((entry) => entry.name));
+    const rows = perToolApprovalRows(DEFAULT_SETTINGS);
+    expect(rows.map((row) => row.toolName)).toEqual(TOOL_CATALOG.map((entry) => entry.name));
+    for (const row of rows) {
+      expect(catalogNames.has(row.toolName), row.toolName).toBe(true);
+      const entry = TOOL_CATALOG.find((candidate) => candidate.name === row.toolName);
+      expect(row.defaultLabel).toBe(`Default (${entry?.mutating ? DEFAULT_SETTINGS.approval.mutating : "allow"})`);
+    }
+    expect(rows.find((row) => row.toolName === "read")?.defaultLabel).toBe("Default (allow)");
+    expect(rows.find((row) => row.toolName === "write")?.defaultLabel).toBe("Default (ask)");
+    expect(rows.find((row) => row.toolName === "subagent")?.defaultLabel).toBe("Default (allow)");
+  });
+
+  it("rebuilds the rows when the global mutating policy changes, so the Default labels follow it", async () => {
+    const { tab } = makeHarness();
+    let updates = 0;
+    (tab as unknown as { update: () => void }).update = () => {
+      updates += 1;
+    };
+
+    await tab.setControlValue("approval.mutating", "allow");
+
+    expect(updates).toBe(1);
   });
 
   it("reads and writes nested control keys through the plugin settings", async () => {

@@ -36,7 +36,7 @@ export const BUILTIN_AGENT_ROLES: AgentRole[] = [
     name: "explorer",
     description: "Read-only explorer: recon a focused question across the vault (and the web when asked) and report sourced findings.",
     systemPrompt: EXPLORER_PROMPT,
-    toolAllowlist: ["read", "vault_inspect", "web_search", "fetch_url", "artifact", "skill"],
+    toolAllowlist: ["read", "vault_inspect", "web_search", "fetch_url", "artifact"],
   },
 ];
 

@@ -47,8 +47,8 @@ function serverDiagnostic(toolNames: string[]): McpServerDiagnostic {
 }
 
 describe("isDeferredToolName", () => {
-  it("defers MCP tools and the rare built-ins, and keeps the core set loaded", () => {
-    for (const name of ["mcp__x__y", "create_skill", "import_document"]) {
+  it("defers MCP tools and import_document, and keeps the core set loaded", () => {
+    for (const name of ["mcp__x__y", "import_document"]) {
       expect(isDeferredToolName(name), name).toBe(true);
     }
     for (const name of ["read", "vault_inspect", "set_properties", "web_search", "skill", "artifact", "search_tools", "current_time"]) {

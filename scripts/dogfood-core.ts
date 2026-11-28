@@ -206,7 +206,6 @@ export async function assertDogfoodInvariants(manifestOrPath: DogfoodManifest | 
 
 interface ToolCallTracking {
   approvedMutationToolCalls: Set<string>;
-  createdSkillToolCalls: Set<string>;
   checkpointToolCalls: Set<string>;
   completedToolCalls: Set<string>;
 }
@@ -230,7 +229,6 @@ function emptyInvariantMetrics(): InvariantMetrics {
 function createToolCallTracking(): ToolCallTracking {
   return {
     approvedMutationToolCalls: new Set<string>(),
-    createdSkillToolCalls: new Set<string>(),
     checkpointToolCalls: new Set<string>(),
     completedToolCalls: new Set<string>(),
   };
@@ -329,7 +327,7 @@ function recordApprovalInvariants(
   metrics.approvalDecisions[key] = (metrics.approvalDecisions[key] ?? 0) + 1;
   const touched = diffPaths(event.diff);
   if (decision === "approved" || decision === "auto-approved") {
-    recordApprovedDecisionInvariants(event, toolName, touched, manifest, findings, metrics, tracking);
+    recordApprovedDecisionInvariants(event, touched, manifest, findings, metrics, tracking);
   }
   if (decision === "denied") {
     recordDeniedDecisionInvariants(touched, manifest, findings);
@@ -338,7 +336,6 @@ function recordApprovalInvariants(
 
 function recordApprovedDecisionInvariants(
   event: NonNullable<SessionEntry["event"]>,
-  toolName: string,
   touched: string[],
   manifest: DogfoodManifest,
   findings: DogfoodInvariantFinding[],
@@ -348,12 +345,6 @@ function recordApprovedDecisionInvariants(
   if (touched.length > 0) {
     metrics.mutationApprovals += 1;
     if (event.toolCallId) tracking.approvedMutationToolCalls.add(event.toolCallId);
-  }
-  // create_skill writes vault packages but captures no file checkpoint by
-  // design (not undoable) — track separately so the checkpoint invariant
-  // below doesn't fire, and audit it as its own finding instead.
-  if (toolName === "create_skill" && event.toolCallId) {
-    tracking.createdSkillToolCalls.add(event.toolCallId);
   }
   for (const targetPath of touched) {
     if (!isAllowedMutationPath(targetPath, manifest.allowedMutationRoots)) {
@@ -388,9 +379,6 @@ function appendCheckpointFindings(findings: DogfoodInvariantFinding[], tracking:
   for (const toolCallId of tracking.approvedMutationToolCalls) {
     appendApprovedMutationFollowUpFindings(findings, toolCallId, tracking);
   }
-  for (const toolCallId of tracking.createdSkillToolCalls) {
-    appendCreatedSkillFollowUpFindings(findings, toolCallId, tracking);
-  }
 }
 
 function appendApprovedMutationFollowUpFindings(
@@ -398,23 +386,11 @@ function appendApprovedMutationFollowUpFindings(
   toolCallId: string,
   tracking: ToolCallTracking,
 ): void {
-  // create_skill is audited separately below (no checkpoint by design).
-  if (tracking.createdSkillToolCalls.has(toolCallId)) return;
   if (!tracking.checkpointToolCalls.has(toolCallId)) {
     findings.push(error("checkpoints", `Approved mutation ${toolCallId} did not capture a file checkpoint.`));
   }
   if (!tracking.completedToolCalls.has(toolCallId)) {
     findings.push(error("tool-results", `Approved mutation ${toolCallId} did not record a final tool result.`));
-  }
-}
-
-function appendCreatedSkillFollowUpFindings(
-  findings: DogfoodInvariantFinding[],
-  toolCallId: string,
-  tracking: ToolCallTracking,
-): void {
-  if (!tracking.completedToolCalls.has(toolCallId)) {
-    findings.push(error("tool-results", `Approved create_skill ${toolCallId} did not record a final tool result.`));
   }
 }
 

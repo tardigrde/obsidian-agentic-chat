@@ -21,6 +21,12 @@ function settings(overrides: SettingsOverrides = {}): AgenticChatSettings {
     ...overrides,
     web: { ...DEFAULT_SETTINGS.web, ...(overrides.web ?? {}) },
     mcp: { ...DEFAULT_SETTINGS.mcp, ...(overrides.mcp ?? {}) },
+    // The fixture package is explicitly enabled: a missing key now means disabled.
+    plugins: {
+      ...DEFAULT_SETTINGS.plugins,
+      ...(overrides.plugins ?? {}),
+      enabled: { tools: true, ...(overrides.plugins?.enabled ?? {}) },
+    },
   };
 }
 

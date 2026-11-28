@@ -84,7 +84,7 @@ Include the output of `/doctor`.
 | **Agent** | The model plus a loop: it can call tools, read the results, and continue until the task is done. |
 | **Tool call / step** | One action the agent takes (`read`, `edit`, `rename`, …). Each turn has one activity line (`Read 4 notes, edited 1`); click it to see each step with its arguments, result, and timing. |
 | **Approval gate** | The allow / ask / deny policy for mutating tools, set globally or per tool. **Deny** always wins. |
-| **Safe / YOLO** | Composer switch. Safe follows your approval policy; YOLO auto-approves mutating tools for the session, except recursive folder deletes and `create_skill`. |
+| **Safe / YOLO** | Composer switch. Safe follows your approval policy; YOLO auto-approves mutating tools for the session, except recursive folder deletes. |
 | **Steering** | Sending a message while the agent works. It arrives after the current model turn. |
 | **Standing instructions** | `AGENTS.md` (or `CLAUDE.md` / `GEMINI.md`) at the vault root, added to every turn. |
 | **Skill** | A `SKILL.md` file with reusable instructions. The model sees only its name and description until it is invoked with `/<name>` or by the agent. |
@@ -92,7 +92,7 @@ Include the output of `/doctor`.
 | **MCP** | Model Context Protocol. Lets the agent call tools on external servers. Tools appear as `mcp__<server>__<tool>`. |
 | **Subagent / Explorer** | A child agent with its own context window. The built-in Explorer does read-only recon and reports a summary. |
 | **Artifact** | A large tool output (MCP result, imported document) stored outside the chat. The agent reads slices with the `artifact` tool, which keeps context small. |
-| **Deferred tool** | A tool listed in the prompt but loaded only when needed (`search_tools`): MCP tools, `import_document`, `create_skill`. |
+| **Deferred tool** | A tool listed in the prompt but loaded only when needed (`search_tools`): MCP tools and `import_document`. |
 | **Compaction** | Summarizing older turns before the context window fills (auto at 80%, or `/compact`). |
 | **Context window** | How many tokens the model can see at once. The ring in the composer shows how full it is; hover it for the breakdown. |
 | **Effort** | Reasoning effort (`off` … `xhigh`) for models that support it. More effort means more tokens. |

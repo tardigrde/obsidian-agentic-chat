@@ -7,10 +7,9 @@ import {
   restoreFileCheckpoint,
   type FileCheckpoint,
 } from "./file-checkpoints";
-import { type ApprovalPolicy, getPerToolApproval } from "./approval";
+import { type ApprovalPolicy } from "./approval";
 import { resolveToolPolicy } from "./approval-policy";
 import { isMcpToolName, mcpServerIdFromToolName } from "../mcp/tools";
-import { MUTATING_TOOLS } from "../tools/tool-contracts";
 import {
   persistedSnapshot,
   SUBAGENT_TOOL_NAME,
@@ -50,6 +49,15 @@ export interface ToolApprovalRequest {
 export type ToolGateDecision = { block: true; reason: string; terminate?: boolean } | undefined;
 
 export const STOPPED_APPROVAL_REASON = "The turn was stopped before approval.";
+
+/** A child agent cannot reach the user, so an `ask` becomes a denial. */
+export function subagentApprovalDeniedReason(toolName: string): string {
+  return `The "${toolName}" tool call was denied because a subagent cannot ask you for approval.`;
+}
+
+function isSubagentToolCall(toolCallId: string): boolean {
+  return toolCallId.startsWith("subagent:");
+}
 
 export interface UserApprovalChoice {
   approved: boolean;
@@ -301,6 +309,11 @@ export class AgentToolCallController {
       await this.auditApproval({ decision: "denied", toolCallId, toolName, label, args, reason: denial });
       return { block: true, reason: denial };
     }
+    if (effectivePolicy === "ask" && isSubagentToolCall(toolCallId)) {
+      const denial = subagentApprovalDeniedReason(toolName);
+      await this.auditApproval({ decision: "denied", toolCallId, toolName, label, args, reason: denial });
+      return { block: true, reason: denial };
+    }
     const choice = await this.confirmWithAudit(
       { toolName, label, args },
       toolCallId,
@@ -334,6 +347,11 @@ export class AgentToolCallController {
       await this.auditApproval({ decision: "denied", toolCallId, toolName, label, args, reason });
       return { block: true, reason };
     }
+    if (decision.policy === "ask" && isSubagentToolCall(toolCallId)) {
+      const reason = subagentApprovalDeniedReason(toolName);
+      await this.auditApproval({ decision: "denied", toolCallId, toolName, label, args, reason });
+      return { block: true, reason };
+    }
     const choice = await this.confirmWithAudit(
       { toolName, label, args },
       toolCallId,
@@ -353,10 +371,11 @@ export class AgentToolCallController {
   }
 
   /**
-   * Gate a subagent dispatch. The dispatch itself is only delegation; child tool
-   * calls run through the same per-call controller hooks as parent calls. That
-   * means per-tool denies, approvals, checkpoints, and undo capture happen at
-   * the actual child read/write, not as a blunt up-front dispatch approval.
+   * Gate a subagent dispatch. Dispatch itself is only delegation: the child's
+   * tool calls run through the same per-call controller hooks as parent calls,
+   * so per-tool denies, approvals, checkpoints, and undo capture happen at the
+   * actual child read/write. Only an unknown agent or an explicit per-tool
+   * `subagent` deny blocks the dispatch.
    */
   private async gateSubagentDispatch(
     settings: AgenticChatSettings,
@@ -374,16 +393,13 @@ export class AgentToolCallController {
       mode: settings.mode,
       approval: settings.approval,
       family: "subagent",
-      canMutate: this.dispatchCanMutate(settings, args),
       unknownAgentReason,
     });
     if (decision.policy === "deny") {
-      const reason = decision.reason ?? "Subagent dispatch is blocked because mutating tools are denied.";
+      const reason = decision.reason ?? "Subagent dispatch is denied by your per-tool approval setting.";
       await this.auditApproval({ decision: "denied", toolCallId, toolName: SUBAGENT_TOOL_NAME, args, reason });
       return { block: true, reason };
     }
-    // Today an `ask` subagent dispatch auto-approves exactly like `allow`; only
-    // the child tool calls are gated afterwards. Pinned by the approval matrix.
     await this.auditApproval({ decision: "auto-approved", toolCallId, toolName: SUBAGENT_TOOL_NAME, args });
     return undefined;
   }
@@ -437,25 +453,6 @@ export class AgentToolCallController {
 
   private labelForTool(toolName: string): string {
     return this.getTools().find((candidate) => candidate.name === toolName)?.label ?? toolName;
-  }
-
-  /** True when any dispatched role's allowlist includes a mutating tool that is not per-tool denied. */
-  private dispatchCanMutate(settings: AgenticChatSettings, args: unknown): boolean {
-    const tasks = normalizeTasks(args ?? {}, (id) => this.subagentRegistry.retainedAgent(id));
-    return tasks.some((task) => {
-      const profile = findAgentRole(this.getProfiles(), task.agent);
-      if (!profile) return false;
-      return profile.toolAllowlist.some((name) => {
-        // Child agents only ever receive vault + web + artifact + skill tools
-        // (see AgentSubagentRuntime.createChildAgent) — never MCP/create_skill.
-        // Gating on those names here would false-trigger a deny prompt for a role
-        // that lists them aspirationally, so only MUTATING_TOOLS counts.
-        if (!MUTATING_TOOLS.has(name)) return false;
-        // Per-tool deny means this mutating tool is effectively read-only for dispatch purposes.
-        if (getPerToolApproval(settings.approval, name) === "deny") return false;
-        return true;
-      });
-    });
   }
 }
 

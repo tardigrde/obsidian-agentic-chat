@@ -6,7 +6,6 @@ import type { ContextLoadParts } from "./readouts";
 import type { AgenticChatSettings } from "../settings-schema";
 import type { WebFetcher } from "../tools/web-fetch";
 import type { AskUserHandler } from "../tools/ask-user-tool";
-import type { SkillScaffolder } from "../tools/skill-tools";
 import type { ReadMemo } from "../vault/read-memo";
 import type { PrivateMatcher } from "../vault/private-rules";
 import type { ToolArtifactStoreLike } from "../artifacts/tool-artifact-store";
@@ -30,7 +29,6 @@ export interface AgentRuntimeResourceStateOptions {
   askUser?: AskUserHandler;
   saveSettings?: () => void | Promise<void>;
   artifactStore?: ToolArtifactStoreLike;
-  skillScaffolder?: SkillScaffolder;
   /** Shared plugin catalog; without it the runtime scans the plugins folder itself. */
   plugins?: PluginCatalog;
   /** Clock for `current_time`; tests inject a fixed one. */
@@ -159,7 +157,6 @@ export class AgentRuntimeResourceState {
       artifactStore: this.options.artifactStore,
       askUser: this.options.askUser,
       subagentTool,
-      skillScaffolder: this.options.skillScaffolder,
       loadedTools: this.loadedTools,
       now: this.options.now,
     });

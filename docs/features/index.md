@@ -51,4 +51,4 @@ Agentic Chat is a sidebar chat panel (`ItemView`) with streaming answers, one ac
 - Optional OTLP or Langfuse observability export.
 - Artifact system for large tool outputs.
 - `skill` tool to read full skill content on demand.
-- Deferred tools (MCP tools, `import_document`, `create_skill`) load on demand through `search_tools`.
+- Deferred tools (MCP tools, `import_document`) load on demand through `search_tools`.

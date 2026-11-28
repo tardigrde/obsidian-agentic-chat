@@ -7,7 +7,6 @@ import { activeModelConfig, apiKeyForProvider } from "../settings-schema";
 import type { AgenticChatSettings } from "../settings-schema";
 import { buildModel, type ModelConfig } from "../llm/models";
 import { MUTATING_TOOLS } from "../tools/tool-contracts";
-import { createSkillTool } from "../tools/skill-tool";
 import { createVaultTools } from "../tools/vault-tools";
 import { createSubagentTool, SubagentRegistry, type SubagentBackgroundHooks } from "../tools/subagent-tool";
 import { createWebTools } from "../tools/web-tools";
@@ -85,7 +84,6 @@ export class AgentSubagentRuntime {
     const childNamespace = this.nextChildNamespace();
     // Strip tools the user explicitly denied before the child is created.
     // Allowed child calls still flow through the parent tool-call controller.
-    const skills = this.getResources().skills;
     // Read the private rules when each check runs, not when the child is built: a
     // retained child is continued later, after an Ignored-paths edit (review of #429).
     const isPrivate: PrivateMatcher = Object.assign((path: string) => this.getResources().ignoreMatcher(path), {
@@ -96,7 +94,6 @@ export class AgentSubagentRuntime {
       ...createVaultTools(this.app, isPrivate, new ReadMemo()),
       ...createWebTools(settings.web, this.webFetch, this.artifactStore),
       ...(artifactTool ? [artifactTool] : []),
-      createSkillTool(this.app, skills, isPrivate),
     ].filter(
       (tool) => resolveModePolicy(settings.mode, settings.approval, tool.name).policy !== "deny",
     );

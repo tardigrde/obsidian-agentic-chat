@@ -47,8 +47,7 @@ Skills use the [agentskills.io](https://agentskills.io) `SKILL.md` format.
 - **Run.** `/skill <name> [args]`, or `/<name>` when no built-in command has
   that name. The agent can also invoke a skill on its own.
 - **Arguments.** A body can use `$ARGUMENTS` or `$1`, `$2`, and so on.
-- **Create.** *Advanced → Agent plugins → New skill…*, or ask the agent (it uses
-  the `create_skill` tool, which always asks first).
+- **Create.** *Advanced → Agent plugins → New skill…*, or edit a `skills/<name>/SKILL.md` inside `my-skills`.
 - **Audit.** `/doctor` checks every package against the spec.
 
 Example `my-skills/skills/weekly-review/SKILL.md`:
@@ -78,7 +77,10 @@ window, the role's model (or the parent's), and only the tools in its allowlist.
   calls `subagent` on its own. Several calls in one message run concurrently,
   with a cap. Children cannot spawn children.
 - **Approval.** Each child tool call still passes through the parent's approval
-  gate.
+  gate. A child never prompts you: an `ask` decision becomes a denial the child
+  can read, and the parent can ask you instead. An explicit per-tool `subagent`
+  deny blocks dispatch. A child gets no `ask_user` or skill reader, and the
+  built-in Explorer has no write tools.
 - **UI and cost.** A dispatch shows a step row in the activity line with each child's live status and a Stop per running child;
   click a row for its summary. Child tokens and cost add to the session total.
 - **Parallel and follow-ups.** *Advanced → Subagents → Parallel subagents*

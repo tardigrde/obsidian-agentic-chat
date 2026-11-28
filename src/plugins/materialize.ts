@@ -11,7 +11,7 @@ import type { PluginVault } from "./plugin-vault";
  * wrote; the catalog owner invalidates.
  */
 
-/** Body cap for scaffolded skills (agent path has no modal textarea limit). */
+/** Body cap for scaffolded skills (the wizard enforces its own field limit). */
 const MAX_SKILL_BODY_CHARS = 64 * 1024;
 
 /**
@@ -132,8 +132,8 @@ export async function writeMcpServerPackage(
 }
 
 /**
- * The converted package for a single-skill scaffold (New skill wizard and the
- * agent `create_skill` tool): a spec-valid manifest plus skills/<name>/SKILL.md.
+ * The converted package for a single-skill scaffold (New skill wizard): a
+ * spec-valid manifest plus skills/<name>/SKILL.md.
  * Throws a user-readable error for a bad name or an oversized body.
  */
 export function scaffoldSkillPackage(input: { name: string; description: string; body: string }): ConvertedPackage {

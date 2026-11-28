@@ -20,9 +20,11 @@ describe("my-skills user collection", () => {
   it("materializes an empty but spec-valid package only when absent", async () => {
     const app = new FakeApp();
     await app.vault.createFolder(".agentic-plugins");
-    const service = new PluginService(app as unknown as App, settings);
+    const current = settings();
+    const service = new PluginService(app as unknown as App, () => current);
     expect(await service.ensureMySkillsMaterialized()).toBe(true);
     expect(await service.ensureMySkillsMaterialized()).toBe(false);
+    expect(current.plugins.enabled[USER_SKILLS_PACKAGE]).toBe(true);
 
     const raw = app.vault.contentOf(`.agentic-plugins/${USER_SKILLS_PACKAGE}/plugin.json`);
     expect(raw).toBeDefined();

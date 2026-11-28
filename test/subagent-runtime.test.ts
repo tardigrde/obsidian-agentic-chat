@@ -11,7 +11,6 @@ import type { ToolArtifactStoreLike } from "../src/artifacts/tool-artifact-store
 import { DEFAULT_SETTINGS, type AgenticChatSettings } from "../src/settings-schema";
 import type { WebFetcher } from "../src/tools/web-fetch";
 import type { AgentToolCallController } from "../src/agent/tool-call-controller";
-import { createPrivateMatcher } from "../src/vault/private-rules";
 
 /** Arbitrary dispatch fixture — the name is test data, not a built-in role. */
 const PROFILE: AgentRole = {
@@ -220,6 +219,9 @@ describe("AgentSubagentRuntime", () => {
     expect(names).toContain("vault_inspect");
     expect(names).toContain("read");
     expect(names).not.toContain("write");
+    // A child never prompts the user and never gets a skill reader.
+    expect(names).not.toContain("ask_user");
+    expect(names).not.toContain("skill");
   });
 
   it("exposes enabled web and artifact lookup tools to allowlisted research children", () => {
@@ -227,7 +229,7 @@ describe("AgentSubagentRuntime", () => {
       name: "researcher",
       description: "Research",
       systemPrompt: "research",
-      toolAllowlist: ["read", "vault_inspect", "web_search", "fetch_url", "artifact", "skill"],
+      toolAllowlist: ["read", "vault_inspect", "web_search", "fetch_url", "artifact"],
     };
     const runtime = makeRuntime({
       settings: settings({ web: { ...DEFAULT_SETTINGS.web, enabled: true } }),
@@ -241,7 +243,6 @@ describe("AgentSubagentRuntime", () => {
       "artifact",
       "fetch_url",
       "read",
-      "skill",
       "vault_inspect",
       "web_search",
     ]);
@@ -278,28 +279,14 @@ describe("AgentSubagentRuntime", () => {
   });
 });
 
-describe("AgentSubagentRuntime: private rules are read live (review of #429)", () => {
-  it("blocks a retained child's skill read after the folder is added to Ignored paths", async () => {
-    const live: AgentRuntimeResources = {
-      ...resources(),
-      skills: [{ name: "notes", description: "Notes.", content: "# Secret steps", filePath: "Skills/notes/SKILL.md" }],
-    };
-    const runtime = new AgentSubagentRuntime({
-      app: { vault: {}, workspace: {} } as unknown as App,
-      getSettings: () => settings(),
-      getResources: () => live,
-      buildStreamFn: () => cannedChildStream("ok"),
-      recordUsage: () => undefined,
-      webFetch: noopWebFetch,
-      toolCalls: noopToolCalls,
-    });
+describe("AgentSubagentRuntime: a child gets no skill list", () => {
+  it("ignores a skill allowlist entry and falls back to read-only vault tools", () => {
+    const runtime = makeRuntime();
     const child = runtime.createChildAgent({ ...PROFILE, toolAllowlist: ["skill"] });
-    const skill = child.state.tools.find((tool) => tool.name === "skill");
-    expect(skill).toBeDefined();
-    await expect(skill!.execute("c1", { action: "read", name: "notes" } as never)).resolves.toBeDefined();
-
-    live.ignoreMatcher = createPrivateMatcher("Skills/");
-    await expect(skill!.execute("c2", { action: "read", name: "notes" } as never)).rejects.toThrow(/is private/);
+    const names = child.state.tools.map((tool) => tool.name);
+    expect(names).not.toContain("skill");
+    expect(names).toContain("read");
+    expect(names).toContain("vault_inspect");
   });
 });
 

@@ -46,7 +46,6 @@ The system prompt lists these tools, but they are not in the model's tool list u
 | Tool | What it does |
 | --- | --- |
 | `import_document` | Extract PDF, EPUB, DOCX, PPTX, or XLSX text into artifacts with citations. PDFs are read with the pdf.js that Obsidian ships; a PDF over 50 MB, or one whose text is unreadable (custom font encodings, scans), is refused rather than stored. |
-| `create_skill` | Create a skill package. Defaults to ask. YOLO does not auto-approve it. `/undo` cannot revert it. |
 | `mcp__<id>__<tool>` | Opt-in remote MCP tools behind the approval gate. The system prompt lists one line per MCP server. |
 
 ## Removed tools
@@ -58,4 +57,5 @@ Before 1.0.0 these tools were merged or removed. Per-tool approval entries for t
 | `read_skill`, `read_skill_file` | `skill` with `action=read` or `action=read_file` |
 | `load_skill`, `unload_skill` | `skill` with `action=read` (the body goes into the conversation) |
 | `list_artifacts`, `read_artifact`, `search_artifact`, `export_artifact` | `artifact` with `action=list`, `read`, `search`, or `export` |
+| `create_skill` | **Advanced > Agent plugins > New skill…**. It creates the package directly in the vault. |
 | `ls`, `search`, `find`, `grep`, `get_active_note`, `get_backlinks`, `get_links`, `local_graph`, `get_properties` | `vault_inspect` with `action=list`, `search`, `active_note`, `local_graph`, or `properties` |

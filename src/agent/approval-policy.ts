@@ -2,9 +2,9 @@ import { getPerToolApproval, type ApprovalPolicy, type ApprovalSettings } from "
 import { resolveModePolicy, type AgentMode } from "./modes";
 
 /**
- * One resolver for every tool-family ladder: vault tools, persistent skill
- * tools, recursive deletes, MCP tools, and subagent dispatch. Pure: every input
- * that the ladders used to read from settings arrives explicitly.
+ * One resolver for every tool-family ladder: vault tools, MCP tools, and
+ * subagent dispatch. Pure: every input that the ladders used to read from
+ * settings arrives explicitly.
  */
 
 interface BasePolicyQuery {
@@ -27,8 +27,6 @@ export interface McpPolicyQuery extends BasePolicyQuery {
 
 export interface SubagentPolicyQuery extends BasePolicyQuery {
   family: "subagent";
-  /** True when any dispatched role's allowlist can reach a non-denied mutating tool. */
-  canMutate: boolean;
   /** Set when a dispatched agent name does not exist. */
   unknownAgentReason?: string;
 }
@@ -43,7 +41,7 @@ export interface ApprovalPolicyDecision {
 const MCP_DENIED_REASON = (toolName: string): string =>
   `The "${toolName}" MCP tool is disabled by your MCP approval settings.`;
 
-const SUBAGENT_DENIED_REASON = "Subagent dispatch is blocked because mutating tools are denied.";
+const SUBAGENT_DENIED_REASON = "Subagent dispatch is denied by your per-tool approval setting.";
 
 export function resolveToolPolicy(query: ApprovalPolicyQuery): ApprovalPolicyDecision {
   switch (query.family) {
@@ -61,11 +59,7 @@ function resolveVaultPolicy(query: VaultPolicyQuery): ApprovalPolicyDecision {
   if (modeDecision.policy === "deny" && modeDecision.reason) {
     return { policy: "deny", reason: modeDecision.reason };
   }
-  // create_skill defaults to ask: an indirect prompt injection must not plant a skill.
-  const isPersistentSkillTool = query.toolName === "create_skill";
-  const policy = isPersistentSkillTool
-    ? (getPerToolApproval(query.approval, query.toolName) ?? "ask")
-    : modeDecision.policy;
+  const policy = modeDecision.policy;
   // Recursive delete always asks unless that tool has an explicit per-tool allow.
   const effectivePolicy =
     isRecursiveDeleteArgs(query.args) &&
@@ -95,10 +89,12 @@ function resolveSubagentPolicy(query: SubagentPolicyQuery): ApprovalPolicyDecisi
     return { policy: "deny", reason: modeCheck.reason };
   }
   if (query.unknownAgentReason) return { policy: "deny", reason: query.unknownAgentReason };
-  // No mutating tool in the dispatched role: delegation itself is safe.
-  if (!query.canMutate) return { policy: "allow" };
-  const policy = query.mode === "yolo" ? "allow" : query.approval.mutating;
-  return { policy, reason: policy === "deny" ? SUBAGENT_DENIED_REASON : undefined };
+  // Dispatch itself is delegation; the child's tool calls are gated where they
+  // run. The only exception is an explicit per-tool deny of `subagent`.
+  if (getPerToolApproval(query.approval, "subagent") === "deny") {
+    return { policy: "deny", reason: SUBAGENT_DENIED_REASON };
+  }
+  return { policy: "allow" };
 }
 
 /** True when the args request a recursive folder delete (bulk destruction). */

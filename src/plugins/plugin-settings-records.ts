@@ -48,6 +48,17 @@ export function recordPluginSource(settings: AgenticChatSettings, name: string, 
   settings.plugins.sources = { ...settings.plugins.sources, [name]: label };
 }
 
+/**
+ * A package the user just created or installed starts enabled. Only a missing
+ * key is filled in: an explicitly disabled package stays off when it is
+ * re-installed, so a re-install cannot silently re-enable it.
+ */
+export function recordPluginEnabledByDefault(settings: AgenticChatSettings, name: string): boolean {
+  if (Object.prototype.hasOwnProperty.call(settings.plugins.enabled, name)) return false;
+  settings.plugins.enabled[name] = true;
+  return true;
+}
+
 /** Ensure client-owned state exists for an imported plugin's MCP servers, defaulting to disabled. */
 export function recordImportedMcpState(
   settings: AgenticChatSettings,
