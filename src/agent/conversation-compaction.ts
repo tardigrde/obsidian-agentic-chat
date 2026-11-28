@@ -7,7 +7,15 @@ import { conversationMessages } from "./conversation-messages";
 import { CompactionNotLiveError, type AgentSessionActions } from "./session-actions";
 
 export type ManualCompactionResult =
-  | { compacted: true; beforeTokens: number; afterTokens: number; contextWindow: number }
+  | {
+      compacted: true;
+      /** Transcript-only tokens before and after; the fixed request overhead is separate. */
+      conversationBeforeTokens: number;
+      conversationAfterTokens: number;
+      /** System prompt, tool schemas, and reply reserve: unchanged by compaction. */
+      overheadTokens: number;
+      contextWindow: number;
+    }
   | { compacted: false; message: string };
 
 const NOT_LIVE_HINT = "Reload the session to continue from the compacted transcript.";
@@ -122,9 +130,11 @@ export class AgentConversationCompaction {
     });
     return {
       compacted: true,
-      // Report the same load the context bar shows: transcript plus overhead.
-      beforeTokens: stats.estimatedTokens + overheadTokens,
-      afterTokens: estimateContextUsage(result.messages) + overheadTokens,
+      // The transcript numbers are what compaction can change; the fixed part
+      // is reported separately so `23,678 -> 23,678` cannot hide in the total.
+      conversationBeforeTokens: stats.estimatedTokens,
+      conversationAfterTokens: estimateContextUsage(result.messages),
+      overheadTokens,
       contextWindow,
     };
   }

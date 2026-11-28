@@ -14,6 +14,7 @@ import {
   readSettingSelect,
   openMcpAdvancedFolds,
   readSettingsBodyText,
+  readSettingPlaceholder,
   readSettingText,
   readSettingsTabLabels,
   readStoredData,
@@ -219,6 +220,43 @@ describe("agentic-chat settings UI", function () {
     }
   });
 
+  it("insets plain settings blocks from the card edge on every tab", async function () {
+    let seenBlocks = 0;
+    for (const tab of ["Models", "Agent", "Advanced"]) {
+      await selectSettingsTab(tab);
+      const result = await browser.execute(() => {
+        const blocks = Array.from(
+          document.querySelectorAll<HTMLElement>(".agentic-chat-settings-tabbody .agentic-chat-settings-block"),
+        );
+        const problems: string[] = [];
+        for (const block of blocks) {
+          if (block.getBoundingClientRect().width === 0) continue;
+          const style = getComputedStyle(block);
+          const label = (block.textContent ?? "").trim().slice(0, 48);
+          if (block.querySelector(".setting-item")) {
+            // A wrapper around real rows must stay flush: the rows own the padding.
+            if (style.paddingLeft !== "0px" || style.paddingRight !== "0px") {
+              problems.push(`wrapped rows got block padding: ${label}`);
+            }
+            continue;
+          }
+          if (!label) continue;
+          if (Number.parseFloat(style.paddingLeft) < 8 || Number.parseFloat(style.paddingRight) < 8) {
+            problems.push(`plain text touches the card edge: ${label}`);
+          }
+        }
+        return { problems, blocks: blocks.length };
+      });
+      seenBlocks += result.blocks;
+      if (result.problems.length > 0) throw new Error(`${tab} settings blocks: ${result.problems.join("; ")}`);
+      expect(result.problems).toEqual([]);
+    }
+    expect(seenBlocks).toBeGreaterThan(0);
+    if (process.env.AGENTIC_CHAT_SCREENSHOT_DIR) {
+      await browser.saveScreenshot(`${process.env.AGENTIC_CHAT_SCREENSHOT_DIR}/settings-blocks.png`);
+    }
+  });
+
   it("persists provider, API key, base URL, and model through the Models tab", async function () {
     await selectSettingsTab("Models");
     await setSettingSelect("Model provider", "openrouter");
@@ -258,6 +296,22 @@ describe("agentic-chat settings UI", function () {
       expect(storedAfter.openaiCompatibleApiKey).toBeUndefined();
       expect("openaiCompatibleApiKey" in storedAfter).toBe(false);
     }
+  });
+
+  it("shows a stored secret as dots instead of an empty field", async function () {
+    await selectSettingsTab("Models");
+    await setSettingSelect("Model provider", "openrouter");
+    await waitForSetting("OpenRouter API key");
+
+    expect(await readSettingPlaceholder("OpenRouter API key")).toBe("••••••••");
+    expect(await readSettingText("OpenRouter API key")).toBe("");
+    if (process.env.AGENTIC_CHAT_SCREENSHOT_DIR) {
+      await browser.saveScreenshot(`${process.env.AGENTIC_CHAT_SCREENSHOT_DIR}/settings-secret-placeholder.png`);
+    }
+
+    // Leave the provider state the later persistence tests expect.
+    await setSettingSelect("Model provider", "openai-compatible");
+    await waitForSetting("Base URL");
   });
 
   it("removes the working-directory section and still saves approval controls", async function () {

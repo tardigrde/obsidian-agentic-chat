@@ -293,6 +293,10 @@ export class TranscriptView {
 
   renderTranscript(messages: AgentMessage[]): void {
     this.destroyMountedBubbles();
+    // The DOM is rebuilt, so no earlier local render is pending its message_end.
+    // Leaving the count here makes a later externally delivered user message
+    // reuse the skipped-render slot and disappear from the transcript.
+    this.locallyRenderedUserMessages = 0;
     for (const segment of this.allSegments) segment.dispose();
     this.allSegments.clear();
     this.activity?.dispose();
@@ -465,8 +469,18 @@ export class TranscriptView {
     this.scrollToBottom({ force: options.forceScroll });
   }
 
-  renderOutgoingUserMessage(text: string, attachments: ContextAttachment[], images?: ImageContent[]): void {
-    this.locallyRenderedUserMessages += 1;
+  /**
+   * Render a user bubble already known to the view. A chat prompt counts as a
+   * pending local render so its message_end does not draw it twice; a slash
+   * command that never sends a user message must not leave a slot behind.
+   */
+  renderOutgoingUserMessage(
+    text: string,
+    attachments: ContextAttachment[],
+    images?: ImageContent[],
+    pendingMessageEnd = true,
+  ): void {
+    if (pendingMessageEnd) this.locallyRenderedUserMessages += 1;
     this.renderUserMessage(text, attachments, undefined, { forceScroll: true, historyImages: images });
   }
 

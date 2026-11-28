@@ -36,6 +36,8 @@ describe("create_skill tool", () => {
     expect(seen).toEqual([{ name: "my-skill", description: "Does the thing.", body: "# My skill" }]);
     expect(result.content[0]).toMatchObject({ type: "text" });
     expect((result.content[0] as { text: string }).text).toContain(".agentic-plugins/my-skill");
+    expect((result.content[0] as { text: string }).text).toContain("Settings > Advanced > Agent plugins");
+    expect((result.content[0] as { text: string }).text).not.toContain("Resources tab");
     expect((result.content[0] as { text: string }).text).toContain("cannot be undone");
     expect(result.details).toMatchObject({ name: "my-skill", updated: false });
   });
